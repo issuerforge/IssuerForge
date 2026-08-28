@@ -1,0 +1,20 @@
+[toolchain]
+anchor_version = "0.32.1"
+solana_version = "4.2.0"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+issuer_forge = "ForgePo1icy11111111111111111111111111111111"
+
+[programs.localnet]
+issuer_forge = "ForgePo1icy11111111111111111111111111111111"
+
+[provider]
+cluster = "devnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm --filter @forge/chain test"

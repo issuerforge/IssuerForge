@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+target/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+.anchor/
+test-ledger/
+
+# Ключі. Програмний keypair теж: він дає право задеплоїти під той самий адрес.
+id.json
+*-keypair.json
+*.keypair.json
+
+*.md
+!README.md
+
+.DS_Store

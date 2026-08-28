@@ -1,0 +1,45 @@
+[package]
+name = "issuer-forge"
+version = "0.1.0"
+edition = "2021"
+description = "Compliance rules as data: one audited program serving every stablecoin issuer"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "issuer_forge"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
+# token_interface: mint і токен-акаунти Token-2022, без них немає жодного
+# розширення, на якому побудований проєкт.
+anchor-spl = { version = "0.32.1", features = ["token_2022"] }
+# Рівно 0.10.0. anchor-spl 0.32.1 тягне spl-token-2022 ^8, а той — саме цю гілку.
+# Версії 2.x сидять на solana-* 3.x і дають два різні Pubkey в одному крейті.
+spl-transfer-hook-interface = "=0.10.0"
+spl-tlv-account-resolution = "=0.10.0"
+spl-pod = "=0.5.1"
+# Правила читаються з акаунта на кожному переказі — zero_copy без алокацій.
+bytemuck = { version = "1.25", features = ["derive"] }
+
+[dev-dependencies]
+# Хук викликається токен-програмою, а не нашим кодом: без справжнього рантайму
+# і ELF Token-2022 жоден тест не доходить до перевірки правила.
+# litesvm тут не збирається з anchor 0.32.1 (E0027 на touched_flags).
+mollusk-svm = "0.15.0"
+mollusk-svm-programs-token = { version = "0.15.0", default-features = false, features = [
+  "token-2022",
+  "associated-token",
+] }
+# Гілка типів у mollusk (agave 4.x) не та, у якій живе anchor-lang 0.32.1
+# (solana-program 2.3). Це два різні Pubkey, міст між ними — to_bytes().
+solana-account = "4.3"
+solana-instruction = "3.4"
+solana-pubkey = "4.2"
