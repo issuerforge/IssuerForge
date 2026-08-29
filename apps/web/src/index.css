@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   IssuerForge design tokens
+   A regulatory filing being drafted. Light, cool, ruled.
+   Colour carries exactly one meaning: refusal.
+   ============================================================ */
+
+:root {
+  --ground: #f3f4f2;
+  --panel: #fafbf9;
+  --ink: #15181c;
+  --ink-muted: #5e6670;
+  --hairline: #d8dcd8;
+  --refuse: #a6382c;
+
+  --font-sans: ui-sans-serif, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    border-color: var(--hairline);
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: var(--ink);
+    color: var(--ground);
+  }
+}
+
+/* ---------- type primitives ---------- */
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+}
+
+.mono12 {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-size: 12px;
+}
+
+.smallcaps {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.section-head {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.muted {
+  color: var(--ink-muted);
+}
+
+.refuse {
+  color: var(--refuse);
+}
+
+/* ---------- controls ---------- */
+
+input[type='text'],
+input[type='number'] {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  padding: 4px 0;
+  width: 100%;
+  color: var(--ink);
+  outline: none;
+}
+
+input[type='text']:focus,
+input[type='number']:focus {
+  border-bottom-color: var(--ink);
+}
+
+button {
+  font-family: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+.tick {
+  width: 13px;
+  height: 13px;
+  border: 1px solid var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-top: 3px;
+  background: transparent;
+}
+
+.tick span {
+  width: 7px;
+  height: 7px;
+  background: var(--ink);
+  display: block;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--ground);
+  padding: 9px 20px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary:disabled {
+  background: transparent;
+  color: var(--ink-muted);
+  border: 1px solid var(--hairline);
+}
+
+.btn-destructive {
+  background: var(--refuse);
+  color: #fdf7f6;
+  padding: 9px 20px;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.btn-plain {
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 1px;
+  font-size: 13px;
+}
+
+.btn-plain:hover {
+  border-bottom-color: var(--ink);
+}
+
+/* ---------- the one animation: the marginal rule ---------- */
+
+@keyframes markfade {
+  0% {
+    opacity: 1;
+  }
+  66% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.marginal-rule {
+  position: absolute;
+  left: -14px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--ink);
+  animation: markfade 900ms linear forwards;
+}
