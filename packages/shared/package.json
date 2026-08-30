@@ -8,6 +8,8 @@
     "./api": "./src/api/index.ts",
     "./events": "./src/events/index.ts",
     "./errors": "./src/errors.ts",
+    "./primitives": "./src/primitives.ts",
+    "./refusal": "./src/refusal.ts",
     "./log": "./src/log.ts"
   },
   "scripts": {
