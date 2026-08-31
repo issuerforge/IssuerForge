@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./idl": "./src/idl/issuer-forge.ts",
     "./pda": "./src/pda.ts",
+    "./program": "./src/program.ts",
     "./tx": "./src/tx/index.ts"
   },
   "scripts": {
