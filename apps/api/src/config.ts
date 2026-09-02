@@ -1,3 +1,130 @@
 // Конфіг процесу, валідований Zod на старті.
-// Наповнюється у Фазі 4 — склад і порядок у docs/TASKS.md.
-export {}
+//
+// Правило складу: тут лежить рівно те, що api читає **сьогодні**. Змінні,
+// потрібні майбутнім задачам (`OPERATIONAL_SECRET_KEY`, `PLATFORM_TREASURY`,
+// `OFFRAMP_BASE_URL`), приходять зі своїми задачами. Інакше процес падав би на
+// старті через відсутнє значення, якого ніхто не читає, — і команда навчилась
+// би ставити туди що завгодно, аби запуститись.
+//
+// `PROGRAM_ID` тут немає навмисно: адреса програми береться **тільки** з
+// вендорованого IDL (`packages/chain`, рішення T007). Друге джерело адреси
+// створює стан «IDL з одного деплою, адреса з іншого», який нічим не ловиться.
+import { LOG_LEVELS, type LogLevel } from '@forge/shared/log'
+import { z } from 'zod'
+
+/**
+ * `.env.example` роздає всім секретам це значення. Пропустити його — значить
+ * дати процесу піднятись і впасти на першому ж запиті до Privy з помилкою про
+ * підпис; краще не піднятись узагалі й сказати, якої змінної бракує.
+ */
+const PLACEHOLDER = 'REPLACE_ME'
+
+// Шукаємо входження, а не рівність: у `.env.example` плейсхолдер стоїть і
+// всередині значень (`?api-key=REPLACE_ME`, тіло PEM-ключа), і саме такі
+// напівзаповнені рядки доживають до розгортання.
+const secret = (label: string) =>
+  z
+    .string()
+    .min(1, `${label} is required`)
+    .refine((v) => !v.includes(PLACEHOLDER), `${label} is still the .env.example placeholder`)
+
+/**
+ * Ключ перевірки токенів Privy — публічний ключ ES256 у форматі PEM SPKI.
+ *
+ * У змінній оточення багаторядковий PEM зазвичай їде з екранованими `\n`
+ * (Railway, Vercel, docker `--env`), тож перенос відновлюється тут. Це єдине
+ * місце, де формат ключа взагалі обговорюється: далі йде готовий PEM.
+ */
+const verificationKeySchema = secret('PRIVY_VERIFICATION_KEY')
+  .transform((v) => v.replaceAll('\\n', '\n').trim())
+  .refine(
+    (v) => v.startsWith('-----BEGIN PUBLIC KEY-----') && v.endsWith('-----END PUBLIC KEY-----'),
+    'expected a PEM public key (-----BEGIN PUBLIC KEY----- … -----END PUBLIC KEY-----)',
+  )
+
+/**
+ * Походження, яким дозволено читати api. Кілька — через кому.
+ *
+ * Порожній рядок і зайві пробіли відкидаються тут, а не в CORS: `origin: ['']`
+ * дав би заголовок, який браузер не звірить ні з чим, і помилку без причини.
+ */
+const originsSchema = z
+  .string()
+  .transform((v) =>
+    v
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+  )
+  .pipe(z.array(z.url()).min(1, 'WEB_ORIGIN must list at least one origin'))
+
+const databaseUrlSchema = secret('DATABASE_URL').refine(
+  (v) => v.startsWith('postgres://') || v.startsWith('postgresql://'),
+  'expected a postgres:// connection string',
+)
+
+export const configSchema = z.object({
+  PORT: z.coerce.number().int().min(1).max(65_535).default(8787),
+  LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+  // `.prefault`, а не `.default`: у Zod 4 `.default` віддає значення **без
+  // розбору**, тож типізований як `string[]` конфіг мовчки отримав би рядок —
+  // помилка, якої не бачить ні TypeScript, ні перевірка схеми.
+  WEB_ORIGIN: originsSchema.prefault('http://localhost:5173'),
+  DATABASE_URL: databaseUrlSchema,
+  DEVNET_RPC_URL: secret('DEVNET_RPC_URL').pipe(z.url()),
+  PRIVY_APP_ID: secret('PRIVY_APP_ID'),
+  PRIVY_APP_SECRET: secret('PRIVY_APP_SECRET'),
+  PRIVY_VERIFICATION_KEY: verificationKeySchema,
+  /** Базовий URL REST-API Privy. Змінна існує, щоб зміна хоста не була правкою коду. */
+  PRIVY_API_URL: z.url().default('https://auth.privy.io'),
+})
+
+export interface Config {
+  port: number
+  logLevel: LogLevel
+  webOrigins: string[]
+  databaseUrl: string
+  rpcUrl: string
+  privy: {
+    appId: string
+    appSecret: string
+    verificationKey: string
+    apiUrl: string
+  }
+}
+
+export class ConfigError extends Error {
+  constructor(readonly issues: string[]) {
+    super(`invalid environment:\n${issues.map((i) => `  - ${i}`).join('\n')}`)
+    this.name = 'ConfigError'
+  }
+}
+
+/**
+ * Оточення читається рівно тут і рівно раз. Далі по коду ходить `Config`, тож
+ * `process.env` не є прихованим входом жодної функції — і тест не мусить
+ * підмінювати глобальний стан, щоб перевірити поведінку.
+ */
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  const parsed = configSchema.safeParse(env)
+  if (!parsed.success) {
+    throw new ConfigError(
+      parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`),
+    )
+  }
+
+  const e = parsed.data
+  return {
+    port: e.PORT,
+    logLevel: e.LOG_LEVEL,
+    webOrigins: e.WEB_ORIGIN,
+    databaseUrl: e.DATABASE_URL,
+    rpcUrl: e.DEVNET_RPC_URL,
+    privy: {
+      appId: e.PRIVY_APP_ID,
+      appSecret: e.PRIVY_APP_SECRET,
+      verificationKey: e.PRIVY_VERIFICATION_KEY,
+      apiUrl: e.PRIVY_API_URL.replace(/\/+$/, ''),
+    },
+  }
+}

@@ -2,6 +2,7 @@
 // переказі й типи індексованих подій. Схеми Zod звідси валідують і запит на
 // сервері, і відповідь у браузері — розбіжність між двома сторонами неможлива
 // за побудовою.
+export * from './api/index.ts'
 export * from './errors.ts'
 export * from './events/index.ts'
 export * from './primitives.ts'
