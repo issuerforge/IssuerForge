@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { type Clause, usePolicy } from '@/lib/policy'
+import { type Clause, usePolicy } from './policy'
 
 const STEP_TITLES: Record<number, string> = {
   1: '1 Token',

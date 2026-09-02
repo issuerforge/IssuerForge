@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Block, Field, Tick } from '@/components/controls'
-import WizardLayout from '@/components/WizardLayout'
-import { usePolicy } from '@/lib/policy'
+import { usePolicy } from './policy'
+import WizardLayout from './WizardLayout'
 
 export default function Step1Token() {
   const { policy, set } = usePolicy()
@@ -13,7 +13,7 @@ export default function Step1Token() {
       title="Token"
       footer={
         ready ? (
-          <Link to="/who-may-hold" className="btn-primary">
+          <Link to="/prototype/who-may-hold" className="btn-primary">
             Continue to 2 who may hold
           </Link>
         ) : (

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Block } from '@/components/controls'
-import WizardLayout from '@/components/WizardLayout'
-import { usePolicy } from '@/lib/policy'
+import { usePolicy } from './policy'
+import WizardLayout from './WizardLayout'
 
 function AmountField({
   label,
@@ -41,7 +41,7 @@ export default function Step3Limits() {
       step={3}
       title="Limits"
       footer={
-        <Link to="/powers" className="btn-primary">
+        <Link to="/prototype/powers" className="btn-primary">
           Continue to 4 powers
         </Link>
       }

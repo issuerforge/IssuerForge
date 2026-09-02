@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
-import { amount, parseAmount } from './format'
+import { amount, parseAmount } from '@/lib/format'
 
 export type BlockedEntry = { address: string; reason: string }
 

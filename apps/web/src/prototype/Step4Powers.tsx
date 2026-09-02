@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Block, Segmented, Tick, Toggle } from '@/components/controls'
-import WizardLayout from '@/components/WizardLayout'
-import { QUORUM_PARTIES, usePolicy } from '@/lib/policy'
+import { QUORUM_PARTIES, usePolicy } from './policy'
+import WizardLayout from './WizardLayout'
 
 export default function Step4Powers() {
   const { policy, set } = usePolicy()
@@ -11,7 +11,7 @@ export default function Step4Powers() {
       step={4}
       title="Powers"
       footer={
-        <Link to="/review" className="btn-primary">
+        <Link to="/prototype/review" className="btn-primary">
           Continue to 5 review
         </Link>
       }

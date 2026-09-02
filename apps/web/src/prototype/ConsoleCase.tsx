@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CASE_ACTIONS } from '@/lib/data'
 import { truncate } from '@/lib/format'
-import { QUORUM_PARTIES } from '@/lib/policy'
+import { CASE_ACTIONS } from './data'
+import { QUORUM_PARTIES } from './policy'
 
 const DEFINITION = [
   { label: 'Holder', value: 'Vant4raDemo7hQ2nR9wKp5xTbZmYs6LgC8jEuA3fDhR1' },
@@ -34,10 +34,10 @@ export default function ConsoleCase() {
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-baseline justify-between gap-2 px-5 py-4">
           <span className="smallcaps">IssuerForge · compliance console</span>
           <nav className="flex gap-5">
-            <Link to="/console" className="btn-plain muted">
+            <Link to="/prototype/console" className="btn-plain muted">
               Back to the token
             </Link>
-            <Link to="/review" className="btn-plain muted">
+            <Link to="/prototype/review" className="btn-plain muted">
               The policy
             </Link>
           </nav>

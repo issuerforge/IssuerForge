@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { usePolicy } from '@/lib/policy'
+import { usePolicy } from './policy'
 import Rulebook from './Rulebook'
 import StepRail, { STEPS } from './StepRail'
 

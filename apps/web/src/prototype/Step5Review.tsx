@@ -1,18 +1,11 @@
 import { useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import Rulebook from '@/components/Rulebook'
-import StepRail from '@/components/StepRail'
-import { Masthead } from '@/components/WizardLayout'
-import {
-  CARRIED_RECORDS,
-  FINGERPRINT,
-  ISSUANCE,
-  PLATFORM_FEE,
-  SCENARIOS,
-  TO_ISSUER,
-} from '@/lib/data'
 import { fmt } from '@/lib/format'
-import { usePolicy } from '@/lib/policy'
+import { CARRIED_RECORDS, FINGERPRINT, ISSUANCE, PLATFORM_FEE, SCENARIOS, TO_ISSUER } from './data'
+import { usePolicy } from './policy'
+import Rulebook from './Rulebook'
+import StepRail from './StepRail'
+import { Masthead } from './WizardLayout'
 
 function Head({ children }: { children: string }) {
   return <h2 className="section-head mt-12 block">{children}</h2>
@@ -113,13 +106,17 @@ export default function Step5Review() {
         </p>
 
         <div className="mt-12 flex flex-wrap items-center gap-5 border-t border-hairline pt-6">
-          <button type="button" className="btn-primary" onClick={() => navigate('/console')}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => navigate('/prototype/console')}
+          >
             Sign and issue
           </button>
           <span className="muted text-[12px]">
             Two signatures required — this collects the first.
           </span>
-          <Link to="/powers" className="btn-plain muted">
+          <Link to="/prototype/powers" className="btn-plain muted">
             Back to 4 powers
           </Link>
         </div>

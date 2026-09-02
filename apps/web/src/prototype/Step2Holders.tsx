@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Block, Chip, Segmented, Toggle } from '@/components/controls'
-import WizardLayout from '@/components/WizardLayout'
-import { ALL_JURISDICTIONS, usePolicy } from '@/lib/policy'
+import { ALL_JURISDICTIONS, usePolicy } from './policy'
+import WizardLayout from './WizardLayout'
 
 export default function Step2Holders() {
   const { policy, set } = usePolicy()
@@ -18,7 +18,7 @@ export default function Step2Holders() {
       step={2}
       title="Who may hold"
       footer={
-        <Link to="/limits" className="btn-primary">
+        <Link to="/prototype/limits" className="btn-primary">
           Continue to 3 limits
         </Link>
       }

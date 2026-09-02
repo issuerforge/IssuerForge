@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AWAITING_UNBLOCK, FEED, FINGERPRINT, REFUSALS_BY_CLAUSE } from '@/lib/data'
+import { AWAITING_UNBLOCK, FEED, FINGERPRINT, REFUSALS_BY_CLAUSE } from './data'
 
 const FIGURES = [
   { label: 'In circulation', value: '25,000,000.00 vNGN', note: '' },
@@ -34,10 +34,10 @@ export default function ConsoleToken() {
         <div className="mx-auto flex max-w-[1180px] flex-wrap items-baseline justify-between gap-2 px-5 py-4">
           <span className="smallcaps">IssuerForge · compliance console</span>
           <nav className="flex gap-5">
-            <Link to="/review" className="btn-plain muted">
+            <Link to="/prototype/review" className="btn-plain muted">
               The policy
             </Link>
-            <Link to="/console/case/REG-2026-0412" className="btn-plain muted">
+            <Link to="/prototype/console/case/REG-2026-0412" className="btn-plain muted">
               Case REG-2026-0412
             </Link>
           </nav>
@@ -115,7 +115,10 @@ export default function ConsoleToken() {
                     style={{ color: event.refused ? 'var(--refuse)' : 'var(--ink)' }}
                   >
                     {event.caseLink ? (
-                      <Link to="/console/case/REG-2026-0412" className={`${cls} w-full text-left`}>
+                      <Link
+                        to="/prototype/console/case/REG-2026-0412"
+                        className={`${cls} w-full text-left`}
+                      >
                         {body}
                       </Link>
                     ) : (

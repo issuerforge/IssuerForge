@@ -1,12 +1,12 @@
 import { Link } from 'react-router-dom'
-import { usePolicy } from '@/lib/policy'
+import { usePolicy } from './policy'
 
 export const STEPS = [
-  { n: 1, label: 'Token', path: '/' },
-  { n: 2, label: 'Who may hold', path: '/who-may-hold' },
-  { n: 3, label: 'Limits', path: '/limits' },
-  { n: 4, label: 'Powers', path: '/powers' },
-  { n: 5, label: 'Review', path: '/review' },
+  { n: 1, label: 'Token', path: '/prototype' },
+  { n: 2, label: 'Who may hold', path: '/prototype/who-may-hold' },
+  { n: 3, label: 'Limits', path: '/prototype/limits' },
+  { n: 4, label: 'Powers', path: '/prototype/powers' },
+  { n: 5, label: 'Review', path: '/prototype/review' },
 ]
 
 export default function StepRail({ current }: { current: number }) {
