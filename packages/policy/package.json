@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@forge/shared": "workspace:^",
     "@noble/hashes": "^2.4.0",
     "zod": "^4.5.4"
   }

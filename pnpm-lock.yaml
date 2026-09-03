@@ -163,6 +163,9 @@ importers:
 
   packages/policy:
     dependencies:
+      '@forge/shared':
+        specifier: workspace:^
+        version: link:../shared
       '@noble/hashes':
         specifier: ^2.4.0
         version: 2.4.0
