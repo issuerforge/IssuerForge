@@ -4,5 +4,6 @@
 // Цей оцінювач — друга реалізація тієї самої моделі, яку виконує хук на Rust.
 // Розходження між ними ловиться диференційними тестами на спільних фікстурах
 // (SC-008); без них дубль мовчки розійдеться — docs/PLAN.md → Complexity Tracking #3.
+export * from './evaluate.ts'
 export * from './layout.ts'
 export * from './model.ts'
