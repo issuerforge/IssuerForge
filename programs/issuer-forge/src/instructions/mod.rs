@@ -1,3 +1,9 @@
 pub mod initialize_issuer;
+pub mod set_policy;
 
+// Глоб потрібен `#[program]`: разом із типами контексту він забирає й
+// `__client_accounts_*`, які генерує `#[derive(Accounts)]`. Щоб два `handler`
+// не стали неоднозначним ім'ям, самі хендлери оголошені `pub(crate)` — глоб їх
+// не бачить, а `lib.rs` кличе їх повним шляхом усередині крейта.
 pub use initialize_issuer::*;
+pub use set_policy::*;

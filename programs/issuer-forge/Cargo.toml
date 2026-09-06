@@ -28,6 +28,12 @@ spl-tlv-account-resolution = "=0.10.0"
 spl-pod = "=0.5.1"
 # Правила читаються з акаунта на кожному переказі — zero_copy без алокацій.
 bytemuck = { version = "1.25", features = ["derive"] }
+# sha256 для `rules_hash`. Окремою залежністю, бо anchor-lang 0.32.1 не
+# ре-експортує `solana_program::hash` — у нього `solana_program` зібраний із
+# розділених крейтів, і хешера серед них немає. Рівно 2.3.0: mollusk тягне
+# гілку 3.1.0 (agave 4.x), і два різні `Hash` в одному крейті — та сама історія,
+# що з `Pubkey` у spl-transfer-hook-interface 2.x.
+solana-sha256-hasher = "=2.3.0"
 
 [dev-dependencies]
 # Хук викликається токен-програмою, а не нашим кодом: без справжнього рантайму

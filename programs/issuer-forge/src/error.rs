@@ -77,6 +77,24 @@ pub enum ForgeError {
     UndelegatablePower,
     #[msg("operational key must be a real address")]
     MissingOperationalKey,
+    #[msg("token config does not belong to this issuer")]
+    TokenNotFromThisIssuer,
+    #[msg("policy version must be exactly one past the version this mint is on")]
+    PolicyVersionNotNext,
+    #[msg("rule slots are not in the single canonical form this program accepts")]
+    PolicyRulesNotCanonical,
+    #[msg("policy carries a rule kind this program does not define")]
+    PolicyRuleKindUnknown,
+    #[msg("a rule parameter lies outside the range the model allows")]
+    PolicyRuleParamsOutOfRange,
+    #[msg("a policy must carry the status rule")]
+    PolicyStatusRuleMissing,
+    #[msg("signer is not a member who may authorise actions for this issuer")]
+    NotAnAuthorisingSigner,
+    #[msg("the same wallet approved twice")]
+    DuplicateApproval,
+    #[msg("action did not reach the issuer's quorum")]
+    QuorumNotReached,
 }
 
 /// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+11`.
@@ -117,5 +135,26 @@ mod tests {
     fn validation_errors_start_after_the_refusal_range() {
         assert_eq!(VALIDATION_ERROR_BASE, 6012);
         assert_eq!(u32::from(ForgeError::TooFewMembers), VALIDATION_ERROR_BASE);
+    }
+
+    /// Секція 2 тільки дописується в кінець. Вставка в середину зсунула б усі
+    /// наступні коди й тихо перейменувала причини відмов у транзакціях, які вже
+    /// лежать у ланцюгу.
+    #[test]
+    fn validation_codes_only_ever_grow_at_the_end() {
+        // Останній код, який був до T014.
+        assert_eq!(
+            u32::from(ForgeError::MissingOperationalKey),
+            VALIDATION_ERROR_BASE + 10
+        );
+        // Перший і останній із доданих T014.
+        assert_eq!(
+            u32::from(ForgeError::TokenNotFromThisIssuer),
+            VALIDATION_ERROR_BASE + 11
+        );
+        assert_eq!(
+            u32::from(ForgeError::QuorumNotReached),
+            VALIDATION_ERROR_BASE + 19
+        );
     }
 }

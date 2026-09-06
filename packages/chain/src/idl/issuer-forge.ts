@@ -96,6 +96,138 @@ export type IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "setPolicy",
+      "docs": [
+        "Записує наступну версію політики й переводить токен на неї (FR-009,",
+        "FR-010).",
+        "",
+        "Зміна набуває сили без повторного випуску токена й без дій з боку",
+        "холдерів: політика — дані, і хук читає нову версію вже на наступному",
+        "переказі. Попередні версії лишаються на своїх адресах назавжди.",
+        "",
+        "Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний",
+        "ключ платформи: підписи передаються в `remaining_accounts`."
+      ],
+      "discriminator": [
+        40,
+        133,
+        12,
+        157,
+        235,
+        202,
+        2,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Мусить іти перед `policy_config`: його `mint` є seed'ом наступного",
+            "акаунта, а Anchor перевіряє поля в порядку оголошення."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "policyConfig",
+          "docs": [
+            "Нова версія. `init` тут і є незмінністю історії (FR-010): версія, яка вже",
+            "існує, не створюється вдруге, а інструкції, що відкрила б її на запис, у",
+            "програмі немає."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.version"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Хто платить оренду за нову версію. Повноважень цей підпис не дає — їх",
+            "дає тільки кворум серед `remaining_accounts`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setPolicyArgs"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
@@ -110,6 +242,32 @@ export type IssuerForge = {
         169,
         247,
         237
+      ]
+    },
+    {
+      "name": "policyConfig",
+      "discriminator": [
+        219,
+        7,
+        79,
+        84,
+        175,
+        51,
+        148,
+        146
+      ]
+    },
+    {
+      "name": "tokenConfig",
+      "discriminator": [
+        92,
+        73,
+        255,
+        43,
+        107,
+        51,
+        117,
+        101
       ]
     }
   ],
@@ -228,6 +386,51 @@ export type IssuerForge = {
       "code": 6022,
       "name": "missingOperationalKey",
       "msg": "operational key must be a real address"
+    },
+    {
+      "code": 6023,
+      "name": "tokenNotFromThisIssuer",
+      "msg": "token config does not belong to this issuer"
+    },
+    {
+      "code": 6024,
+      "name": "policyVersionNotNext",
+      "msg": "policy version must be exactly one past the version this mint is on"
+    },
+    {
+      "code": 6025,
+      "name": "policyRulesNotCanonical",
+      "msg": "rule slots are not in the single canonical form this program accepts"
+    },
+    {
+      "code": 6026,
+      "name": "policyRuleKindUnknown",
+      "msg": "policy carries a rule kind this program does not define"
+    },
+    {
+      "code": 6027,
+      "name": "policyRuleParamsOutOfRange",
+      "msg": "a rule parameter lies outside the range the model allows"
+    },
+    {
+      "code": 6028,
+      "name": "policyStatusRuleMissing",
+      "msg": "a policy must carry the status rule"
+    },
+    {
+      "code": 6029,
+      "name": "notAnAuthorisingSigner",
+      "msg": "signer is not a member who may authorise actions for this issuer"
+    },
+    {
+      "code": 6030,
+      "name": "duplicateApproval",
+      "msg": "the same wallet approved twice"
+    },
+    {
+      "code": 6031,
+      "name": "quorumNotReached",
+      "msg": "action did not reach the issuer's quorum"
     }
   ],
   "types": [
@@ -361,6 +564,260 @@ export type IssuerForge = {
           },
           {
             "name": "roles",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "policyConfig",
+      "docs": [
+        "Версія політики. PDA: `[\"policy\", mint, version]`, версія — `u32` LE.",
+        "",
+        "**Незмінність історії — властивість адреси, а не перевірки в коді.** Кожна",
+        "версія живе за власним PDA й створюється через `init`, тож повторний запис у",
+        "вже існуючу версію відхиляє рантайм, а не наша логіка (FR-010). Перезаписати",
+        "попередню версію нічим: інструкції, яка б відкрила її на запис, у програмі",
+        "немає.",
+        "",
+        "`zero_copy`, бо хук читає `rules` на **кожному** переказі: десеріалізація",
+        "Borsh 384 байтів у CU-бюджеті хука коштувала б дорожче за саму перевірку.",
+        "Звідси `#[repr(C)]`, явна набивка до восьми байтів і `AccountLoader` замість",
+        "`Account` на боці інструкцій."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "activatedAt",
+            "docs": [
+              "Час активації, unix-секунди — половина того, чого вимагає FR-010."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "version",
+            "type": "u32"
+          },
+          {
+            "name": "author",
+            "docs": [
+              "Хто ініціював зміну — перший підпис із зібраного кворуму.",
+              "",
+              "Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить",
+              "навмисно: він належить журналу й `ActionProposal` (T025, T029), а",
+              "шістнадцять адрес у кожній версії політики були б третім дзеркалом того",
+              "самого факту."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Правила у канонічній розкладці. Порядок і межі тримає `rules::layout`."
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "ruleSlot"
+                  }
+                },
+                16
+              ]
+            }
+          },
+          {
+            "name": "rulesHash",
+            "docs": [
+              "sha256 над усім полем `rules`, порахований програмою при записі.",
+              "",
+              "Рахується тут, а не приймається від клієнта: хеш, який приніс той самий,",
+              "хто приніс байти, доводить лише те, що клієнт уміє рахувати хеші."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Явна набивка до вирівнювання 8. Без неї `bytemuck::Pod` не виводиться, а",
+              "мовчазна набивка компілятора потрапила б у хеш акаунта як сміття."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ruleSlot",
+      "docs": [
+        "Один слот правила, як він лежить в акаунті."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "type": "u8"
+          },
+          {
+            "name": "params",
+            "type": {
+              "array": [
+                "u8",
+                22
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setPolicyArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Номер нової версії. Мусить бути рівно наступним за чинною: пропуск",
+              "зробив би «попередню версію» невиводимою з номера, а історію — переліком",
+              "з дірками, який нічим не звірити."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Правила в канонічній розкладці, рівно `RULES_BYTES` байтів.",
+              "",
+              "`Vec<u8>`, а не масив: Borsh описує його як `bytes`, і IDL лишається",
+              "читабельним для клієнта. Довжину перевіряє програма."
+            ],
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenConfig",
+      "docs": [
+        "Конфігурація випущеного токена. PDA: `[\"token\", mint]`.",
+        "",
+        "**Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт",
+        "атестації провайдера через `ExtraAccountMetaList`, а її адреса виводиться з",
+        "seeds `[\"attestation\", credential, schema, nonce]` (спайк T057). Два",
+        "32-байтові літерали в 32-байтовий `address_config` не вміщаються ніколи, тож",
+        "`credential` і `schema` беруться **зрізами даних цього акаунта** — а зсув у",
+        "seed `AccountData` має розмір рівно одного байта.",
+        "",
+        "Звідси два обмеження, які тепер є вимогами до розкладки:",
+        "- обидва поля мусять лежати в перших 256 байтах акаунта;",
+        "- їхні зсуви зашиті в `address_config` уже створених `ExtraAccountMetaList`,",
+        "тож вставка нового поля **перед ними** мовчки перенаправить хук на чужі",
+        "32 байти. Тест `token_config_offsets_are_pinned` існує саме проти цього."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "issuer",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationCredential",
+            "docs": [
+              "SAS-credential провайдера верифікації, атестації якого приймає цей токен."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationSchema",
+            "docs": [
+              "SAS-schema тих атестацій."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "docs": [
+              "Чинний атестатор резерву **цього токена** (FR-024b).",
+              "",
+              "Живе тут, а не в `IssuerConfig`, попри `docs/PLAN.md`: FR-024b перевіряє",
+              "підпис проти атестатора конкретного токена, і емітент із двома токенами",
+              "законно має для них різних атестаторів."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Скарбниця платформи: сюди йде комісія з емісії й погашення (FR-038)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "policyVersion",
+            "docs": [
+              "Версія політики, на яку налаштований mint. Розбіжність — перша перевірка",
+              "хука й перший код відмови."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "feeBps",
+            "docs": [
+              "Оголошена ставка комісії (FR-038a)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "Строк придатності атестації, секунди (FR-023b)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pausedAt",
+            "docs": [
+              "Дзеркало стану паузи для журналу й екранів; `0` — не на паузі.",
+              "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
             "type": "u8"
           }
         ]
@@ -456,6 +913,138 @@ export const IDL: IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "setPolicy",
+      "docs": [
+        "Записує наступну версію політики й переводить токен на неї (FR-009,",
+        "FR-010).",
+        "",
+        "Зміна набуває сили без повторного випуску токена й без дій з боку",
+        "холдерів: політика — дані, і хук читає нову версію вже на наступному",
+        "переказі. Попередні версії лишаються на своїх адресах назавжди.",
+        "",
+        "Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний",
+        "ключ платформи: підписи передаються в `remaining_accounts`."
+      ],
+      "discriminator": [
+        40,
+        133,
+        12,
+        157,
+        235,
+        202,
+        2,
+        132
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Мусить іти перед `policy_config`: його `mint` є seed'ом наступного",
+            "акаунта, а Anchor перевіряє поля в порядку оголошення."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "policyConfig",
+          "docs": [
+            "Нова версія. `init` тут і є незмінністю історії (FR-010): версія, яка вже",
+            "існує, не створюється вдруге, а інструкції, що відкрила б її на запис, у",
+            "програмі немає."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.version"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Хто платить оренду за нову версію. Повноважень цей підпис не дає — їх",
+            "дає тільки кворум серед `remaining_accounts`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setPolicyArgs"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
@@ -470,6 +1059,32 @@ export const IDL: IssuerForge = {
         169,
         247,
         237
+      ]
+    },
+    {
+      "name": "policyConfig",
+      "discriminator": [
+        219,
+        7,
+        79,
+        84,
+        175,
+        51,
+        148,
+        146
+      ]
+    },
+    {
+      "name": "tokenConfig",
+      "discriminator": [
+        92,
+        73,
+        255,
+        43,
+        107,
+        51,
+        117,
+        101
       ]
     }
   ],
@@ -588,6 +1203,51 @@ export const IDL: IssuerForge = {
       "code": 6022,
       "name": "missingOperationalKey",
       "msg": "operational key must be a real address"
+    },
+    {
+      "code": 6023,
+      "name": "tokenNotFromThisIssuer",
+      "msg": "token config does not belong to this issuer"
+    },
+    {
+      "code": 6024,
+      "name": "policyVersionNotNext",
+      "msg": "policy version must be exactly one past the version this mint is on"
+    },
+    {
+      "code": 6025,
+      "name": "policyRulesNotCanonical",
+      "msg": "rule slots are not in the single canonical form this program accepts"
+    },
+    {
+      "code": 6026,
+      "name": "policyRuleKindUnknown",
+      "msg": "policy carries a rule kind this program does not define"
+    },
+    {
+      "code": 6027,
+      "name": "policyRuleParamsOutOfRange",
+      "msg": "a rule parameter lies outside the range the model allows"
+    },
+    {
+      "code": 6028,
+      "name": "policyStatusRuleMissing",
+      "msg": "a policy must carry the status rule"
+    },
+    {
+      "code": 6029,
+      "name": "notAnAuthorisingSigner",
+      "msg": "signer is not a member who may authorise actions for this issuer"
+    },
+    {
+      "code": 6030,
+      "name": "duplicateApproval",
+      "msg": "the same wallet approved twice"
+    },
+    {
+      "code": 6031,
+      "name": "quorumNotReached",
+      "msg": "action did not reach the issuer's quorum"
     }
   ],
   "types": [
@@ -721,6 +1381,260 @@ export const IDL: IssuerForge = {
           },
           {
             "name": "roles",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "policyConfig",
+      "docs": [
+        "Версія політики. PDA: `[\"policy\", mint, version]`, версія — `u32` LE.",
+        "",
+        "**Незмінність історії — властивість адреси, а не перевірки в коді.** Кожна",
+        "версія живе за власним PDA й створюється через `init`, тож повторний запис у",
+        "вже існуючу версію відхиляє рантайм, а не наша логіка (FR-010). Перезаписати",
+        "попередню версію нічим: інструкції, яка б відкрила її на запис, у програмі",
+        "немає.",
+        "",
+        "`zero_copy`, бо хук читає `rules` на **кожному** переказі: десеріалізація",
+        "Borsh 384 байтів у CU-бюджеті хука коштувала б дорожче за саму перевірку.",
+        "Звідси `#[repr(C)]`, явна набивка до восьми байтів і `AccountLoader` замість",
+        "`Account` на боці інструкцій."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "activatedAt",
+            "docs": [
+              "Час активації, unix-секунди — половина того, чого вимагає FR-010."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "version",
+            "type": "u32"
+          },
+          {
+            "name": "author",
+            "docs": [
+              "Хто ініціював зміну — перший підпис із зібраного кворуму.",
+              "",
+              "Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить",
+              "навмисно: він належить журналу й `ActionProposal` (T025, T029), а",
+              "шістнадцять адрес у кожній версії політики були б третім дзеркалом того",
+              "самого факту."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Правила у канонічній розкладці. Порядок і межі тримає `rules::layout`."
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "ruleSlot"
+                  }
+                },
+                16
+              ]
+            }
+          },
+          {
+            "name": "rulesHash",
+            "docs": [
+              "sha256 над усім полем `rules`, порахований програмою при записі.",
+              "",
+              "Рахується тут, а не приймається від клієнта: хеш, який приніс той самий,",
+              "хто приніс байти, доводить лише те, що клієнт уміє рахувати хеші."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Явна набивка до вирівнювання 8. Без неї `bytemuck::Pod` не виводиться, а",
+              "мовчазна набивка компілятора потрапила б у хеш акаунта як сміття."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ruleSlot",
+      "docs": [
+        "Один слот правила, як він лежить в акаунті."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "type": "u8"
+          },
+          {
+            "name": "params",
+            "type": {
+              "array": [
+                "u8",
+                22
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setPolicyArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Номер нової версії. Мусить бути рівно наступним за чинною: пропуск",
+              "зробив би «попередню версію» невиводимою з номера, а історію — переліком",
+              "з дірками, який нічим не звірити."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Правила в канонічній розкладці, рівно `RULES_BYTES` байтів.",
+              "",
+              "`Vec<u8>`, а не масив: Borsh описує його як `bytes`, і IDL лишається",
+              "читабельним для клієнта. Довжину перевіряє програма."
+            ],
+            "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenConfig",
+      "docs": [
+        "Конфігурація випущеного токена. PDA: `[\"token\", mint]`.",
+        "",
+        "**Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт",
+        "атестації провайдера через `ExtraAccountMetaList`, а її адреса виводиться з",
+        "seeds `[\"attestation\", credential, schema, nonce]` (спайк T057). Два",
+        "32-байтові літерали в 32-байтовий `address_config` не вміщаються ніколи, тож",
+        "`credential` і `schema` беруться **зрізами даних цього акаунта** — а зсув у",
+        "seed `AccountData` має розмір рівно одного байта.",
+        "",
+        "Звідси два обмеження, які тепер є вимогами до розкладки:",
+        "- обидва поля мусять лежати в перших 256 байтах акаунта;",
+        "- їхні зсуви зашиті в `address_config` уже створених `ExtraAccountMetaList`,",
+        "тож вставка нового поля **перед ними** мовчки перенаправить хук на чужі",
+        "32 байти. Тест `token_config_offsets_are_pinned` існує саме проти цього."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "issuer",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationCredential",
+            "docs": [
+              "SAS-credential провайдера верифікації, атестації якого приймає цей токен."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationSchema",
+            "docs": [
+              "SAS-schema тих атестацій."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "docs": [
+              "Чинний атестатор резерву **цього токена** (FR-024b).",
+              "",
+              "Живе тут, а не в `IssuerConfig`, попри `docs/PLAN.md`: FR-024b перевіряє",
+              "підпис проти атестатора конкретного токена, і емітент із двома токенами",
+              "законно має для них різних атестаторів."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Скарбниця платформи: сюди йде комісія з емісії й погашення (FR-038)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "policyVersion",
+            "docs": [
+              "Версія політики, на яку налаштований mint. Розбіжність — перша перевірка",
+              "хука й перший код відмови."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "feeBps",
+            "docs": [
+              "Оголошена ставка комісії (FR-038a)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "Строк придатності атестації, секунди (FR-023b)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pausedAt",
+            "docs": [
+              "Дзеркало стану паузи для журналу й екранів; `0` — не на паузі.",
+              "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
             "type": "u8"
           }
         ]

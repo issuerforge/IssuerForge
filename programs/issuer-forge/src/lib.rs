@@ -9,6 +9,8 @@ use anchor_lang::prelude::*;
 pub mod constants;
 pub mod error;
 pub mod instructions;
+pub mod quorum;
+pub mod rules;
 pub mod state;
 
 use instructions::*;
@@ -29,5 +31,18 @@ pub mod issuer_forge {
         args: InitializeIssuerArgs,
     ) -> Result<()> {
         instructions::initialize_issuer::handler(ctx, args)
+    }
+
+    /// Записує наступну версію політики й переводить токен на неї (FR-009,
+    /// FR-010).
+    ///
+    /// Зміна набуває сили без повторного випуску токена й без дій з боку
+    /// холдерів: політика — дані, і хук читає нову версію вже на наступному
+    /// переказі. Попередні версії лишаються на своїх адресах назавжди.
+    ///
+    /// Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний
+    /// ключ платформи: підписи передаються в `remaining_accounts`.
+    pub fn set_policy(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
+        instructions::set_policy::handler(ctx, args)
     }
 }

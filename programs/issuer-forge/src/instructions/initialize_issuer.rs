@@ -44,7 +44,7 @@ pub struct InitializeIssuer<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<InitializeIssuer>, args: InitializeIssuerArgs) -> Result<()> {
+pub(crate) fn handler(ctx: Context<InitializeIssuer>, args: InitializeIssuerArgs) -> Result<()> {
     let members = validate_members(&args.members)?;
     validate_quorum(args.quorum_n, &members)?;
     validate_delegation(args.delegation_mask, &args.operational_key)?;
