@@ -6,6 +6,7 @@ import {
   type PartyContext,
   type ProviderStatus,
   type RegisterStatus,
+  refusalCodesCheckedElsewhere,
   simulateTransfer,
   type TransferContext,
   type TransferVerdict,
@@ -97,8 +98,20 @@ describe('the order of checks', () => {
   // Перелік перевірок не живе в оцінювачі: він іде `REFUSAL_CODES`. Цей тест
   // ловить зворотне — код відмови, оголошений хуковим, для якого перевірки
   // немає, і перевірку, що лишилась без оголошеного коду.
-  it('implements exactly the codes the hook is declared to return', () => {
-    expect(implementedRefusalCodes()).toEqual(hookRefusalCodes())
+  it('implements the hook codes its input is able to express', () => {
+    // `UNKNOWN_RULE_KIND` хук повертає, а цей оцінювач — ні: він бере розібрану
+    // модель, і невідомий вид правила нею не виражається. Тест вимагає не
+    // збігу, а **названої причини** для кожної розбіжності.
+    const named = new Map(refusalCodesCheckedElsewhere().map((row) => [row.code, row.checkedBy]))
+    for (const code of hookRefusalCodes()) {
+      if (implementedRefusalCodes().includes(code)) continue
+      expect(named.get(code)).toBe('policy-decoding')
+    }
+    for (const code of REFUSAL_CODES) {
+      if (hookRefusalCodes().includes(code)) continue
+      expect(named.get(code)).toBe('token-program')
+    }
+    expect(implementedRefusalCodes().length + named.size).toBe(REFUSAL_CODES.length)
   })
 
   it('keeps the checks in the order the shared table declares', () => {

@@ -52,6 +52,9 @@ describe('refusal table', () => {
       'TRANSFER_LIMIT_EXCEEDED',
       'VELOCITY_COUNTER_MISSING',
       'PERIOD_LIMIT_EXCEEDED',
+      // Останній навмисно: невідомий вид правила робить неможливим саме «так»,
+      // тож точніша причина, якщо вона є, називається першою.
+      'UNKNOWN_RULE_KIND',
     ])
   })
 })

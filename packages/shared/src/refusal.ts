@@ -25,6 +25,7 @@ export const REFUSAL_CODES = [
   'TRANSFER_LIMIT_EXCEEDED',
   'VELOCITY_COUNTER_MISSING',
   'PERIOD_LIMIT_EXCEEDED',
+  'UNKNOWN_RULE_KIND',
   'TRANSFERS_PAUSED',
   'ACCOUNT_FROZEN',
 ] as const
@@ -101,6 +102,20 @@ export const REFUSAL_TABLE = {
   /** Лічильник вікна створюється при `thaw_holder`; його відсутність — відмова. */
   VELOCITY_COUNTER_MISSING: { hookIndex: 10, source: 'hook' },
   PERIOD_LIMIT_EXCEEDED: { hookIndex: 11, source: 'hook' },
+  /**
+   * Політика містить вид правила, якого ця версія програми не знає.
+   *
+   * Стоїть **останнім** серед перевірок хука, і це не поступка порядку
+   * оголошення: правило, якого читач не розуміє, робить неможливим саме
+   * «так». Якщо котресь із зрозумілих правил уже відмовило, причина відмови —
+   * воно, і вона точніша. Якщо ж усі зрозумілі правила пройшли, сказати «так»
+   * не можна: невідоме правило могло сказати «ні». Той самий принцип, що й
+   * FR-013 — політика, зрозуміла не повністю, не стає слабшою мовчки.
+   *
+   * Досяжний лише після відкату програми на версію, старшу за політику: запис
+   * невідомого виду відхиляє `set_policy` (T014).
+   */
+  UNKNOWN_RULE_KIND: { hookIndex: 12, source: 'hook' },
   /** Розширення `Pausable` на mint (FR-016). Хук не викликається взагалі. */
   TRANSFERS_PAUSED: { hookIndex: null, source: 'token-program' },
   /** `freeze_account` або `DefaultAccountState = Frozen` (FR-014, FR-008b). */

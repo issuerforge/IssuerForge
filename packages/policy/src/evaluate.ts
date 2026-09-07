@@ -322,15 +322,28 @@ type Subject = {
 type Check = (subject: Subject) => boolean
 
 /**
+ * Чому коду немає серед перевірок. Не `null`: причини різні, і різниця між ними
+ * — це різниця між «це не наш шар» і «наша модель цього не виражає».
+ *
+ * `token-program` — пауза й заморозка спрацьовують до виклику хука; їх виражає
+ * `simulateTransfer`.
+ *
+ * `policy-decoding` — код, який хук **повертає**, але цей оцінювач повернути не
+ * може: він бере вже розібрану `PolicyRules`, а невідомий вид правила такою
+ * моделлю не виражається взагалі. Еквівалент на боці TS — `decodeRules`, який на
+ * таких байтах кидає. Фікстура з невідомим видом правила існує тільки на боці
+ * Rust, і це властивість моделі, а не прогалина в звірці.
+ */
+type CheckedElsewhere = 'token-program' | 'policy-decoding'
+
+/**
  * Таблиця «код відмови → перевірка». Порядок задає не вона, а `REFUSAL_CODES`,
  * яким іде цикл нижче.
  *
- * `null` означає «цей код повертає не хук». Тип `Record<RefusalCode, …>` робить
- * таблицю вичерпною: новий код відмови не скомпілюється, доки про нього не
- * сказано, перевірка це хука чи ні — і `UNKNOWN_RULE_KIND` із боргу T012 не
- * зможе з'явитися в переліку мовчки, без перевірки тут.
+ * Тип `Record<RefusalCode, …>` робить таблицю вичерпною: новий код відмови не
+ * скомпілюється, доки про нього не сказано — перевірка це чи, якщо ні, **чому**.
  */
-const CHECKS: Record<RefusalCode, Check | null> = {
+const CHECKS: Record<RefusalCode, Check | CheckedElsewhere> = {
   /** Політика, підсунута замість тієї, на яку налаштований mint. */
   POLICY_VERSION_MISMATCH: ({ ctx }) => ctx.policyVersion !== ctx.mintPolicyVersion,
   SENDER_STATUS_MISSING: ({ sender }) => nothingKnown(sender),
@@ -348,10 +361,11 @@ const CHECKS: Record<RefusalCode, Check | null> = {
   VELOCITY_COUNTER_MISSING: ({ policy, ctx }) =>
     policy.periodLimit !== undefined && ctx.velocity === undefined,
   PERIOD_LIMIT_EXCEEDED: ({ policy, ctx }) => periodExceeded(policy, ctx),
+  UNKNOWN_RULE_KIND: 'policy-decoding',
   /** `Pausable` на mint — переказ падає до виклику хука (FR-016). */
-  TRANSFERS_PAUSED: null,
+  TRANSFERS_PAUSED: 'token-program',
   /** `DefaultAccountState = Frozen` або `freeze_account` — так само (FR-014). */
-  ACCOUNT_FROZEN: null,
+  ACCOUNT_FROZEN: 'token-program',
 }
 
 // ─── Оцінювач ────────────────────────────────────────────────────────────────
@@ -381,9 +395,10 @@ export function evaluateTransfer(rules: PolicyRules, context: TransferContext): 
   // пройшли. Дві реалізації, які відхилили той самий переказ із різних причин,
   // розійшлися — навіть якщо обидві сказали «ні» (SC-008).
   for (const code of REFUSAL_CODES) {
-    // `null` пропускається мовчки: це коди токен-програми, і їх тут немає не
-    // тому, що перевірку забули.
-    if (CHECKS[code]?.(subject)) return refuse(code)
+    const check = CHECKS[code]
+    // Рядок-причина пропускається: код без перевірки тут — це не забута
+    // перевірка, а названа межа.
+    if (typeof check === 'function' && check(subject)) return refuse(code)
   }
   return ALLOWED
 }
@@ -396,7 +411,18 @@ export function evaluateTransfer(rules: PolicyRules, context: TransferContext): 
  * читанням двох файлів поруч.
  */
 export function implementedRefusalCodes(): RefusalCode[] {
-  return REFUSAL_CODES.filter((code) => CHECKS[code] !== null)
+  return REFUSAL_CODES.filter((code) => typeof CHECKS[code] === 'function')
+}
+
+/** Коди, які цей модуль не перевіряє, — кожен із названою причиною. */
+export function refusalCodesCheckedElsewhere(): {
+  code: RefusalCode
+  checkedBy: CheckedElsewhere
+}[] {
+  return REFUSAL_CODES.flatMap((code) => {
+    const check = CHECKS[code]
+    return typeof check === 'function' ? [] : [{ code, checkedBy: check }]
+  })
 }
 
 // ─── Шар токен-програми ──────────────────────────────────────────────────────

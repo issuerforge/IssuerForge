@@ -53,6 +53,18 @@ pub enum ForgeError {
     VelocityCounterMissing,
     #[msg("amount exceeds the limit for the period")]
     PeriodLimitExceeded,
+    /// Політика містить вид правила, якого ця версія програми не знає.
+    ///
+    /// **Останній у секції, і це порядок перевірки, а не поступка нумерації.**
+    /// Правило, якого читач не розуміє, робить неможливим саме «так»: якщо
+    /// зрозуміле правило вже відмовило, його причина точніша й називається
+    /// вона; якщо ж усі зрозумілі пройшли, сказати «так» не можна, бо невідоме
+    /// могло сказати «ні».
+    ///
+    /// Досяжний тільки після відкату програми на версію, старшу за політику:
+    /// запис невідомого виду відхиляє `set_policy` (`PolicyRuleKindUnknown`).
+    #[msg("policy carries a rule kind this version of the program does not know")]
+    UnknownRuleKind,
 
     // ─── Секція 2: перевірки вхідних даних і повноважень ─────────────────────
     #[msg("issuer must have at least two members to reach a quorum")]
@@ -97,8 +109,8 @@ pub enum ForgeError {
     QuorumNotReached,
 }
 
-/// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+11`.
-pub const VALIDATION_ERROR_BASE: u32 = anchor_lang::error::ERROR_CODE_OFFSET + 12;
+/// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+12`.
+pub const VALIDATION_ERROR_BASE: u32 = anchor_lang::error::ERROR_CODE_OFFSET + 13;
 
 #[cfg(test)]
 mod tests {
@@ -110,7 +122,7 @@ mod tests {
     /// журналі через місяць.
     #[test]
     fn refusal_codes_match_the_shared_table() {
-        let expected: [(ForgeError, u32); 12] = [
+        let expected: [(ForgeError, u32); 13] = [
             (ForgeError::PolicyVersionMismatch, 6000),
             (ForgeError::SenderStatusMissing, 6001),
             (ForgeError::RecipientStatusMissing, 6002),
@@ -123,6 +135,7 @@ mod tests {
             (ForgeError::TransferLimitExceeded, 6009),
             (ForgeError::VelocityCounterMissing, 6010),
             (ForgeError::PeriodLimitExceeded, 6011),
+            (ForgeError::UnknownRuleKind, 6012),
         ];
 
         for (error, code) in expected {
@@ -133,7 +146,7 @@ mod tests {
     /// Секція перевірок починається одразу за відмовами й не залазить у них.
     #[test]
     fn validation_errors_start_after_the_refusal_range() {
-        assert_eq!(VALIDATION_ERROR_BASE, 6012);
+        assert_eq!(VALIDATION_ERROR_BASE, 6013);
         assert_eq!(u32::from(ForgeError::TooFewMembers), VALIDATION_ERROR_BASE);
     }
 

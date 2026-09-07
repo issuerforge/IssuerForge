@@ -334,101 +334,106 @@ export type IssuerForge = {
     },
     {
       "code": 6012,
+      "name": "unknownRuleKind",
+      "msg": "policy carries a rule kind this version of the program does not know"
+    },
+    {
+      "code": 6013,
       "name": "tooFewMembers",
       "msg": "issuer must have at least two members to reach a quorum"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "tooManyMembers",
       "msg": "member list exceeds the fixed capacity"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "duplicateMember",
       "msg": "the same wallet appears twice in the member list"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "memberWithoutRole",
       "msg": "a member must hold at least one role"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "unknownRole",
       "msg": "role mask contains a bit this program does not define"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "attestorHoldsOtherRoles",
       "msg": "the reserve attestor may hold no other role"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "quorumTooSmall",
       "msg": "quorum must be at least two"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "quorumExceedsSigners",
       "msg": "quorum exceeds the number of members who may authorise actions"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "notAnAdmin",
       "msg": "signer is not an administrator of this issuer"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "undelegatablePower",
       "msg": "delegation mask contains a power that can never be delegated"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "missingOperationalKey",
       "msg": "operational key must be a real address"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "tokenNotFromThisIssuer",
       "msg": "token config does not belong to this issuer"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "policyVersionNotNext",
       "msg": "policy version must be exactly one past the version this mint is on"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "policyRulesNotCanonical",
       "msg": "rule slots are not in the single canonical form this program accepts"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "policyRuleKindUnknown",
       "msg": "policy carries a rule kind this program does not define"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "policyRuleParamsOutOfRange",
       "msg": "a rule parameter lies outside the range the model allows"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "policyStatusRuleMissing",
       "msg": "a policy must carry the status rule"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "notAnAuthorisingSigner",
       "msg": "signer is not a member who may authorise actions for this issuer"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "duplicateApproval",
       "msg": "the same wallet approved twice"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "quorumNotReached",
       "msg": "action did not reach the issuer's quorum"
     }
@@ -1151,101 +1156,106 @@ export const IDL: IssuerForge = {
     },
     {
       "code": 6012,
+      "name": "unknownRuleKind",
+      "msg": "policy carries a rule kind this version of the program does not know"
+    },
+    {
+      "code": 6013,
       "name": "tooFewMembers",
       "msg": "issuer must have at least two members to reach a quorum"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "tooManyMembers",
       "msg": "member list exceeds the fixed capacity"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "duplicateMember",
       "msg": "the same wallet appears twice in the member list"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "memberWithoutRole",
       "msg": "a member must hold at least one role"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "unknownRole",
       "msg": "role mask contains a bit this program does not define"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "attestorHoldsOtherRoles",
       "msg": "the reserve attestor may hold no other role"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "quorumTooSmall",
       "msg": "quorum must be at least two"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "quorumExceedsSigners",
       "msg": "quorum exceeds the number of members who may authorise actions"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "notAnAdmin",
       "msg": "signer is not an administrator of this issuer"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "undelegatablePower",
       "msg": "delegation mask contains a power that can never be delegated"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "missingOperationalKey",
       "msg": "operational key must be a real address"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "tokenNotFromThisIssuer",
       "msg": "token config does not belong to this issuer"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "policyVersionNotNext",
       "msg": "policy version must be exactly one past the version this mint is on"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "policyRulesNotCanonical",
       "msg": "rule slots are not in the single canonical form this program accepts"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "policyRuleKindUnknown",
       "msg": "policy carries a rule kind this program does not define"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "policyRuleParamsOutOfRange",
       "msg": "a rule parameter lies outside the range the model allows"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "policyStatusRuleMissing",
       "msg": "a policy must carry the status rule"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "notAnAuthorisingSigner",
       "msg": "signer is not a member who may authorise actions for this issuer"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "duplicateApproval",
       "msg": "the same wallet approved twice"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "quorumNotReached",
       "msg": "action did not reach the issuer's quorum"
     }
