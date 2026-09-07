@@ -18,6 +18,12 @@ pub const TOKEN_SEED: &[u8] = b"token";
 /// перевірка. Кодування числа закріплене на клієнті в `packages/chain/src/pda.ts`.
 pub const POLICY_SEED: &[u8] = b"policy";
 
+/// `["holder", mint, wallet]` — статус адреси у власному реєстрі емітента.
+pub const HOLDER_SEED: &[u8] = b"holder";
+
+/// `["velocity", mint, wallet]` — лічильник ліміту за період.
+pub const VELOCITY_SEED: &[u8] = b"velocity";
+
 /// Номер першої версії політики. Її пише `create_token`; `set_policy` починає з
 /// другої, тому нуль тут означає «токена ще немає», а не «політика порожня».
 pub const FIRST_POLICY_VERSION: u32 = 1;

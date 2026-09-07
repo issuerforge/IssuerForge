@@ -107,6 +107,20 @@ pub enum ForgeError {
     DuplicateApproval,
     #[msg("action did not reach the issuer's quorum")]
     QuorumNotReached,
+    #[msg("this power is not delegated to the operational key")]
+    PowerNotDelegated,
+    #[msg("signer is neither the operational key nor an officer of this issuer")]
+    NotAnOperatorOrOfficer,
+    #[msg("jurisdiction must be an upper-case ISO 3166-1 alpha-2 code")]
+    HolderJurisdictionInvalid,
+    #[msg("a status that is already expired when written would read as absent")]
+    HolderStatusAlreadyExpired,
+    #[msg("the first thaw must carry the holder status")]
+    HolderStatusRequired,
+    #[msg("this holder already has a status; change it with set_holder_status")]
+    HolderStatusAlreadySet,
+    #[msg("token account does not belong to this mint or to this wallet")]
+    HolderAccountMismatch,
 }
 
 /// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+12`.
@@ -168,6 +182,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::QuorumNotReached),
             VALIDATION_ERROR_BASE + 19
+        );
+        // Перший і останній із доданих T016.
+        assert_eq!(
+            u32::from(ForgeError::PowerNotDelegated),
+            VALIDATION_ERROR_BASE + 20
+        );
+        assert_eq!(
+            u32::from(ForgeError::HolderAccountMismatch),
+            VALIDATION_ERROR_BASE + 26
         );
     }
 }

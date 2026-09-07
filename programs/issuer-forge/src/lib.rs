@@ -6,6 +6,7 @@
 // деплою немає, є набір PDA. Саме це робить FR-003 можливим.
 use anchor_lang::prelude::*;
 
+pub mod authority;
 pub mod constants;
 pub mod error;
 pub mod instructions;
@@ -44,5 +45,27 @@ pub mod issuer_forge {
     /// ключ платформи: підписи передаються в `remaining_accounts`.
     pub fn set_policy(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
         instructions::set_policy::handler(ctx, args)
+    }
+
+    /// Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ
+    /// відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).
+    ///
+    /// Хук не створює акаунтів, тож їх створюють тут — наперед. Саме
+    /// розморожування дозволом на переказ не є (FR-008b1): правила політики
+    /// перевіряються на кожному переказі окремо.
+    pub fn thaw_holder(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Result<()> {
+        instructions::thaw_holder::thaw_handler(ctx, args)
+    }
+
+    /// Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).
+    ///
+    /// Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається
+    /// розмороженим, а переказ із нього перестає проходити тієї ж миті, коли
+    /// статус більше не задовольняє політику.
+    pub fn set_holder_status(
+        ctx: Context<SetHolderStatus>,
+        args: SetHolderStatusArgs,
+    ) -> Result<()> {
+        instructions::thaw_holder::set_status_handler(ctx, args)
     }
 }

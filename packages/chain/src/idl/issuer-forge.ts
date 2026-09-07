@@ -98,6 +98,121 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "setHolderStatus",
+      "docs": [
+        "Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).",
+        "",
+        "Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається",
+        "розмороженим, а переказ із нього перестає проходити тієї ж миті, коли",
+        "статус більше не задовольняє політику."
+      ],
+      "discriminator": [
+        121,
+        5,
+        238,
+        79,
+        85,
+        126,
+        216,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holderStatus",
+          "docs": [
+            "Без `init`: запису, якого немає, ця інструкція не заводить. Створення",
+            "прив'язане до розморожування, бо статус без розмороженого рахунку нічого",
+            "не означає, а `HolderStatus` без `VelocityCounter` дав би відмову в",
+            "переказі там, де емітент вважає холдера впорядкованим."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setHolderStatusArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setPolicy",
       "docs": [
         "Записує наступну версію політики й переводить токен на неї (FR-009,",
@@ -228,9 +343,201 @@ export type IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "thawHolder",
+      "docs": [
+        "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
+        "відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).",
+        "",
+        "Хук не створює акаунтів, тож їх створюють тут — наперед. Саме",
+        "розморожування дозволом на переказ не є (FR-008b1): правила політики",
+        "перевіряються на кожному переказі окремо."
+      ],
+      "discriminator": [
+        56,
+        60,
+        31,
+        119,
+        186,
+        131,
+        171,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "tokenAccount",
+          "docs": [
+            "Токен-акаунт холдера. Обидві перевірки обов'язкові: адреса акаунта не",
+            "доводить ані його mint, ані власника, а статус виводиться саме з",
+            "`wallet`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "holderStatus",
+          "docs": [
+            "`init_if_needed`, бо рахунок законно розморожують удруге — після",
+            "заморозки офіцером. Повторне створення нічого не переписує: що саме",
+            "пишеться, вирішує `updated_at`, а не наявність акаунта."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "velocityCounter",
+          "docs": [
+            "Так само `init_if_needed` — і **жодне поле лічильника тут не пишеться**,",
+            "крім `bump`. Скидання вікна операційним ключем зняло б ліміт за період",
+            "рутинною дією, тобто дало б повноваження, якого в масці делегації немає",
+            "й не може бути (FR-035a)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  108,
+                  111,
+                  99,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Операційний ключ платформи або уповноважений учасник складу."
+          ],
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "thawHolderArgs"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
+    {
+      "name": "holderStatus",
+      "discriminator": [
+        67,
+        242,
+        217,
+        54,
+        237,
+        58,
+        108,
+        127
+      ]
+    },
     {
       "name": "issuerConfig",
       "discriminator": [
@@ -268,6 +575,19 @@ export type IssuerForge = {
         51,
         117,
         101
+      ]
+    },
+    {
+      "name": "velocityCounter",
+      "discriminator": [
+        155,
+        85,
+        56,
+        107,
+        143,
+        157,
+        165,
+        171
       ]
     }
   ],
@@ -436,9 +756,175 @@ export type IssuerForge = {
       "code": 6032,
       "name": "quorumNotReached",
       "msg": "action did not reach the issuer's quorum"
+    },
+    {
+      "code": 6033,
+      "name": "powerNotDelegated",
+      "msg": "this power is not delegated to the operational key"
+    },
+    {
+      "code": 6034,
+      "name": "notAnOperatorOrOfficer",
+      "msg": "signer is neither the operational key nor an officer of this issuer"
+    },
+    {
+      "code": 6035,
+      "name": "holderJurisdictionInvalid",
+      "msg": "jurisdiction must be an upper-case ISO 3166-1 alpha-2 code"
+    },
+    {
+      "code": 6036,
+      "name": "holderStatusAlreadyExpired",
+      "msg": "a status that is already expired when written would read as absent"
+    },
+    {
+      "code": 6037,
+      "name": "holderStatusRequired",
+      "msg": "the first thaw must carry the holder status"
+    },
+    {
+      "code": 6038,
+      "name": "holderStatusAlreadySet",
+      "msg": "this holder already has a status; change it with set_holder_status"
+    },
+    {
+      "code": 6039,
+      "name": "holderAccountMismatch",
+      "msg": "token account does not belong to this mint or to this wallet"
     }
   ],
   "types": [
+    {
+      "name": "holderStatus",
+      "docs": [
+        "Статус адреси у власному реєстрі емітента. PDA: `[\"holder\", mint, wallet]`.",
+        "",
+        "Це **одне з двох** джерел статусу (FR-008a); друге — атестація провайдера,",
+        "яку хук читає напряму зі спільного сервісу атестацій (спайк T057).",
+        "",
+        "**Двох полів із `docs/PLAN.md` тут немає, і це свідомо:**",
+        "- `source` (issuer/provider) був потрібен, поки статус провайдера планували",
+        "дзеркалити сюди. T057 закрив це питання інакше — атестація читається",
+        "напряму, — тож поле означало б «джерело цього запису в реєстрі емітента",
+        "не емітент», чого не буває.",
+        "- `thawed` був би другим джерелом правди про стан, який авторитетно тримає",
+        "сам токен-акаунт (`DefaultAccountState`, `freeze_account`). Офіцер може",
+        "заморозити рахунок (T026), не торкаючись цього акаунта, і прапорець тут",
+        "одразу став би брехнею. Черга на розморожування (FR-008b2) живе офчейн.",
+        "",
+        "Через це `flags` звівся до одного значення й лишився `bool`: бітмаска на",
+        "один біт — це маска, яку читають, звіряючись із коментарем."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Обидва поля дублюють seeds навмисно: консоль і індексатор шукають",
+              "холдерів через `getProgramAccounts` із фільтром за mint, а зробити такий",
+              "фільтр по seeds неможливо."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "tier",
+            "docs": [
+              "Рівень верифікації, як його присвоїв емітент."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "jurisdiction",
+            "docs": [
+              "Код ISO 3166-1 alpha-2 у верхньому регістрі."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "denied",
+            "docs": [
+              "Заборона емітента. Діє **незалежно** від того, чи приймає політика це",
+              "джерело (FR-008a1): власний реєстр звужує коло, дозволене провайдером, і",
+              "ніколи його не розширює."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "Строк придатності запису, unix-секунди. **Нуль означає «без строку»**, а",
+              "не «протерміновано»: запис без строку — дійсний стан реєстру, і саме він",
+              "відрізняє реєстр від атестації, яка строк має завжди."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "updatedAt",
+            "docs": [
+              "Коли запис востаннє писали.",
+              "",
+              "Не декорація: **нуль тут означає «запису ще не було»**. Свіжостворений",
+              "акаунт весь нульовий, а жоден справжній запис не має нульового часу",
+              "блоку, тож `thaw_holder` за цим полем відрізняє перше розморожування від",
+              "повторного — і не переписує статус, якого йому не доручали писати."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "holderStatusInput",
+      "docs": [
+        "Значення статусу, які приносить інструкція.",
+        "",
+        "Окремий тип від акаунта: в акаунті є ще й `mint`, `wallet`, `bump` і",
+        "`updated_at`, і жодне з них клієнт не задає."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "jurisdiction",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "denied",
+            "type": "bool"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "Нуль — без строку."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "initializeIssuerArgs",
       "type": {
@@ -704,6 +1190,26 @@ export type IssuerForge = {
       }
     },
     {
+      "name": "setHolderStatusArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "holderStatusInput"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "setPolicyArgs",
       "type": {
         "kind": "struct",
@@ -726,6 +1232,40 @@ export type IssuerForge = {
               "читабельним для клієнта. Довжину перевіряє програма."
             ],
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "thawHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "docs": [
+              "Власник рахунку. Мусить збігтися з `owner` токен-акаунта — інакше",
+              "статус ліг би за адресою, якої переказ ніколи не прочитає."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Початковий статус — тільки для **першого** розморожування.",
+              "",
+              "`None` означає «запис уже є, я його не чіпаю»: так виглядає повторне",
+              "розморожування після заморозки офіцером (T026). Розбіжність між",
+              "наміром і станом акаунта відхиляється, а не тлумачиться, тож жоден",
+              "виклик не змінює статусу мовчки."
+            ],
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "holderStatusInput"
+                }
+              }
+            }
           }
         ]
       }
@@ -820,6 +1360,37 @@ export type IssuerForge = {
               "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
             ],
             "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "velocityCounter",
+      "docs": [
+        "Лічильник ліміту за період. PDA: `[\"velocity\", mint, wallet]`.",
+        "",
+        "`mint` і `wallet` тут **не** дублюються, на відміну від `HolderStatus`:",
+        "лічильник читає тільки хук, за виведеною адресою, і жодного сканування за",
+        "фільтром по ньому не буває. Зайві 64 байти на кожного холдера — це оренда,",
+        "яку платить емітент."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "windowStart",
+            "docs": [
+              "Початок поточного вікна. Нуль означає, що вікна ще не було."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "spentInWindow",
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -920,6 +1491,121 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "setHolderStatus",
+      "docs": [
+        "Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).",
+        "",
+        "Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається",
+        "розмороженим, а переказ із нього перестає проходити тієї ж миті, коли",
+        "статус більше не задовольняє політику."
+      ],
+      "discriminator": [
+        121,
+        5,
+        238,
+        79,
+        85,
+        126,
+        216,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "holderStatus",
+          "docs": [
+            "Без `init`: запису, якого немає, ця інструкція не заводить. Створення",
+            "прив'язане до розморожування, бо статус без розмороженого рахунку нічого",
+            "не означає, а `HolderStatus` без `VelocityCounter` дав би відмову в",
+            "переказі там, де емітент вважає холдера впорядкованим."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setHolderStatusArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setPolicy",
       "docs": [
         "Записує наступну версію політики й переводить токен на неї (FR-009,",
@@ -1050,9 +1736,201 @@ export const IDL: IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "thawHolder",
+      "docs": [
+        "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
+        "відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).",
+        "",
+        "Хук не створює акаунтів, тож їх створюють тут — наперед. Саме",
+        "розморожування дозволом на переказ не є (FR-008b1): правила політики",
+        "перевіряються на кожному переказі окремо."
+      ],
+      "discriminator": [
+        56,
+        60,
+        31,
+        119,
+        186,
+        131,
+        171,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "tokenAccount",
+          "docs": [
+            "Токен-акаунт холдера. Обидві перевірки обов'язкові: адреса акаунта не",
+            "доводить ані його mint, ані власника, а статус виводиться саме з",
+            "`wallet`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "holderStatus",
+          "docs": [
+            "`init_if_needed`, бо рахунок законно розморожують удруге — після",
+            "заморозки офіцером. Повторне створення нічого не переписує: що саме",
+            "пишеться, вирішує `updated_at`, а не наявність акаунта."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "velocityCounter",
+          "docs": [
+            "Так само `init_if_needed` — і **жодне поле лічильника тут не пишеться**,",
+            "крім `bump`. Скидання вікна операційним ключем зняло б ліміт за період",
+            "рутинною дією, тобто дало б повноваження, якого в масці делегації немає",
+            "й не може бути (FR-035a)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  108,
+                  111,
+                  99,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Операційний ключ платформи або уповноважений учасник складу."
+          ],
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "thawHolderArgs"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
+    {
+      "name": "holderStatus",
+      "discriminator": [
+        67,
+        242,
+        217,
+        54,
+        237,
+        58,
+        108,
+        127
+      ]
+    },
     {
       "name": "issuerConfig",
       "discriminator": [
@@ -1090,6 +1968,19 @@ export const IDL: IssuerForge = {
         51,
         117,
         101
+      ]
+    },
+    {
+      "name": "velocityCounter",
+      "discriminator": [
+        155,
+        85,
+        56,
+        107,
+        143,
+        157,
+        165,
+        171
       ]
     }
   ],
@@ -1258,9 +2149,175 @@ export const IDL: IssuerForge = {
       "code": 6032,
       "name": "quorumNotReached",
       "msg": "action did not reach the issuer's quorum"
+    },
+    {
+      "code": 6033,
+      "name": "powerNotDelegated",
+      "msg": "this power is not delegated to the operational key"
+    },
+    {
+      "code": 6034,
+      "name": "notAnOperatorOrOfficer",
+      "msg": "signer is neither the operational key nor an officer of this issuer"
+    },
+    {
+      "code": 6035,
+      "name": "holderJurisdictionInvalid",
+      "msg": "jurisdiction must be an upper-case ISO 3166-1 alpha-2 code"
+    },
+    {
+      "code": 6036,
+      "name": "holderStatusAlreadyExpired",
+      "msg": "a status that is already expired when written would read as absent"
+    },
+    {
+      "code": 6037,
+      "name": "holderStatusRequired",
+      "msg": "the first thaw must carry the holder status"
+    },
+    {
+      "code": 6038,
+      "name": "holderStatusAlreadySet",
+      "msg": "this holder already has a status; change it with set_holder_status"
+    },
+    {
+      "code": 6039,
+      "name": "holderAccountMismatch",
+      "msg": "token account does not belong to this mint or to this wallet"
     }
   ],
   "types": [
+    {
+      "name": "holderStatus",
+      "docs": [
+        "Статус адреси у власному реєстрі емітента. PDA: `[\"holder\", mint, wallet]`.",
+        "",
+        "Це **одне з двох** джерел статусу (FR-008a); друге — атестація провайдера,",
+        "яку хук читає напряму зі спільного сервісу атестацій (спайк T057).",
+        "",
+        "**Двох полів із `docs/PLAN.md` тут немає, і це свідомо:**",
+        "- `source` (issuer/provider) був потрібен, поки статус провайдера планували",
+        "дзеркалити сюди. T057 закрив це питання інакше — атестація читається",
+        "напряму, — тож поле означало б «джерело цього запису в реєстрі емітента",
+        "не емітент», чого не буває.",
+        "- `thawed` був би другим джерелом правди про стан, який авторитетно тримає",
+        "сам токен-акаунт (`DefaultAccountState`, `freeze_account`). Офіцер може",
+        "заморозити рахунок (T026), не торкаючись цього акаунта, і прапорець тут",
+        "одразу став би брехнею. Черга на розморожування (FR-008b2) живе офчейн.",
+        "",
+        "Через це `flags` звівся до одного значення й лишився `bool`: бітмаска на",
+        "один біт — це маска, яку читають, звіряючись із коментарем."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "Обидва поля дублюють seeds навмисно: консоль і індексатор шукають",
+              "холдерів через `getProgramAccounts` із фільтром за mint, а зробити такий",
+              "фільтр по seeds неможливо."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "tier",
+            "docs": [
+              "Рівень верифікації, як його присвоїв емітент."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "jurisdiction",
+            "docs": [
+              "Код ISO 3166-1 alpha-2 у верхньому регістрі."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "denied",
+            "docs": [
+              "Заборона емітента. Діє **незалежно** від того, чи приймає політика це",
+              "джерело (FR-008a1): власний реєстр звужує коло, дозволене провайдером, і",
+              "ніколи його не розширює."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "Строк придатності запису, unix-секунди. **Нуль означає «без строку»**, а",
+              "не «протерміновано»: запис без строку — дійсний стан реєстру, і саме він",
+              "відрізняє реєстр від атестації, яка строк має завжди."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "updatedAt",
+            "docs": [
+              "Коли запис востаннє писали.",
+              "",
+              "Не декорація: **нуль тут означає «запису ще не було»**. Свіжостворений",
+              "акаунт весь нульовий, а жоден справжній запис не має нульового часу",
+              "блоку, тож `thaw_holder` за цим полем відрізняє перше розморожування від",
+              "повторного — і не переписує статус, якого йому не доручали писати."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "holderStatusInput",
+      "docs": [
+        "Значення статусу, які приносить інструкція.",
+        "",
+        "Окремий тип від акаунта: в акаунті є ще й `mint`, `wallet`, `bump` і",
+        "`updated_at`, і жодне з них клієнт не задає."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tier",
+            "type": "u8"
+          },
+          {
+            "name": "jurisdiction",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "denied",
+            "type": "bool"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "Нуль — без строку."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "initializeIssuerArgs",
       "type": {
@@ -1526,6 +2583,26 @@ export const IDL: IssuerForge = {
       }
     },
     {
+      "name": "setHolderStatusArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "holderStatusInput"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "setPolicyArgs",
       "type": {
         "kind": "struct",
@@ -1548,6 +2625,40 @@ export const IDL: IssuerForge = {
               "читабельним для клієнта. Довжину перевіряє програма."
             ],
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "thawHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "docs": [
+              "Власник рахунку. Мусить збігтися з `owner` токен-акаунта — інакше",
+              "статус ліг би за адресою, якої переказ ніколи не прочитає."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Початковий статус — тільки для **першого** розморожування.",
+              "",
+              "`None` означає «запис уже є, я його не чіпаю»: так виглядає повторне",
+              "розморожування після заморозки офіцером (T026). Розбіжність між",
+              "наміром і станом акаунта відхиляється, а не тлумачиться, тож жоден",
+              "виклик не змінює статусу мовчки."
+            ],
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "holderStatusInput"
+                }
+              }
+            }
           }
         ]
       }
@@ -1642,6 +2753,37 @@ export const IDL: IssuerForge = {
               "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
             ],
             "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "velocityCounter",
+      "docs": [
+        "Лічильник ліміту за період. PDA: `[\"velocity\", mint, wallet]`.",
+        "",
+        "`mint` і `wallet` тут **не** дублюються, на відміну від `HolderStatus`:",
+        "лічильник читає тільки хук, за виведеною адресою, і жодного сканування за",
+        "фільтром по ньому не буває. Зайві 64 байти на кожного холдера — це оренда,",
+        "яку платить емітент."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "windowStart",
+            "docs": [
+              "Початок поточного вікна. Нуль означає, що вікна ще не було."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "spentInWindow",
+            "type": "u64"
           },
           {
             "name": "bump",
