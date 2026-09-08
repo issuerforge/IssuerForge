@@ -19,6 +19,115 @@ export type IssuerForge = {
   },
   "instructions": [
     {
+      "name": "attestReserve",
+      "docs": [
+        "Публікує атестацію резерву (FR-021, FR-024, FR-026).",
+        "",
+        "Підписує рівно чинний атестатор цього токена: атестація нічого не",
+        "дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує",
+        "кворуму. Запис append-only — переписати його нічим."
+      ],
+      "discriminator": [
+        67,
+        148,
+        114,
+        40,
+        247,
+        214,
+        157,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "Наступний запис у послідовності. Індекс береться з лічильника, а не від",
+            "клієнта: `init` за такою адресою неможливий двічі, тож пропустити номер",
+            "або переписати попередній запис нічим."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  101,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "account",
+                "path": "token_config.attestation_count",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestor",
+          "docs": [
+            "Чинний атестатор резерву цього токена."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Оренду платить хто завгодно: платіж не є повноваженням."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "attestReserveArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "execute",
       "docs": [
         "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
@@ -761,6 +870,19 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "reserveAttestation",
+      "discriminator": [
+        105,
+        212,
+        95,
+        216,
+        140,
+        42,
+        205,
+        75
+      ]
+    },
+    {
       "name": "tokenConfig",
       "discriminator": [
         92,
@@ -987,9 +1109,77 @@ export type IssuerForge = {
       "code": 6039,
       "name": "holderAccountMismatch",
       "msg": "token account does not belong to this mint or to this wallet"
+    },
+    {
+      "code": 6040,
+      "name": "notTheAttestor",
+      "msg": "signer is not the current reserve attestor of this token"
+    },
+    {
+      "code": 6041,
+      "name": "reserveCurrencyInvalid",
+      "msg": "currency must be 3 to 8 upper-case letters, zero padded"
+    },
+    {
+      "code": 6042,
+      "name": "reserveCurrencyMismatch",
+      "msg": "attestation currency is not the currency of this token"
+    },
+    {
+      "code": 6043,
+      "name": "attestationInTheFuture",
+      "msg": "an attestation cannot be dated in the future"
+    },
+    {
+      "code": 6044,
+      "name": "reserveAttestationExpired",
+      "msg": "the reserve attestation is older than this token allows"
+    },
+    {
+      "code": 6045,
+      "name": "reserveInsufficient",
+      "msg": "issuing this amount would put supply over the attested reserve"
+    },
+    {
+      "code": 6046,
+      "name": "attestationNotLatest",
+      "msg": "reserve check must read the latest attestation"
     }
   ],
   "types": [
+    {
+      "name": "attestReserveArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Підтверджена сума в найменшій одиниці валюти резерву."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "currency",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "attestedAt",
+            "docs": [
+              "Момент, якого стосується підтвердження. Не «зараз»: атестатор",
+              "підтверджує стан рахунку на певний час, і саме від нього рахується строк",
+              "придатності (FR-023)."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "holderStatus",
       "docs": [
@@ -1367,6 +1557,77 @@ export type IssuerForge = {
       }
     },
     {
+      "name": "reserveAttestation",
+      "docs": [
+        "Атестація резерву. PDA: `[\"reserve\", mint, index]`, індекс — `u64` LE.",
+        "",
+        "**Append-only, і це властивість адреси, а не перевірки** (FR-026): кожен",
+        "індекс — власний PDA, створений через `init`, тож переписати запис нічим.",
+        "Інструкції, яка б відкрила попередню атестацію на запис, у програмі немає, і",
+        "заміна атестатора (FR-024a) історії не чіпає — вона змінює те, хто підпише",
+        "**наступну**.",
+        "",
+        "**`expires_at` тут немає, попри `docs/PLAN.md`.** Строк придатності задається",
+        "при випуску й змінюється кворумом (FR-023b), тобто живе в",
+        "`TokenConfig.attestation_max_age`. Знімок цього строку в кожному записі був би",
+        "другою відповіддю на питання «чи протермінована атестація», і при зміні",
+        "строку дві відповіді розійшлися б. Публічна сторінка рахує",
+        "`attested_at + max_age` — так само, як програма."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "docs": [
+              "Позиція в послідовності. Індекс і є історія: він адресує «попередню",
+              "атестацію», а не змушує шукати її перебором."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Підтверджена сума в найменшій одиниці **валюти резерву** — вона ж",
+              "найменша одиниця токена, бо `currency` мусить збігтися з валютою токена",
+              "(`TokenConfig.reserve_currency`). Без цієї рівності порівняння «емісія +",
+              "обіг ≤ атестованого» вимагало б курсу, якого в програмі немає й не буде."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "currency",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "attestor",
+            "docs": [
+              "Хто підписав. Лишається в записі назавжди: після заміни атестатора",
+              "(FR-024a) видно, хто підтверджував резерв тоді."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestedAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "ruleSlot",
       "docs": [
         "Один слот правила, як він лежить в акаунті."
@@ -1573,6 +1834,38 @@ export type IssuerForge = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "attestationCount",
+            "docs": [
+              "Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.",
+              "",
+              "Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,",
+              "який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**",
+              "атестація остання. Старіша атестація з більшою сумою — це емісія понад",
+              "резерв, і без лічильника її нічим відрізнити від свіжої.",
+              "",
+              "Дописане в кінець структури: зсуви `credential`, `schema` й",
+              "`policy_version` зашиті в `address_config` кожного створеного",
+              "`ExtraAccountMetaList` і не мають рухатись ніколи."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveCurrency",
+            "docs": [
+              "Валюта резерву, вона ж валюта самого токена.",
+              "",
+              "Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює",
+              "два числа, і якби вони були в різних валютах, порівняння вимагало б",
+              "курсу — а курсу в програмі немає й не буде."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           }
         ]
       }
@@ -1632,6 +1925,115 @@ export const IDL: IssuerForge = {
   },
   "instructions": [
     {
+      "name": "attestReserve",
+      "docs": [
+        "Публікує атестацію резерву (FR-021, FR-024, FR-026).",
+        "",
+        "Підписує рівно чинний атестатор цього токена: атестація нічого не",
+        "дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує",
+        "кворуму. Запис append-only — переписати його нічим."
+      ],
+      "discriminator": [
+        67,
+        148,
+        114,
+        40,
+        247,
+        214,
+        157,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "Наступний запис у послідовності. Індекс береться з лічильника, а не від",
+            "клієнта: `init` за такою адресою неможливий двічі, тож пропустити номер",
+            "або переписати попередній запис нічим."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  101,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "account",
+                "path": "token_config.attestation_count",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestor",
+          "docs": [
+            "Чинний атестатор резерву цього токена."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Оренду платить хто завгодно: платіж не є повноваженням."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "attestReserveArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "execute",
       "docs": [
         "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
@@ -2374,6 +2776,19 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "reserveAttestation",
+      "discriminator": [
+        105,
+        212,
+        95,
+        216,
+        140,
+        42,
+        205,
+        75
+      ]
+    },
+    {
       "name": "tokenConfig",
       "discriminator": [
         92,
@@ -2600,9 +3015,77 @@ export const IDL: IssuerForge = {
       "code": 6039,
       "name": "holderAccountMismatch",
       "msg": "token account does not belong to this mint or to this wallet"
+    },
+    {
+      "code": 6040,
+      "name": "notTheAttestor",
+      "msg": "signer is not the current reserve attestor of this token"
+    },
+    {
+      "code": 6041,
+      "name": "reserveCurrencyInvalid",
+      "msg": "currency must be 3 to 8 upper-case letters, zero padded"
+    },
+    {
+      "code": 6042,
+      "name": "reserveCurrencyMismatch",
+      "msg": "attestation currency is not the currency of this token"
+    },
+    {
+      "code": 6043,
+      "name": "attestationInTheFuture",
+      "msg": "an attestation cannot be dated in the future"
+    },
+    {
+      "code": 6044,
+      "name": "reserveAttestationExpired",
+      "msg": "the reserve attestation is older than this token allows"
+    },
+    {
+      "code": 6045,
+      "name": "reserveInsufficient",
+      "msg": "issuing this amount would put supply over the attested reserve"
+    },
+    {
+      "code": 6046,
+      "name": "attestationNotLatest",
+      "msg": "reserve check must read the latest attestation"
     }
   ],
   "types": [
+    {
+      "name": "attestReserveArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Підтверджена сума в найменшій одиниці валюти резерву."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "currency",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "attestedAt",
+            "docs": [
+              "Момент, якого стосується підтвердження. Не «зараз»: атестатор",
+              "підтверджує стан рахунку на певний час, і саме від нього рахується строк",
+              "придатності (FR-023)."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "holderStatus",
       "docs": [
@@ -2980,6 +3463,77 @@ export const IDL: IssuerForge = {
       }
     },
     {
+      "name": "reserveAttestation",
+      "docs": [
+        "Атестація резерву. PDA: `[\"reserve\", mint, index]`, індекс — `u64` LE.",
+        "",
+        "**Append-only, і це властивість адреси, а не перевірки** (FR-026): кожен",
+        "індекс — власний PDA, створений через `init`, тож переписати запис нічим.",
+        "Інструкції, яка б відкрила попередню атестацію на запис, у програмі немає, і",
+        "заміна атестатора (FR-024a) історії не чіпає — вона змінює те, хто підпише",
+        "**наступну**.",
+        "",
+        "**`expires_at` тут немає, попри `docs/PLAN.md`.** Строк придатності задається",
+        "при випуску й змінюється кворумом (FR-023b), тобто живе в",
+        "`TokenConfig.attestation_max_age`. Знімок цього строку в кожному записі був би",
+        "другою відповіддю на питання «чи протермінована атестація», і при зміні",
+        "строку дві відповіді розійшлися б. Публічна сторінка рахує",
+        "`attested_at + max_age` — так само, як програма."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "docs": [
+              "Позиція в послідовності. Індекс і є історія: він адресує «попередню",
+              "атестацію», а не змушує шукати її перебором."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Підтверджена сума в найменшій одиниці **валюти резерву** — вона ж",
+              "найменша одиниця токена, бо `currency` мусить збігтися з валютою токена",
+              "(`TokenConfig.reserve_currency`). Без цієї рівності порівняння «емісія +",
+              "обіг ≤ атестованого» вимагало б курсу, якого в програмі немає й не буде."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "currency",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "attestor",
+            "docs": [
+              "Хто підписав. Лишається в записі назавжди: після заміни атестатора",
+              "(FR-024a) видно, хто підтверджував резерв тоді."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestedAt",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "ruleSlot",
       "docs": [
         "Один слот правила, як він лежить в акаунті."
@@ -3186,6 +3740,38 @@ export const IDL: IssuerForge = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "attestationCount",
+            "docs": [
+              "Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.",
+              "",
+              "Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,",
+              "який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**",
+              "атестація остання. Старіша атестація з більшою сумою — це емісія понад",
+              "резерв, і без лічильника її нічим відрізнити від свіжої.",
+              "",
+              "Дописане в кінець структури: зсуви `credential`, `schema` й",
+              "`policy_version` зашиті в `address_config` кожного створеного",
+              "`ExtraAccountMetaList` і не мають рухатись ніколи."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveCurrency",
+            "docs": [
+              "Валюта резерву, вона ж валюта самого токена.",
+              "",
+              "Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює",
+              "два числа, і якби вони були в різних валютах, порівняння вимагало б",
+              "курсу — а курсу в програмі немає й не буде."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
           }
         ]
       }

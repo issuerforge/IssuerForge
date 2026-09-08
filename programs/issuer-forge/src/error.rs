@@ -121,6 +121,20 @@ pub enum ForgeError {
     HolderStatusAlreadySet,
     #[msg("token account does not belong to this mint or to this wallet")]
     HolderAccountMismatch,
+    #[msg("signer is not the current reserve attestor of this token")]
+    NotTheAttestor,
+    #[msg("currency must be 3 to 8 upper-case letters, zero padded")]
+    ReserveCurrencyInvalid,
+    #[msg("attestation currency is not the currency of this token")]
+    ReserveCurrencyMismatch,
+    #[msg("an attestation cannot be dated in the future")]
+    AttestationInTheFuture,
+    #[msg("the reserve attestation is older than this token allows")]
+    ReserveAttestationExpired,
+    #[msg("issuing this amount would put supply over the attested reserve")]
+    ReserveInsufficient,
+    #[msg("reserve check must read the latest attestation")]
+    AttestationNotLatest,
 }
 
 /// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+12`.
@@ -191,6 +205,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::HolderAccountMismatch),
             VALIDATION_ERROR_BASE + 26
+        );
+        // Перший і останній із доданих T055.
+        assert_eq!(
+            u32::from(ForgeError::NotTheAttestor),
+            VALIDATION_ERROR_BASE + 27
+        );
+        assert_eq!(
+            u32::from(ForgeError::AttestationNotLatest),
+            VALIDATION_ERROR_BASE + 33
         );
     }
 }

@@ -24,6 +24,9 @@ pub const HOLDER_SEED: &[u8] = b"holder";
 /// `["velocity", mint, wallet]` — лічильник ліміту за період.
 pub const VELOCITY_SEED: &[u8] = b"velocity";
 
+/// `["reserve", mint, index]` — append-only атестація резерву, індекс `u64` LE.
+pub const RESERVE_SEED: &[u8] = b"reserve";
+
 /// Номер першої версії політики. Її пише `create_token`; `set_policy` починає з
 /// другої, тому нуль тут означає «токена ще немає», а не «політика порожня».
 pub const FIRST_POLICY_VERSION: u32 = 1;

@@ -14,6 +14,7 @@ pub mod error;
 pub mod hook;
 pub mod instructions;
 pub mod quorum;
+pub mod reserve;
 pub mod rules;
 pub mod state;
 
@@ -71,6 +72,15 @@ pub mod issuer_forge {
         args: SetHolderStatusArgs,
     ) -> Result<()> {
         instructions::thaw_holder::set_status_handler(ctx, args)
+    }
+
+    /// Публікує атестацію резерву (FR-021, FR-024, FR-026).
+    ///
+    /// Підписує рівно чинний атестатор цього токена: атестація нічого не
+    /// дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує
+    /// кворуму. Запис append-only — переписати його нічим.
+    pub fn attest_reserve(ctx: Context<AttestReserve>, args: AttestReserveArgs) -> Result<()> {
+        instructions::attest_reserve::handler(ctx, args)
     }
 
     /// Створює `ExtraAccountMetaList` — перелік акаунтів, які токен-програма

@@ -1,3 +1,4 @@
+pub mod attest_reserve;
 pub mod initialize_issuer;
 pub mod set_policy;
 pub mod thaw_holder;
@@ -6,6 +7,7 @@ pub mod thaw_holder;
 // `__client_accounts_*`, які генерує `#[derive(Accounts)]`. Щоб два `handler`
 // не стали неоднозначним ім'ям, самі хендлери оголошені `pub(crate)` — глоб їх
 // не бачить, а `lib.rs` кличе їх повним шляхом усередині крейта.
+pub use attest_reserve::*;
 pub use initialize_issuer::*;
 pub use set_policy::*;
 pub use thaw_holder::*;

@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::state::reserve::CURRENCY_BYTES;
+
 /// Конфігурація випущеного токена. PDA: `["token", mint]`.
 ///
 /// **Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт
@@ -42,6 +44,23 @@ pub struct TokenConfig {
     /// Авторитетним лишається розширення `Pausable` на самому mint (FR-016).
     pub paused_at: i64,
     pub bump: u8,
+    /// Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.
+    ///
+    /// Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,
+    /// який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**
+    /// атестація остання. Старіша атестація з більшою сумою — це емісія понад
+    /// резерв, і без лічильника її нічим відрізнити від свіжої.
+    ///
+    /// Дописане в кінець структури: зсуви `credential`, `schema` й
+    /// `policy_version` зашиті в `address_config` кожного створеного
+    /// `ExtraAccountMetaList` і не мають рухатись ніколи.
+    pub attestation_count: u64,
+    /// Валюта резерву, вона ж валюта самого токена.
+    ///
+    /// Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює
+    /// два числа, і якби вони були в різних валютах, порівняння вимагало б
+    /// курсу — а курсу в програмі немає й не буде.
+    pub reserve_currency: [u8; CURRENCY_BYTES],
 }
 
 /// Зсув `attestation_credential` від початку акаунта, з дискримінатором Anchor.
@@ -68,6 +87,10 @@ mod tests {
     use super::*;
     use anchor_lang::AccountSerialize;
 
+    use crate::state::reserve::currency_bytes;
+
+    const NGN_CURRENCY: [u8; CURRENCY_BYTES] = currency_bytes(b"NGN");
+
     fn sample() -> TokenConfig {
         TokenConfig {
             issuer: Pubkey::new_from_array([1u8; 32]),
@@ -81,6 +104,8 @@ mod tests {
             attestation_max_age: 86_400,
             paused_at: 0,
             bump: 254,
+            attestation_count: 0,
+            reserve_currency: NGN_CURRENCY,
         }
     }
 
