@@ -78,10 +78,10 @@ pub struct ThawHolder<'info> {
     )]
     pub holder_status: Account<'info, HolderStatus>,
 
-    /// Так само `init_if_needed` — і **жодне поле лічильника тут не пишеться**,
-    /// крім `bump`. Скидання вікна операційним ключем зняло б ліміт за період
-    /// рутинною дією, тобто дало б повноваження, якого в масці делегації немає
-    /// й не може бути (FR-035a).
+    /// Так само `init_if_needed` — і **жодне значення вікна тут не пишеться**,
+    /// тільки власна ідентичність акаунта. Скидання вікна операційним ключем
+    /// зняло б ліміт за період рутинною дією, тобто дало б повноваження, якого
+    /// в масці делегації немає й не може бути (FR-035a).
     #[account(
         init_if_needed,
         payer = payer,
@@ -127,9 +127,13 @@ pub(crate) fn thaw_handler(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Re
         (true, Some(_)) => return err!(ForgeError::HolderStatusAlreadySet),
     }
 
-    // Лічильник: тільки `bump`. Значення вікна лишаються такими, як їх лишив
-    // останній переказ.
-    ctx.accounts.velocity_counter.bump = ctx.bumps.velocity_counter;
+    // Лічильник: тільки його власна ідентичність. Значення вікна лишаються
+    // такими, як їх лишив останній переказ, — і саме тому вони тут не
+    // згадуються.
+    let counter = &mut ctx.accounts.velocity_counter;
+    counter.mint = ctx.accounts.token_config.mint;
+    counter.wallet = args.wallet;
+    counter.bump = ctx.bumps.velocity_counter;
 
     // Заморожений рахунок — стан за замовчуванням (`DefaultAccountState`), але
     // повторне розморожування вже розмороженого відхилила б токен-програма, а

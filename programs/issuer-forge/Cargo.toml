@@ -26,6 +26,9 @@ anchor-spl = { version = "0.32.1", features = ["token_2022"] }
 spl-transfer-hook-interface = "=0.10.0"
 spl-tlv-account-resolution = "=0.10.0"
 spl-pod = "=0.5.1"
+# Дискримінатор інструкції `Execute` задає інтерфейс, а не Anchor. Версія та, що
+# вже в дереві через spl-transfer-hook-interface 0.10.0.
+spl-discriminator = "=0.4.1"
 # Правила читаються з акаунта на кожному переказі — zero_copy без алокацій.
 bytemuck = { version = "1.25", features = ["derive"] }
 # sha256 для `rules_hash`. Окремою залежністю, бо anchor-lang 0.32.1 не

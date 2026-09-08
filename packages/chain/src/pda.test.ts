@@ -49,9 +49,17 @@ describe('числові seeds', () => {
 describe('мітки seeds', () => {
   // Єдина мітка, яку сьогодні можна звірити з програмою, а не з власною
   // константою: `initialize_issuer` оголошує свій PDA прямо в IDL.
+  //
+  // Інструкція шукається **за іменем**, а не за індексом: Anchor упорядковує
+  // перелік сам, і нова інструкція зсуває його — так цей тест уже раз падав на
+  // `execute`, у якої першим акаунтом стоїть токен-акаунт без PDA.
   it('`issuer` збігається з тим, що оголошує IDL', () => {
-    const declared = IDL.instructions[0].accounts[0].pda.seeds[0].value
-    expect(SEED.issuer).toEqual(Uint8Array.from(declared))
+    const instruction = IDL.instructions.find((ix) => ix.name === 'initializeIssuer')
+    const account = instruction?.accounts.find((a) => a.name === 'issuerConfig')
+    const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
+    expect(declared && 'value' in declared ? Uint8Array.from(declared.value) : undefined).toEqual(
+      SEED.issuer,
+    )
   })
 
   it('решта міток — рівно те, що каже таблиця PLAN.md', () => {

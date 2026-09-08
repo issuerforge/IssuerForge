@@ -54,6 +54,15 @@ pub const TOKEN_CONFIG_CREDENTIAL_OFFSET: u8 = 8 + 32 + 32;
 /// Зсув `attestation_schema`.
 pub const TOKEN_CONFIG_SCHEMA_OFFSET: u8 = TOKEN_CONFIG_CREDENTIAL_OFFSET + 32;
 
+/// Зсув `policy_version`.
+///
+/// Теж адресується з seeds: `PolicyConfig` живе за `["policy", mint, version]`, і
+/// хук мусить дістати чинну версію з даних цього акаунта, а не отримати її
+/// числом від клієнта. Ті самі два обмеження, що й вище: до 256 байтів і без
+/// вставок перед цим полем.
+/// Три ключі: сама `attestation_schema`, за нею `attestor` і `treasury`.
+pub const TOKEN_CONFIG_POLICY_VERSION_OFFSET: u8 = TOKEN_CONFIG_SCHEMA_OFFSET + 32 * 3;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,6 +101,9 @@ mod tests {
 
         assert_eq!(&data[credential..credential + 32], &[3u8; 32]);
         assert_eq!(&data[schema..schema + 32], &[4u8; 32]);
+
+        let version = TOKEN_CONFIG_POLICY_VERSION_OFFSET as usize;
+        assert_eq!(&data[version..version + 4], &7u32.to_le_bytes());
     }
 
     /// Зсув у seed `AccountData` — один байт. Поле за межею 256 байтів
@@ -99,6 +111,7 @@ mod tests {
     #[test]
     fn seed_addressable_fields_stay_in_the_first_256_bytes() {
         assert!(TOKEN_CONFIG_SCHEMA_OFFSET as usize + 32 <= 256);
+        assert!(TOKEN_CONFIG_POLICY_VERSION_OFFSET as usize + 4 <= 256);
     }
 
     #[test]

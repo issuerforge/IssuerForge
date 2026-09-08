@@ -52,13 +52,18 @@ pub struct HolderStatus {
 
 /// Лічильник ліміту за період. PDA: `["velocity", mint, wallet]`.
 ///
-/// `mint` і `wallet` тут **не** дублюються, на відміну від `HolderStatus`:
-/// лічильник читає тільки хук, за виведеною адресою, і жодного сканування за
-/// фільтром по ньому не буває. Зайві 64 байти на кожного холдера — це оренда,
-/// яку платить емітент.
+/// **Виправлення до першої редакції цього файла (T016).** Спершу тут не було
+/// `mint` і `wallet`: лічильник читає лише хук за виведеною адресою, і сканувати
+/// його за фільтром нікому не треба. Аргумент виявився неповним — хук приймає
+/// цей акаунт **нетипізованим** (його відсутність мусить давати наш код відмови,
+/// а не помилку Anchor), тож прив'язати його до холдера можна або цими двома
+/// полями, або `create_program_address`, а той коштує 1500 CU на кожному
+/// переказі (SC-003). Шістдесят чотири байти оренди дешевші за це.
 #[account]
 #[derive(InitSpace)]
 pub struct VelocityCounter {
+    pub mint: Pubkey,
+    pub wallet: Pubkey,
     /// Початок поточного вікна. Нуль означає, що вікна ще не було.
     pub window_start: i64,
     pub spent_in_window: u64,
@@ -268,6 +273,8 @@ mod tests {
     #[test]
     fn the_counter_view_carries_the_window_untouched() {
         let counter = VelocityCounter {
+            mint: Pubkey::default(),
+            wallet: Pubkey::default(),
             window_start: NOW - 10,
             spent_in_window: 42,
             bump: 254,

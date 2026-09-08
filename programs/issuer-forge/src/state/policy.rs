@@ -19,6 +19,14 @@ pub struct PolicyConfig {
     /// Час активації, unix-секунди — половина того, чого вимагає FR-010.
     pub activated_at: i64,
     pub version: u32,
+    /// Mint, чию політику ця версія описує.
+    ///
+    /// Дублює seeds, і це **вимога хука**, а не зручність. Хук читає політику
+    /// через `AccountLoader`, а полів `AccountLoader` не видно в атрибутах
+    /// `#[account(...)]`, тож прив'язати акаунт до mint можна або цим
+    /// порівнянням, або `create_program_address` — а той коштує 1500 CU на
+    /// кожному переказі (SC-003). Тридцять два байти на версію політики дешевші.
+    pub mint: Pubkey,
     /// Хто ініціював зміну — перший підпис із зібраного кворуму.
     ///
     /// Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить
@@ -55,6 +63,7 @@ impl PolicyConfig {
     pub fn write(
         &mut self,
         version: u32,
+        mint: Pubkey,
         author: Pubkey,
         rules: &[u8],
         activated_at: i64,
@@ -68,6 +77,7 @@ impl PolicyConfig {
         layout::validate(slots)?;
 
         self.version = version;
+        self.mint = mint;
         self.author = author;
         self.activated_at = activated_at;
         self.rules.copy_from_slice(slots);
@@ -96,6 +106,7 @@ mod tests {
         PolicyConfig {
             activated_at: 0,
             version: 0,
+            mint: Pubkey::default(),
             author: Pubkey::default(),
             rules: [RuleSlot {
                 kind: 0,
@@ -119,11 +130,13 @@ mod tests {
     fn writes_the_version_its_author_and_the_hash_it_computed() {
         let mut policy = blank();
         let author = Pubkey::new_from_array([7u8; 32]);
+        let mint = Pubkey::new_from_array([8u8; 32]);
         policy
-            .write(2, author, &open_rules(), 1_800_000_000, 254)
+            .write(2, mint, author, &open_rules(), 1_800_000_000, 254)
             .expect("writes");
 
         assert_eq!(policy.version, 2);
+        assert_eq!(policy.mint, mint);
         assert_eq!(policy.author, author);
         assert_eq!(policy.activated_at, 1_800_000_000);
         assert_eq!(policy.bump, 254);
@@ -134,7 +147,7 @@ mod tests {
     fn refuses_rules_that_are_not_the_size_of_the_field() {
         let mut policy = blank();
         assert_eq!(
-            err(policy.write(2, Pubkey::default(), &[0u8; 10], 0, 254)),
+            err(policy.write(2, Pubkey::default(), Pubkey::default(), &[0u8; 10], 0, 254)),
             u32::from(ForgeError::PolicyRulesNotCanonical)
         );
     }
@@ -147,7 +160,7 @@ mod tests {
         rules[1] = 1; // ненульовий зарезервований байт
         let mut policy = blank();
         assert_eq!(
-            err(policy.write(2, Pubkey::default(), &rules, 0, 254)),
+            err(policy.write(2, Pubkey::default(), Pubkey::default(), &rules, 0, 254)),
             u32::from(ForgeError::PolicyRulesNotCanonical)
         );
         assert_eq!(policy.version, 0);
@@ -156,7 +169,7 @@ mod tests {
     /// Розмір акаунта — частина рахунку за оренду в кожній версії політики.
     #[test]
     fn the_account_has_no_hidden_padding() {
-        assert_eq!(std::mem::size_of::<PolicyConfig>(), 464);
-        assert_eq!(POLICY_CONFIG_LEN, 472);
+        assert_eq!(std::mem::size_of::<PolicyConfig>(), 496);
+        assert_eq!(POLICY_CONFIG_LEN, 504);
     }
 }

@@ -5,15 +5,19 @@
 // Програма одна на всіх емітентів (docs/PLAN.md → «Архітектура»): під емітента
 // деплою немає, є набір PDA. Саме це робить FR-003 можливим.
 use anchor_lang::prelude::*;
+use spl_discriminator::SplDiscriminate;
+use spl_transfer_hook_interface::instruction::ExecuteInstruction;
 
 pub mod authority;
 pub mod constants;
 pub mod error;
+pub mod hook;
 pub mod instructions;
 pub mod quorum;
 pub mod rules;
 pub mod state;
 
+use hook::*;
 use instructions::*;
 
 declare_id!("ForgePo1icy11111111111111111111111111111111");
@@ -67,5 +71,28 @@ pub mod issuer_forge {
         args: SetHolderStatusArgs,
     ) -> Result<()> {
         instructions::thaw_holder::set_status_handler(ctx, args)
+    }
+
+    /// Створює `ExtraAccountMetaList` — перелік акаунтів, які токен-програма
+    /// підкладатиме хуку на кожному переказі (FR-012).
+    ///
+    /// Окремою інструкцією від випуску: перелік належить інтерфейсу хука, а не
+    /// mint. Клієнт кладе обидві в одну транзакцію.
+    pub fn initialize_extra_account_meta_list(
+        ctx: Context<InitializeExtraAccountMetaList>,
+    ) -> Result<()> {
+        hook::extra_accounts::handler(ctx)
+    }
+
+    /// Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,
+    /// FR-012).
+    ///
+    /// Дискримінатор заданий явно: цю інструкцію кличе токен-програма за
+    /// інтерфейсом `spl-transfer-hook-interface`, а не клієнт за іменем, тож
+    /// вісім байтів мусять бути ті, що в інтерфейсі, а не ті, що Anchor вивів би
+    /// з назви.
+    #[instruction(discriminator = ExecuteInstruction::SPL_DISCRIMINATOR_SLICE)]
+    pub fn execute(ctx: Context<Execute>, amount: u64) -> Result<()> {
+        hook::execute::handler(ctx, amount)
     }
 }

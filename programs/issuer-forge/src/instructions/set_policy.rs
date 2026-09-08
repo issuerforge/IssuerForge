@@ -95,7 +95,14 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
 
     {
         let mut policy = ctx.accounts.policy_config.load_init()?;
-        policy.write(args.version, author, &args.rules, now, bump)?;
+        policy.write(
+            args.version,
+            ctx.accounts.token_config.mint,
+            author,
+            &args.rules,
+            now,
+            bump,
+        )?;
     }
 
     // Остання дія: до цього рядка чинною лишається попередня версія, тож
