@@ -1,5 +1,12 @@
-import { hookRefusalCodes, REFUSAL_CODES, type RefusalCode } from '@forge/shared/refusal'
+import { readdirSync, readFileSync } from 'node:fs'
+import {
+  hookRefusalCodes,
+  REFUSAL_CODES,
+  type RefusalCode,
+  refusalCodeSchema,
+} from '@forge/shared/refusal'
 import { describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import {
   evaluateTransfer,
   implementedRefusalCodes,
@@ -12,6 +19,7 @@ import {
   type TransferVerdict,
   transferContextSchema,
 } from './evaluate.ts'
+import { decodeRules, encodeRules, PolicyLayoutError, toHex } from './layout.ts'
 import { MAX_ATTESTATION_AGE_SECONDS, type PolicyRules, policyRulesSchema } from './model.ts'
 
 /** Фіксований час блоку: результат оцінювача не має залежати від годинника. */
@@ -413,4 +421,107 @@ describe('the context it accepts', () => {
     const ctx = context({ sender: aged, recipient: aged })
     expect(verdict(rules, ctx)).toBeNull()
   })
+})
+
+// ─── Диференційні фікстури (SC-008, T019) ────────────────────────────────────
+
+/**
+ * Спільні фікстури `fixtures/rules/`. Цей файл — **одна з двох** сторін звірки;
+ * друга — `programs/issuer-forge/tests/rules.rs`, і вона читає ті самі файли.
+ *
+ * **Очікуваний вердикт у фікстурі написаний рукою з вимоги, а не знятий із
+ * реалізації.** Через це тест ловить не тільки розходження двох реалізацій, а й
+ * згоду обох на неправильному: фікстура є специфікацією моделі, а не знімком її
+ * поведінки. Ціна — кожен новий сценарій треба продумати, а не згенерувати.
+ *
+ * Політика лежить у фікстурі **двічі**: структурою (щоб її можна було прочитати
+ * очима) і канонічними 384 байтами (бо саме їх читає Rust). Тест нижче звіряє,
+ * що це те саме, тож `layout` потрапляє під ту саму звірку безкоштовно.
+ */
+const FIXTURE_DIR = new URL('../../../fixtures/rules/', import.meta.url)
+
+const fixtureSchema = z.object({
+  name: z.string(),
+  why: z.string().min(1),
+  /** Немає у фікстурі, якої модель TS не виражає, — див. `tsDecodeThrows`. */
+  policy: z.unknown().optional(),
+  rules: z.string().regex(/^[0-9a-f]+$/),
+  context: z.unknown(),
+  expect: z.union([z.literal('ALLOWED'), refusalCodeSchema]),
+  /**
+   * Байти, які `decodeRules` відхиляє. Такі фікстури існують: хук повертає
+   * `UNKNOWN_RULE_KIND`, а модель TS невідомого виду правила не виражає взагалі.
+   * Прапорець не є звільненням від перевірки — він її **міняє**: замість
+   * вердикту TS-половина стверджує, що декодування кидає.
+   */
+  tsDecodeThrows: z.boolean().optional(),
+})
+
+type Fixture = z.infer<typeof fixtureSchema>
+
+function loadFixtures(): Fixture[] {
+  const names = readdirSync(FIXTURE_DIR)
+    .filter((file) => file.endsWith('.json'))
+    .sort()
+  return names.map((file) => {
+    const parsed = fixtureSchema.parse(JSON.parse(readFileSync(new URL(file, FIXTURE_DIR), 'utf8')))
+    // Ім'я файла і поле `name` — те саме: інакше повідомлення тесту вказувало б
+    // не на той файл, а це найдорожча дрібниця в диференційному тесті.
+    expect(`${parsed.name}.json`).toBe(file)
+    return parsed
+  })
+}
+
+const fromHex = (hex: string): Uint8Array =>
+  Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16))
+
+const FIXTURES = loadFixtures()
+
+describe('диференційні фікстури', () => {
+  it('їх достатньо, і кожна названа один раз', () => {
+    // SC-008 просить ≥15 сценаріїв. Число тут — не стеля, а підлога.
+    expect(FIXTURES.length).toBeGreaterThanOrEqual(15)
+    expect(new Set(FIXTURES.map((f) => f.name)).size).toBe(FIXTURES.length)
+  })
+
+  /**
+   * Набір повний тоді, коли кожен код, який цей модуль **уміє** повернути,
+   * має свій сценарій. Перелік береться з таблиці перевірок, а не з другого
+   * списку тут: код, дописаний у модель без фікстури, падає цим тестом.
+   */
+  it('покривають кожен код відмови, який оцінювач уміє повернути', () => {
+    const covered = new Set(FIXTURES.map((f) => f.expect))
+    expect(implementedRefusalCodes().filter((code) => !covered.has(code))).toEqual([])
+    // Дозвіл — теж вердикт, і без нього набір складався б із самих відмов.
+    expect(covered.has('ALLOWED')).toBe(true)
+    // Код, якого TS не виражає, теж мусить бути покритий — з іншого боку.
+    expect(FIXTURES.some((f) => f.expect === 'UNKNOWN_RULE_KIND' && f.tsDecodeThrows)).toBe(true)
+  })
+
+  it.each(FIXTURES.map((f): [string, Fixture] => [f.name, f]))(
+    '%s — байти політики збігаються з її структурою',
+    (_name, fixture) => {
+      if (fixture.tsDecodeThrows) {
+        // Тут перевіряється саме те, що модель цих байтів не приймає: без цього
+        // рядка фікстура була б у наборі, але нічого б не доводила.
+        expect(() => decodeRules(fromHex(fixture.rules))).toThrow(PolicyLayoutError)
+        return
+      }
+      const structured = policyRulesSchema.parse(fixture.policy)
+      expect(toHex(encodeRules(structured))).toBe(fixture.rules)
+      // Круг замикається в обидва боки: байти, які читає Rust, дають ту саму
+      // політику, яку прочитала людина.
+      expect(decodeRules(fromHex(fixture.rules))).toEqual(structured)
+    },
+  )
+
+  it.each(FIXTURES.filter((f) => !f.tsDecodeThrows).map((f): [string, Fixture] => [f.name, f]))(
+    '%s — вердикт збігається з написаним у фікстурі',
+    (_name, fixture) => {
+      const rules = decodeRules(fromHex(fixture.rules))
+      const ctx = transferContextSchema.parse(fixture.context)
+      const result = evaluateTransfer(rules, ctx)
+      expect(result.allowed ? 'ALLOWED' : result.code).toBe(fixture.expect)
+    },
+  )
 })

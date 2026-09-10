@@ -1610,6 +1610,7 @@ dependencies = [
  "bytemuck",
  "mollusk-svm",
  "mollusk-svm-programs-token",
+ "serde_json",
  "solana-account 4.3.2",
  "solana-instruction 3.4.1",
  "solana-pubkey 4.2.1",
