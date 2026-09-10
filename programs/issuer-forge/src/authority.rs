@@ -61,6 +61,7 @@ mod tests {
             operational_key,
             delegation_mask: mask,
             bump: 254,
+            token_count: 0,
         };
         for (slot, (seed, roles)) in members.iter().enumerate() {
             config.members[slot] = Member {

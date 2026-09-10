@@ -128,6 +128,296 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "createToken",
+      "docs": [
+        "Випускає токен: mint із розширеннями, конфігурацію, політику версії 1,",
+        "першу атестацію резерву й початкову емісію — усе однією транзакцією",
+        "(FR-001, FR-005, FR-006, FR-022).",
+        "",
+        "Підписів два — засновник-адміністратор і атестатор. Перший не може",
+        "випустити токен без другого, бо емісія проходить гейт резерву, а гейту",
+        "нічого читати, доки атестації немає; другий не може нічого сам, бо роль",
+        "атестатора несумісна з будь-якою іншою."
+      ],
+      "discriminator": [
+        84,
+        52,
+        204,
+        228,
+        24,
+        140,
+        234,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "founder",
+          "docs": [
+            "Засновник, він же платник оренди.",
+            "",
+            "Об'єднані навмисно: окремий платник — це шістнадцятий акаунт і третій",
+            "підпис, а їх немає куди покласти. Гаманець засновника без SOL платформа",
+            "поповнює перед випуском; у `set_token_metadata` нижче платник знову",
+            "окремий, бо там місце є."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "attestor",
+          "docs": [
+            "Атестатор резерву цього токена. Мусить стояти у складі емітента з роллю",
+            "атестатора, а вона за `initialize_issuer` несумісна з будь-якою іншою."
+          ],
+          "signer": true
+        },
+        {
+          "name": "issuerConfig",
+          "docs": [
+            "`mut`, бо інструкція збільшує лічильник токенів — з нього виведена",
+            "адреса mint."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "нічим: акаунт ще не існує, а `InterfaceAccount<Mint>` вимагав би",
+            "ініціалізованого mint — тобто того, що ця інструкція якраз і робить."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.token_count",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "policyConfig",
+          "docs": [
+            "Політика версії 1. Пишеться тією самою `PolicyConfig::write`, що й усі",
+            "наступні версії: два писці означали б дві перевірки канонічності, з яких",
+            "одна колись відстане."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  1,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "Атестація #0. Індекс у seeds і `init` роблять історію незмінною без",
+            "жодної перевірки з нашого боку (FR-026)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  101,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "founderTokenAccount",
+          "docs": [
+            "повторювати `create_program_address` тут означало б платити за ту саму",
+            "перевірку двічі. Створити його наперед не можна: mint ще не існує."
+          ],
+          "writable": true
+        },
+        {
+          "name": "holderStatus",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "founder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "velocityCounter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  108,
+                  111,
+                  99,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "founder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "createTokenArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "execute",
       "docs": [
         "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
@@ -650,6 +940,110 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "setTokenMetadata",
+      "docs": [
+        "Дописує метадані у сам mint (FR-001).",
+        "",
+        "Окремою транзакцією від випуску: назва, символ і посилання не вміщаються",
+        "в транзакцію, яка вже несе 384 байти політики й 14 акаунтів. Вказівник",
+        "метаданих на mint ставить `create_token`, тож дописувати нікуди більше,",
+        "ніж у сам токен."
+      ],
+      "discriminator": [
+        218,
+        126,
+        122,
+        193,
+        220,
+        149,
+        103,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Хто доплачує оренду за виріслий mint. Повноважень не дає."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Адміністратор складу емітента."
+          ],
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setTokenMetadataArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "thawHolder",
       "docs": [
         "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
@@ -1144,6 +1538,26 @@ export type IssuerForge = {
       "code": 6046,
       "name": "attestationNotLatest",
       "msg": "reserve check must read the latest attestation"
+    },
+    {
+      "code": 6047,
+      "name": "notAnAttestorMember",
+      "msg": "named attestor is not a member of this issuer holding the attestor role"
+    },
+    {
+      "code": 6048,
+      "name": "attestationMaxAgeInvalid",
+      "msg": "attestation lifetime must be positive, or no attestation is ever current"
+    },
+    {
+      "code": 6049,
+      "name": "tokenMetadataTooLong",
+      "msg": "token name, symbol or uri is longer than this program writes"
+    },
+    {
+      "code": 6050,
+      "name": "feeRateOutOfRange",
+      "msg": "fee rate cannot exceed one hundred per cent"
     }
   ],
   "types": [
@@ -1176,6 +1590,103 @@ export type IssuerForge = {
               "придатності (FR-023)."
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTokenArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "attestationCredential",
+            "docs": [
+              "SAS-credential провайдера, атестації якого приймає цей токен, і схема",
+              "тих атестацій. Обидва — незмінні параметри (FR-005): їхні зсуви в",
+              "`TokenConfig` зашиті в `address_config` переліку акаунтів хука."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationSchema",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Скарбниця платформи (FR-038)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBps",
+            "type": "u16"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "Строк придатності атестації резерву, секунди (FR-023b)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reserveCurrency",
+            "docs": [
+              "Валюта резерву, вона ж валюта токена."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Політика версії 1 у канонічній розкладці, рівно `RULES_BYTES` байтів."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "initialSupply",
+            "docs": [
+              "Початкова емісія. Проходить ту саму перевірку резерву, що й `mint`",
+              "(T038): інших шляхів появи токенів у програмі немає."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveAmount",
+            "docs": [
+              "Перша атестація резерву: сума й момент, якого вона стосується. Валюта",
+              "береться з `reserve_currency` — двох валют в одній транзакції не буває."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveAttestedAt",
+            "type": "i64"
+          },
+          {
+            "name": "founderStatus",
+            "docs": [
+              "Статус засновника у власному реєстрі емітента.",
+              "",
+              "Без нього рахунок, на який лягла емісія, не зміг би нічого відправити:",
+              "хук читає статус відправника на кожному переказі й відсутність запису",
+              "вважає відмовою (FR-013)."
+            ],
+            "type": {
+              "defined": {
+                "name": "holderStatusInput"
+              }
+            }
           }
         ]
       }
@@ -1419,6 +1930,23 @@ export type IssuerForge = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "tokenCount",
+            "docs": [
+              "Скільки токенів емітент випустив. Наступний отримає саме цей номер.",
+              "",
+              "Не статистика: номер стоїть у seeds mint (`[\"mint\", issuer_id, index]`),",
+              "тобто це той лічильник, який робить адресу токена виводимою. Через нього",
+              "два одночасні `create_token` того самого емітента конфліктують по",
+              "акаунту — і це правильно: другий побачить уже зайняту адресу, а не",
+              "створить токен-близнюк.",
+              "",
+              "Дописане в кінець структури: `IssuerConfig` створюється до першого",
+              "токена, тож жодні зсуви в ньому нікуди не зашиті, але правило «тільки в",
+              "кінець» дешевше тримати завжди, ніж згадувати, де воно потрібне."
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -1702,6 +2230,26 @@ export type IssuerForge = {
               "читабельним для клієнта. Довжину перевіряє програма."
             ],
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "setTokenMetadataArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "uri",
+            "type": "string"
           }
         ]
       }
@@ -2034,6 +2582,296 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "createToken",
+      "docs": [
+        "Випускає токен: mint із розширеннями, конфігурацію, політику версії 1,",
+        "першу атестацію резерву й початкову емісію — усе однією транзакцією",
+        "(FR-001, FR-005, FR-006, FR-022).",
+        "",
+        "Підписів два — засновник-адміністратор і атестатор. Перший не може",
+        "випустити токен без другого, бо емісія проходить гейт резерву, а гейту",
+        "нічого читати, доки атестації немає; другий не може нічого сам, бо роль",
+        "атестатора несумісна з будь-якою іншою."
+      ],
+      "discriminator": [
+        84,
+        52,
+        204,
+        228,
+        24,
+        140,
+        234,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "founder",
+          "docs": [
+            "Засновник, він же платник оренди.",
+            "",
+            "Об'єднані навмисно: окремий платник — це шістнадцятий акаунт і третій",
+            "підпис, а їх немає куди покласти. Гаманець засновника без SOL платформа",
+            "поповнює перед випуском; у `set_token_metadata` нижче платник знову",
+            "окремий, бо там місце є."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "attestor",
+          "docs": [
+            "Атестатор резерву цього токена. Мусить стояти у складі емітента з роллю",
+            "атестатора, а вона за `initialize_issuer` несумісна з будь-якою іншою."
+          ],
+          "signer": true
+        },
+        {
+          "name": "issuerConfig",
+          "docs": [
+            "`mut`, бо інструкція збільшує лічильник токенів — з нього виведена",
+            "адреса mint."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "нічим: акаунт ще не існує, а `InterfaceAccount<Mint>` вимагав би",
+            "ініціалізованого mint — тобто того, що ця інструкція якраз і робить."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.token_count",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "policyConfig",
+          "docs": [
+            "Політика версії 1. Пишеться тією самою `PolicyConfig::write`, що й усі",
+            "наступні версії: два писці означали б дві перевірки канонічності, з яких",
+            "одна колись відстане."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  1,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "Атестація #0. Індекс у seeds і `init` роблять історію незмінною без",
+            "жодної перевірки з нашого боку (FR-026)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  115,
+                  101,
+                  114,
+                  118,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "founderTokenAccount",
+          "docs": [
+            "повторювати `create_program_address` тут означало б платити за ту саму",
+            "перевірку двічі. Створити його наперед не можна: mint ще не існує."
+          ],
+          "writable": true
+        },
+        {
+          "name": "holderStatus",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "founder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "velocityCounter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  101,
+                  108,
+                  111,
+                  99,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              },
+              {
+                "kind": "account",
+                "path": "founder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "createTokenArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "execute",
       "docs": [
         "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
@@ -2556,6 +3394,110 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "setTokenMetadata",
+      "docs": [
+        "Дописує метадані у сам mint (FR-001).",
+        "",
+        "Окремою транзакцією від випуску: назва, символ і посилання не вміщаються",
+        "в транзакцію, яка вже несе 384 байти політики й 14 акаунтів. Вказівник",
+        "метаданих на mint ставить `create_token`, тож дописувати нікуди більше,",
+        "ніж у сам токен."
+      ],
+      "discriminator": [
+        218,
+        126,
+        122,
+        193,
+        220,
+        149,
+        103,
+        39
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Хто доплачує оренду за виріслий mint. Повноважень не дає."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Адміністратор складу емітента."
+          ],
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setTokenMetadataArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "thawHolder",
       "docs": [
         "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
@@ -3050,6 +3992,26 @@ export const IDL: IssuerForge = {
       "code": 6046,
       "name": "attestationNotLatest",
       "msg": "reserve check must read the latest attestation"
+    },
+    {
+      "code": 6047,
+      "name": "notAnAttestorMember",
+      "msg": "named attestor is not a member of this issuer holding the attestor role"
+    },
+    {
+      "code": 6048,
+      "name": "attestationMaxAgeInvalid",
+      "msg": "attestation lifetime must be positive, or no attestation is ever current"
+    },
+    {
+      "code": 6049,
+      "name": "tokenMetadataTooLong",
+      "msg": "token name, symbol or uri is longer than this program writes"
+    },
+    {
+      "code": 6050,
+      "name": "feeRateOutOfRange",
+      "msg": "fee rate cannot exceed one hundred per cent"
     }
   ],
   "types": [
@@ -3082,6 +4044,103 @@ export const IDL: IssuerForge = {
               "придатності (FR-023)."
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createTokenArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "decimals",
+            "type": "u8"
+          },
+          {
+            "name": "attestationCredential",
+            "docs": [
+              "SAS-credential провайдера, атестації якого приймає цей токен, і схема",
+              "тих атестацій. Обидва — незмінні параметри (FR-005): їхні зсуви в",
+              "`TokenConfig` зашиті в `address_config` переліку акаунтів хука."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationSchema",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "Скарбниця платформи (FR-038)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBps",
+            "type": "u16"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "Строк придатності атестації резерву, секунди (FR-023b)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reserveCurrency",
+            "docs": [
+              "Валюта резерву, вона ж валюта токена."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          },
+          {
+            "name": "rules",
+            "docs": [
+              "Політика версії 1 у канонічній розкладці, рівно `RULES_BYTES` байтів."
+            ],
+            "type": "bytes"
+          },
+          {
+            "name": "initialSupply",
+            "docs": [
+              "Початкова емісія. Проходить ту саму перевірку резерву, що й `mint`",
+              "(T038): інших шляхів появи токенів у програмі немає."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveAmount",
+            "docs": [
+              "Перша атестація резерву: сума й момент, якого вона стосується. Валюта",
+              "береться з `reserve_currency` — двох валют в одній транзакції не буває."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserveAttestedAt",
+            "type": "i64"
+          },
+          {
+            "name": "founderStatus",
+            "docs": [
+              "Статус засновника у власному реєстрі емітента.",
+              "",
+              "Без нього рахунок, на який лягла емісія, не зміг би нічого відправити:",
+              "хук читає статус відправника на кожному переказі й відсутність запису",
+              "вважає відмовою (FR-013)."
+            ],
+            "type": {
+              "defined": {
+                "name": "holderStatusInput"
+              }
+            }
           }
         ]
       }
@@ -3325,6 +4384,23 @@ export const IDL: IssuerForge = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "tokenCount",
+            "docs": [
+              "Скільки токенів емітент випустив. Наступний отримає саме цей номер.",
+              "",
+              "Не статистика: номер стоїть у seeds mint (`[\"mint\", issuer_id, index]`),",
+              "тобто це той лічильник, який робить адресу токена виводимою. Через нього",
+              "два одночасні `create_token` того самого емітента конфліктують по",
+              "акаунту — і це правильно: другий побачить уже зайняту адресу, а не",
+              "створить токен-близнюк.",
+              "",
+              "Дописане в кінець структури: `IssuerConfig` створюється до першого",
+              "токена, тож жодні зсуви в ньому нікуди не зашиті, але правило «тільки в",
+              "кінець» дешевше тримати завжди, ніж згадувати, де воно потрібне."
+            ],
+            "type": "u32"
           }
         ]
       }
@@ -3608,6 +4684,26 @@ export const IDL: IssuerForge = {
               "читабельним для клієнта. Довжину перевіряє програма."
             ],
             "type": "bytes"
+          }
+        ]
+      }
+    },
+    {
+      "name": "setTokenMetadataArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "uri",
+            "type": "string"
           }
         ]
       }

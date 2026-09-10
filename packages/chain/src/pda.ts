@@ -20,6 +20,7 @@ const utf8 = new TextEncoder()
  */
 export const SEED = {
   issuer: utf8.encode('issuer'),
+  mint: utf8.encode('mint'),
   token: utf8.encode('token'),
   policy: utf8.encode('policy'),
   holder: utf8.encode('holder'),
@@ -70,6 +71,21 @@ function derive(seeds: Uint8Array[], programId: PublicKey): PublicKey {
  */
 export function issuerConfigPda(issuerId: PublicKey, programId = PROGRAM_ID): PublicKey {
   return derive([SEED.issuer, issuerId.toBytes()], programId)
+}
+
+/**
+ * Сам токен — `["mint", issuer_id, index]`, індекс `u32`.
+ *
+ * Mint є PDA, а не клієнтським ключем: третій підпис у транзакції випуску не
+ * вміщається в її 1232 байти (`SCRATCHPAD.md`, блок T018). Для клієнта це
+ * вигідніше за компроміс — адреса токена відома до підписання, а перелік
+ * токенів емітента будується перебором номерів від нуля, без індексатора.
+ *
+ * `index` — `IssuerConfig.token_count` **до** випуску, тобто номер, який
+ * інструкція займе.
+ */
+export function mintPda(issuerId: PublicKey, index: number, programId = PROGRAM_ID): PublicKey {
+  return derive([SEED.mint, issuerId.toBytes(), u32Seed(index)], programId)
 }
 
 /** `TokenConfig` — `["token", mint]`. */

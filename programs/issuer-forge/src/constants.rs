@@ -27,6 +27,24 @@ pub const VELOCITY_SEED: &[u8] = b"velocity";
 /// `["reserve", mint, index]` — append-only атестація резерву, індекс `u64` LE.
 pub const RESERVE_SEED: &[u8] = b"reserve";
 
+/// `["mint", issuer_id, index]` — сам токен, індекс `u32` little-endian.
+///
+/// Mint є PDA, а не клієнтським ключем, з арифметичної причини: третій підпис у
+/// транзакції випуску коштує 64 байти, а вона й так важить ~1180 із 1232
+/// (розрахунок — у `SCRATCHPAD.md`, блок T018). Наслідок кращий за причину:
+/// адреса токена виводиться з емітента й номера, тож консоль перелічує токени
+/// емітента без індексатора, а клієнт знає адресу до підписання.
+pub const MINT_SEED: &[u8] = b"mint";
+
+/// Номер першої версії політики в кодуванні seed.
+///
+/// Константою, а не `to_le_bytes()` на місці: у `create_token` цей seed стоїть
+/// у трьох різних виразах, і три однакові літерали розійшлися б тихо.
+pub const FIRST_POLICY_VERSION_LE: [u8; 4] = FIRST_POLICY_VERSION.to_le_bytes();
+
+/// Індекс першої атестації резерву в кодуванні seed. Її створює `create_token`.
+pub const FIRST_ATTESTATION_INDEX_LE: [u8; 8] = 0u64.to_le_bytes();
+
 /// Номер першої версії політики. Її пише `create_token`; `set_policy` починає з
 /// другої, тому нуль тут означає «токена ще немає», а не «політика порожня».
 pub const FIRST_POLICY_VERSION: u32 = 1;

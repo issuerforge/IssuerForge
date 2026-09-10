@@ -135,6 +135,14 @@ pub enum ForgeError {
     ReserveInsufficient,
     #[msg("reserve check must read the latest attestation")]
     AttestationNotLatest,
+    #[msg("named attestor is not a member of this issuer holding the attestor role")]
+    NotAnAttestorMember,
+    #[msg("attestation lifetime must be positive, or no attestation is ever current")]
+    AttestationMaxAgeInvalid,
+    #[msg("token name, symbol or uri is longer than this program writes")]
+    TokenMetadataTooLong,
+    #[msg("fee rate cannot exceed one hundred per cent")]
+    FeeRateOutOfRange,
 }
 
 /// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+12`.
@@ -214,6 +222,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::AttestationNotLatest),
             VALIDATION_ERROR_BASE + 33
+        );
+        // Перший і останній із доданих T018.
+        assert_eq!(
+            u32::from(ForgeError::NotAnAttestorMember),
+            VALIDATION_ERROR_BASE + 34
+        );
+        assert_eq!(
+            u32::from(ForgeError::FeeRateOutOfRange),
+            VALIDATION_ERROR_BASE + 37
         );
     }
 }

@@ -6,6 +6,7 @@ import {
   extraAccountMetaListPda,
   holderStatusPda,
   issuerConfigPda,
+  mintPda,
   PROGRAM_ID,
   policyConfigPda,
   redemptionEscrowPda,
@@ -68,6 +69,7 @@ describe('мітки seeds', () => {
       Object.fromEntries(Object.entries(SEED).map(([k, v]) => [k, decoder.decode(v)])),
     ).toEqual({
       issuer: 'issuer',
+      mint: 'mint',
       token: 'token',
       policy: 'policy',
       holder: 'holder',
@@ -84,6 +86,7 @@ describe('адреси PDA', () => {
   // транзакції на девнеті.
   it.each([
     ['IssuerConfig', issuerConfigPda(ISSUER_ID), 'EeYRwFELCb26ZFoiurGWwkekrDDAERBUWYKVXqs2ZDNw'],
+    ['mint', mintPda(ISSUER_ID, 0), '55mFwWmb2TK91JLRdq8Yvxf7UuxqkrLoBqYQ16sNndNn'],
     ['TokenConfig', tokenConfigPda(MINT), '4yQao3mhkWiWNgY5jmtbvJSbuRikmgMy8iT4kkmpcYPN'],
     ['PolicyConfig', policyConfigPda(MINT, 7), 'Edd5LtcqDu6CSGrKcXbtYBw5zjruZxuBiSEFbwBFSXAE'],
     ['HolderStatus', holderStatusPda(MINT, WALLET), '7ZNF8xYgg1hr784ewVVEPu51vCY6688frAwPfkFE3pXP'],
@@ -105,6 +108,22 @@ describe('адреси PDA', () => {
     ],
   ])('%s виводиться в закріплену адресу', (_name, actual, expected) => {
     expect(actual.toBase58()).toBe(expected)
+  })
+
+  // Ця мітка звіряється з програмою, а не з власною константою: `create_token`
+  // оголошує seeds mint прямо в IDL, і розбіжність означала б, що клієнт шукає
+  // токен не там, де його створює програма.
+  it('`mint` збігається з тим, що оголошує IDL', () => {
+    const instruction = IDL.instructions.find((ix) => ix.name === 'createToken')
+    const account = instruction?.accounts.find((a) => a.name === 'mint')
+    const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
+    expect(declared && 'value' in declared ? Uint8Array.from(declared.value) : undefined).toEqual(
+      SEED.mint,
+    )
+  })
+
+  it('номер токена входить в адресу mint', () => {
+    expect(mintPda(ISSUER_ID, 0).equals(mintPda(ISSUER_ID, 1))).toBe(false)
   })
 
   it('версія політики входить в адресу', () => {

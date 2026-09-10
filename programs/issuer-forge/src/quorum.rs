@@ -75,6 +75,7 @@ mod tests {
             operational_key: wallet(98),
             delegation_mask: 0,
             bump: 254,
+            token_count: 0,
         };
         for (slot, (seed, roles)) in members.iter().enumerate() {
             config.members[slot] = Member {
