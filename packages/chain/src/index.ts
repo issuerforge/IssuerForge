@@ -7,3 +7,4 @@
 export { IDL, type IssuerForge } from './idl/issuer-forge.ts'
 export * from './pda.ts'
 export * from './program.ts'
+export * from './tx/index.ts'
