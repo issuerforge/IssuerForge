@@ -3,20 +3,31 @@
 import { createDatabase } from '@forge/db'
 import { createLogger } from '@forge/shared/log'
 import { serve } from '@hono/node-server'
+import { Connection } from '@solana/web3.js'
+import { createChainReader, fetchWithTimeout } from './chain.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createDirectory } from './directory.ts'
+import { createIssuanceStore } from './issuance.ts'
 import { createPrivyClient } from './privy.ts'
 import { createServer } from './server.ts'
 
 function main() {
   const config = loadConfig()
   const logger = createLogger({ level: config.logLevel, service: 'api' })
+  const database = createDatabase(config.databaseUrl)
 
   const app = createServer({
     logger,
     webOrigins: config.webOrigins,
     privy: createPrivyClient(config.privy),
-    directory: createDirectory(createDatabase(config.databaseUrl)),
+    directory: createDirectory(database),
+    issuance: createIssuanceStore(database),
+    // `confirmed` — те, що читає лічильник токенів: `processed` віддав би номер
+    // із блоку, який ще може не дожити до фіналізації, тобто адресу mint,
+    // виведену з числа, якого не було.
+    chain: createChainReader(
+      new Connection(config.rpcUrl, { commitment: 'confirmed', fetch: fetchWithTimeout() }),
+    ),
   })
 
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

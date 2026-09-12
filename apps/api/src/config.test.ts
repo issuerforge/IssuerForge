@@ -116,6 +116,19 @@ describe('конфіг', () => {
   })
 
   // Адреса програми береться тільки з вендорованого IDL (рішення T007): друге
+  it.each(['ftp://rpc.example', 'javascript:alert(1)', 'file:///etc/passwd'])(
+    '%s в DEVNET_RPC_URL відхиляється: «URL» без схеми — це не адреса ноди',
+    (url) => {
+      expect(issuesOf({ DEVNET_RPC_URL: url }).length).toBeGreaterThan(0)
+    },
+  )
+
+  it('власний RPC по http — дійсна адреса', () => {
+    expect(loadConfig(env({ DEVNET_RPC_URL: 'http://127.0.0.1:8899' })).rpcUrl).toBe(
+      'http://127.0.0.1:8899',
+    )
+  })
+
   // джерело дало б стан «IDL з одного деплою, адреса з іншого».
   it('не читає PROGRAM_ID', () => {
     const config = loadConfig(env({ PROGRAM_ID: 'REPLACE_ME' }))

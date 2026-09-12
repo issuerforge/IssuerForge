@@ -43,6 +43,16 @@ const verificationKeySchema = secret('PRIVY_VERIFICATION_KEY')
   )
 
 /**
+ * Адреса, якою можна ходити мережею.
+ *
+ * `z.url()` сама по собі приймає будь-яку схему — `ftp:`, `file:` і навіть
+ * `javascript:` проходять як «дійсний URL». Для походження консолі це означало б
+ * заголовок CORS, який браузер не звірить ні з чим, а для RPC — адресу, за якою
+ * ніхто не відповість; і те, й те падає далеко від причини.
+ */
+const httpUrlSchema = z.url({ protocol: /^https?$/ })
+
+/**
  * Походження, яким дозволено читати api. Кілька — через кому.
  *
  * Порожній рядок і зайві пробіли відкидаються тут, а не в CORS: `origin: ['']`
@@ -56,7 +66,7 @@ const originsSchema = z
       .map((o) => o.trim())
       .filter(Boolean),
   )
-  .pipe(z.array(z.url()).min(1, 'WEB_ORIGIN must list at least one origin'))
+  .pipe(z.array(httpUrlSchema).min(1, 'WEB_ORIGIN must list at least one origin'))
 
 const databaseUrlSchema = secret('DATABASE_URL').refine(
   (v) => v.startsWith('postgres://') || v.startsWith('postgresql://'),
@@ -71,12 +81,12 @@ export const configSchema = z.object({
   // помилка, якої не бачить ні TypeScript, ні перевірка схеми.
   WEB_ORIGIN: originsSchema.prefault('http://localhost:5173'),
   DATABASE_URL: databaseUrlSchema,
-  DEVNET_RPC_URL: secret('DEVNET_RPC_URL').pipe(z.url()),
+  DEVNET_RPC_URL: secret('DEVNET_RPC_URL').pipe(httpUrlSchema),
   PRIVY_APP_ID: secret('PRIVY_APP_ID'),
   PRIVY_APP_SECRET: secret('PRIVY_APP_SECRET'),
   PRIVY_VERIFICATION_KEY: verificationKeySchema,
   /** Базовий URL REST-API Privy. Змінна існує, щоб зміна хоста не була правкою коду. */
-  PRIVY_API_URL: z.url().default('https://auth.privy.io'),
+  PRIVY_API_URL: httpUrlSchema.default('https://auth.privy.io'),
 })
 
 export interface Config {

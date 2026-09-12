@@ -8,8 +8,10 @@ import {
 import { apiErrorSchema } from '@forge/shared/errors'
 import { createLogger } from '@forge/shared/log'
 import { describe, expect, it, vi } from 'vitest'
+import type { ChainReader } from './chain.ts'
 import type { Directory } from './directory.ts'
 import { unauthorized } from './errors.ts'
+import type { IssuanceStore } from './issuance.ts'
 import type { PrivyClient, PrivyUser } from './privy.ts'
 import { createServer, type ServerDeps } from './server.ts'
 
@@ -26,21 +28,46 @@ const membership = (issuerId: string, roles = ROLE.ADMIN): Membership => ({
   syncedAt: SYNCED_AT,
 })
 
+/**
+ * Заглушки того, що ходить назовні. Ці тести перевіряють вхід і формат помилок,
+ * тож мережі й резервації тут не існує: маршрути випуску мають власний файл.
+ */
+const chain: ChainReader = {
+  program: undefined as unknown as ChainReader['program'],
+  tokenCount: async () => undefined,
+  latestBlockhash: async () => {
+    throw new Error('мережа в цих тестах не потрібна')
+  },
+}
+
+const issuance: IssuanceStore = {
+  reserve: async () => {
+    throw new Error('резервація в цих тестах не потрібна')
+  },
+}
+
 function app(
   memberships: Membership[],
-  overrides: Partial<ServerDeps> & { user?: PrivyUser } = {},
+  overrides: Partial<Omit<ServerDeps, 'directory'>> & {
+    user?: PrivyUser
+    directory?: Partial<Directory>
+  } = {},
 ) {
   const privy: PrivyClient = overrides.privy ?? {
     authenticate: async () => overrides.user ?? { userId: DID, wallets: [WALLET] },
   }
-  const directory: Directory = overrides.directory ?? {
+  const directory: Directory = {
     membershipsFor: async () => memberships,
+    rosterFor: async () => [],
+    ...overrides.directory,
   }
 
   return createServer({
     logger: createLogger({ level: 'silent', service: 'test' }),
     webOrigins: ['https://console.example'],
     requestId: () => 'req-fixed',
+    chain,
+    issuance,
     ...overrides,
     privy,
     directory,

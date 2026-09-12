@@ -9,10 +9,27 @@
 // зникати з консолі в тому ж запиті, а не за хвилину.
 import { type Database, roleAssignments } from '@forge/db'
 import type { Membership } from '@forge/shared/api'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 export interface Directory {
   membershipsFor(wallets: readonly string[]): Promise<Membership[]>
+  /**
+   * Склад одного емітента — по рядках, а не зведеною маскою.
+   *
+   * Членство в сесії каже, **чи** має людина роль; тут видно, **яка адреса** її
+   * має. Різниця істотна рівно там, де адреса стає підписантом: `create_token`
+   * підписують засновник-адміністратор і атестатор, і об'єднана маска не вміє
+   * відповісти, котрий із двох гаманців акаунта входу стоїть у складі з роллю
+   * адміністратора.
+   */
+  rosterFor(issuerId: string): Promise<RosterEntry[]>
+}
+
+/** Рядок складу: адреса, її ролі й слот, за яким її індексує кворум. */
+export interface RosterEntry {
+  wallet: string
+  roles: number
+  memberIndex: number
 }
 
 export function createDirectory(db: Database): Directory {
@@ -33,6 +50,21 @@ export function createDirectory(db: Database): Directory {
         .where(inArray(roleAssignments.wallet, [...wallets]))
 
       return groupMemberships(rows)
+    },
+
+    async rosterFor(issuerId) {
+      return await db
+        .select({
+          wallet: roleAssignments.wallet,
+          roles: roleAssignments.roles,
+          memberIndex: roleAssignments.memberIndex,
+        })
+        .from(roleAssignments)
+        .where(eq(roleAssignments.issuerId, issuerId))
+        // Порядок — слотами складу: він же порядок бітів у бітмапі підписів
+        // (T025), тож перелік, показаний людині, збігається з тим, який рахує
+        // кворум.
+        .orderBy(roleAssignments.memberIndex)
     },
   }
 }

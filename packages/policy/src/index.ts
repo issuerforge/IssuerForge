@@ -7,3 +7,4 @@
 export * from './evaluate.ts'
 export * from './layout.ts'
 export * from './model.ts'
+export * from './scenarios.ts'

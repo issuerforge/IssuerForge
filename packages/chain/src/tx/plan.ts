@@ -155,7 +155,18 @@ export async function toUnsignedTransaction(
   connection: Connection,
   plan: TxPlan,
 ): Promise<UnsignedTransaction> {
-  const { blockhash } = await connection.getLatestBlockhash()
+  return toUnsigned(plan, await connection.getLatestBlockhash().then((r) => r.blockhash))
+}
+
+/**
+ * План + уже відомий blockhash → непідписана транзакція.
+ *
+ * Пара до `toUnsignedTransaction` для випадку, коли blockhash **мусить бути
+ * один на кілька транзакцій**: три транзакції випуску маршрут API віддає разом,
+ * і брати їм три різні blockhash означало б три різні строки життя на те, що
+ * людина підписує однією дією.
+ */
+export function toUnsigned(plan: TxPlan, blockhash: string): UnsignedTransaction {
   const transaction = compileTransaction(plan, blockhash)
 
   return {

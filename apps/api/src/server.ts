@@ -9,17 +9,28 @@
 import { REQUEST_ID_HEADER, type Session } from '@forge/shared/api'
 import type { Logger } from '@forge/shared/log'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
+import type { ChainReader } from './chain.ts'
 import type { AppEnv } from './env.ts'
-import { onError, onNotFound } from './errors.ts'
+import { invalidInput, onError, onNotFound } from './errors.ts'
+import type { IssuanceStore } from './issuance.ts'
+import { createTokenRoutes } from './routes/tokens.ts'
 import { requireSession, type SessionDeps } from './session.ts'
 
 export interface ServerDeps extends SessionDeps {
   logger: Logger
   webOrigins: readonly string[]
+  chain: ChainReader
+  issuance: IssuanceStore
   /** Підмінюється в тестах, щоб `requestId` у відповіді був передбачуваним. */
   requestId?: () => string
+  /** Годинник. Підмінюється в тестах, щоб симуляція була відтворюваною. */
+  now?: () => Date
 }
+
+/** Найбільше тіло запиту, яке має сенс. Найбільше законне — випуск, ~2 КБ. */
+export const MAX_BODY_BYTES = 32 * 1024
 
 export function createServer(deps: ServerDeps) {
   const app = new Hono<AppEnv>()
@@ -53,6 +64,22 @@ export function createServer(deps: ServerDeps) {
     }),
   )
 
+  // Стеля тіла стоїть одна на всі ручки, а не по копії в кожній: без неї
+  // двадцятимегабайтний JSON розбирається цілком і тільки потім відкидається
+  // схемою (виміряно). Найбільше законне тіло — випуск токена — важить близько
+  // двох кілобайтів, тож запас тут тридцятикратний із гаком.
+  app.use(
+    '/api/*',
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: () => {
+        // 413 у переліку кодів немає, і вигадувати його заради одного випадку
+        // означало б другий спосіб відповідати на «клієнт надіслав не те».
+        throw invalidInput('request body is too large', { limit: MAX_BODY_BYTES })
+      },
+    }),
+  )
+
   /** Проба живості для Railway. Без автентифікації і без звертань до бази. */
   app.get('/health', (c) => c.json({ status: 'ok' as const }))
 
@@ -63,6 +90,11 @@ export function createServer(deps: ServerDeps) {
    * орендарів і набір доступних екранів (T010), а не вигадує роль сама.
    */
   app.get('/api/session', (c) => c.json(c.get('session') satisfies Session))
+
+  // Маршрути монтуються **після** `requireSession`: Hono добирає обробники в
+  // порядку реєстрації, тож ручка, додана нижче, все одно проходить через уже
+  // оголошений вхід. Стану «маршрут під /api без сесії» не існує.
+  app.route('/api', createTokenRoutes({ ...deps, now: deps.now ?? (() => new Date()) }))
 
   return app
 }
