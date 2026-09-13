@@ -31,10 +31,11 @@ import { PublicKey } from '@solana/web3.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { ChainReader } from '../chain.ts'
-import type { Directory, RosterEntry } from '../directory.ts'
+import type { Directory } from '../directory.ts'
 import type { AppEnv } from '../env.ts'
 import { internal, invalidInput, notFound, unauthorized } from '../errors.ts'
 import type { IssuanceStore } from '../issuance.ts'
+import { chooseSigner } from '../signers.ts'
 
 export interface TokenRouteDeps {
   chain: ChainReader
@@ -177,40 +178,6 @@ export const createTokenBodySchema = z
   })
 
 export type CreateTokenBody = z.infer<typeof createTokenBodySchema>
-
-// ─── Підписанти ──────────────────────────────────────────────────────────────
-
-/**
- * Один із кандидатів на підпис.
- *
- * Адреси приходять зі складу, а не з тіла запиту: тіло може лише **звузити**
- * вибір до одного з уже доведених — те саме правило, за яким `X-Issuer-Id`
- * обирає орендаря серед членств (`session.ts`). Порожній перелік — не помилка
- * вибору, тож рішення про код відмови ухвалює викликач.
- */
-function chooseSigner(
-  candidates: readonly RosterEntry[],
-  requested: string | undefined,
-  label: string,
-): string | undefined {
-  const wallets = candidates.map((entry) => entry.wallet)
-  if (wallets.length === 0) return undefined
-
-  if (requested === undefined) {
-    const only = wallets[0]
-    if (wallets.length === 1 && only !== undefined) return only
-    throw invalidInput(`this issuer has several wallets that can sign as ${label}: name one`, {
-      [label]: wallets,
-    })
-  }
-
-  if (!wallets.includes(requested)) {
-    throw invalidInput(`the wallet named as ${label} cannot sign in that role`, {
-      [label]: wallets,
-    })
-  }
-  return requested
-}
 
 // ─── Маршрути ────────────────────────────────────────────────────────────────
 

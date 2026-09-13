@@ -14,7 +14,10 @@ import { cors } from 'hono/cors'
 import type { ChainReader } from './chain.ts'
 import type { AppEnv } from './env.ts'
 import { invalidInput, onError, onNotFound } from './errors.ts'
+import type { HolderStore } from './holders.ts'
 import type { IssuanceStore } from './issuance.ts'
+import type { OperationalSigner } from './operational.ts'
+import { createHolderRoutes } from './routes/holders.ts'
 import { createTokenRoutes } from './routes/tokens.ts'
 import { requireSession, type SessionDeps } from './session.ts'
 
@@ -23,6 +26,13 @@ export interface ServerDeps extends SessionDeps {
   webOrigins: readonly string[]
   chain: ChainReader
   issuance: IssuanceStore
+  holders: HolderStore
+  /**
+   * Операційний ключ платформи. Єдина залежність сервера, яка вміє підписувати
+   * — і саме тому вона передається ззовні, як усе інше: тест піднімає ті самі
+   * маршрути, не маючи ключа взагалі.
+   */
+  operational: OperationalSigner
   /** Підмінюється в тестах, щоб `requestId` у відповіді був передбачуваним. */
   requestId?: () => string
   /** Годинник. Підмінюється в тестах, щоб симуляція була відтворюваною. */
@@ -94,7 +104,9 @@ export function createServer(deps: ServerDeps) {
   // Маршрути монтуються **після** `requireSession`: Hono добирає обробники в
   // порядку реєстрації, тож ручка, додана нижче, все одно проходить через уже
   // оголошений вхід. Стану «маршрут під /api без сесії» не існує.
-  app.route('/api', createTokenRoutes({ ...deps, now: deps.now ?? (() => new Date()) }))
+  const now = deps.now ?? (() => new Date())
+  app.route('/api', createTokenRoutes({ ...deps, now }))
+  app.route('/api', createHolderRoutes({ ...deps, now }))
 
   return app
 }

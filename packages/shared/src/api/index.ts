@@ -42,6 +42,43 @@ export function roleNames(mask: number): RoleName[] {
 }
 
 /**
+ * Повноваження, делеговані операційному ключу платформи (FR-035) — дзеркало
+ * `delegation` з того самого `state/issuer.rs`.
+ *
+ * Перелік закритий **у програмі**, а не в конфігурації: емісії, вилучення,
+ * паузи й зміни політики тут немає й бути не може, тож скомпрометований
+ * операційний ключ не отримує їх навіть із «повною» маскою (FR-035a).
+ */
+export const DELEGATION = {
+  THAW_HOLDER: 1 << 0,
+  SET_HOLDER_STATUS: 1 << 1,
+  SETTLE_REDEMPTION: 1 << 2,
+} as const
+
+export type PowerName = keyof typeof DELEGATION
+
+export const POWER_NAMES = Object.keys(DELEGATION) as readonly PowerName[]
+
+export const DELEGATION_ALL =
+  DELEGATION.THAW_HOLDER | DELEGATION.SET_HOLDER_STATUS | DELEGATION.SETTLE_REDEMPTION
+
+/**
+ * Та сама арифметика, що в `hasRole`, і навмисно **окрема назва**.
+ *
+ * Обидві маски — `number`, тож типи не втримають плутанини: `hasRole(mask,
+ * ROLE.ADMIN)` над маскою делегації скомпілювався б і мовчки відповів би «так»
+ * на `THAW_HOLDER`. Різні імена лишають цю помилку видимою при читанні — це
+ * єдиний бар'єр, який тут узагалі можливий.
+ */
+export function hasPower(mask: number, power: number): boolean {
+  return (mask & power) !== 0
+}
+
+export function powerNames(mask: number): PowerName[] {
+  return POWER_NAMES.filter((name) => hasPower(mask, DELEGATION[name]))
+}
+
+/**
  * Членство одного користувача в одного емітента.
  *
  * `wallets` — ті з підтверджених адрес входу, які справді стоять у складі цього

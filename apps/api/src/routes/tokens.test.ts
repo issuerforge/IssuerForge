@@ -6,7 +6,9 @@ import { Connection, PublicKey } from '@solana/web3.js'
 import { describe, expect, it, vi } from 'vitest'
 import type { ChainReader } from '../chain.ts'
 import type { Directory, RosterEntry } from '../directory.ts'
+import type { HolderStore } from '../holders.ts'
 import type { IssuanceStore, Reservation } from '../issuance.ts'
+import type { OperationalSigner } from '../operational.ts'
 import type { PrivyClient } from '../privy.ts'
 import { createServer, MAX_BODY_BYTES, type ServerDeps } from '../server.ts'
 import { createTokenBodySchema } from './tokens.ts'
@@ -62,16 +64,37 @@ function app(fakes: Fakes = {}) {
     ...fakes.directory,
   }
 
+  const absent = (what: string) => () => {
+    throw new Error(`${what} на шляху випуску не читається`)
+  }
+
   const chain: ChainReader = {
     // Провайдер без гаманця: збірка інструкцій за IDL у мережу не ходить.
     program: createForgeProgram(new Connection('http://127.0.0.1:8899')),
     tokenCount: async () => ('tokenCount' in fakes ? fakes.tokenCount : TOKEN_INDEX),
+    issuerConfig: absent('IssuerConfig цілком'),
+    holderStatusWritten: absent('HolderStatus'),
     latestBlockhash: async () => BLOCKHASH,
     ...fakes.chain,
   }
 
   const issuance: IssuanceStore = {
     reserve: fakes.reserve ?? (async () => fakes.reservation ?? { kind: 'reserved' }),
+  }
+
+  // Онбординг холдерів має власний файл тестів; сюди він потрапляє лише тому,
+  // що сервер збирається цілком.
+  const holders = new Proxy({} as HolderStore, {
+    get: (_, key) => () => {
+      throw new Error(`холдери на шляху випуску не потрібні (${String(key)})`)
+    },
+  })
+
+  const operational: OperationalSigner = {
+    publicKey: new PublicKey(ADMIN),
+    submit: async () => {
+      throw new Error('випуск підписує гаманець, а не операційний ключ')
+    },
   }
 
   const deps: ServerDeps = {
@@ -83,6 +106,8 @@ function app(fakes: Fakes = {}) {
     directory,
     chain,
     issuance,
+    holders,
+    operational,
   }
 
   return createServer(deps)

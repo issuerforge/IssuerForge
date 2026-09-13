@@ -1,6 +1,12 @@
+import { encodeBase58 } from '@forge/chain'
+import { Keypair } from '@solana/web3.js'
 import { exportSPKI, generateKeyPair } from 'jose'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { ConfigError, loadConfig } from './config.ts'
+
+/** Детермінований ключ: тест не має залежати від генератора випадкових чисел. */
+const OPERATIONAL = Keypair.fromSeed(new Uint8Array(32).fill(7))
+const OPERATIONAL_SECRET = encodeBase58(OPERATIONAL.secretKey)
 
 let publicKeyPem: string
 
@@ -13,6 +19,7 @@ function env(overrides: Record<string, string | undefined> = {}): NodeJS.Process
   return {
     DATABASE_URL: 'postgres://user:pass@host:6543/issuerforge',
     DEVNET_RPC_URL: 'https://devnet.example/?api-key=abc',
+    OPERATIONAL_SECRET_KEY: OPERATIONAL_SECRET,
     PRIVY_APP_ID: 'app-id',
     PRIVY_APP_SECRET: 'app-secret',
     PRIVY_VERIFICATION_KEY: publicKeyPem,
@@ -126,6 +133,25 @@ describe('конфіг', () => {
   it('власний RPC по http — дійсна адреса', () => {
     expect(loadConfig(env({ DEVNET_RPC_URL: 'http://127.0.0.1:8899' })).rpcUrl).toBe(
       'http://127.0.0.1:8899',
+    )
+  })
+
+  it('приймає операційний ключ і не змінює його по дорозі', () => {
+    expect(loadConfig(env()).operationalSecretKey).toBe(OPERATIONAL_SECRET)
+  })
+
+  // Найімовірніша помилка в панелі хостингу — вставити **адресу** ключа замість
+  // самого ключа: рядок теж base58, теж «схожий на ключ», і без перевірки
+  // довжини процес піднявся б, а впав би на першому розморожуванні.
+  it('відхиляє публічну адресу на місці секретного ключа', () => {
+    expect(issuesOf({ OPERATIONAL_SECRET_KEY: OPERATIONAL.publicKey.toBase58() })).toEqual([
+      'OPERATIONAL_SECRET_KEY: expected a base58 ed25519 secret key of 64 bytes',
+    ])
+  })
+
+  it('відхиляє рядок, який узагалі не base58', () => {
+    expect(issuesOf({ OPERATIONAL_SECRET_KEY: 'not base58 at all: 0OIl' })[0]).toContain(
+      'base58 ed25519 secret key',
     )
   })
 

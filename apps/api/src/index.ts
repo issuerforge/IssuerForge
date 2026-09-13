@@ -7,7 +7,9 @@ import { Connection } from '@solana/web3.js'
 import { createChainReader, fetchWithTimeout } from './chain.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createDirectory } from './directory.ts'
+import { createHolderStore } from './holders.ts'
 import { createIssuanceStore } from './issuance.ts'
+import { createOperationalSigner } from './operational.ts'
 import { createPrivyClient } from './privy.ts'
 import { createServer } from './server.ts'
 
@@ -16,18 +18,24 @@ function main() {
   const logger = createLogger({ level: config.logLevel, service: 'api' })
   const database = createDatabase(config.databaseUrl)
 
+  // `confirmed` — те, що читає лічильник токенів: `processed` віддав би номер
+  // із блоку, який ще може не дожити до фіналізації, тобто адресу mint,
+  // виведену з числа, якого не було. Це ж з'єднання відправляє делеговані
+  // транзакції, тож і підтвердження вони чекають за тим самим рівнем.
+  const connection = new Connection(config.rpcUrl, {
+    commitment: 'confirmed',
+    fetch: fetchWithTimeout(),
+  })
+
   const app = createServer({
     logger,
     webOrigins: config.webOrigins,
     privy: createPrivyClient(config.privy),
     directory: createDirectory(database),
     issuance: createIssuanceStore(database),
-    // `confirmed` — те, що читає лічильник токенів: `processed` віддав би номер
-    // із блоку, який ще може не дожити до фіналізації, тобто адресу mint,
-    // виведену з числа, якого не було.
-    chain: createChainReader(
-      new Connection(config.rpcUrl, { commitment: 'confirmed', fetch: fetchWithTimeout() }),
-    ),
+    holders: createHolderStore(database),
+    chain: createChainReader(connection),
+    operational: createOperationalSigner(connection, config.operationalSecretKey),
   })
 
   const server = serve({ fetch: app.fetch, port: config.port }, (info) => {

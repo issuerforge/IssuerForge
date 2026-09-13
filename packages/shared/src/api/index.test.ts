@@ -2,8 +2,12 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
+  DELEGATION,
+  DELEGATION_ALL,
+  hasPower,
   hasRole,
   membershipSchema,
+  powerNames,
   ROLE,
   ROLE_ALL,
   ROLE_AUTHORISING,
@@ -15,7 +19,12 @@ const ISSUER_RS = fileURLToPath(
   new URL('../../../../programs/issuer-forge/src/state/issuer.rs', import.meta.url),
 )
 
-/** `pub const ADMIN: u8 = 1 << 0;` → 1. Дужок і арифметики складнішої там немає. */
+/**
+ * `pub const ADMIN: u8 = 1 << 0;` → 1. Дужок і арифметики складнішої там немає.
+ *
+ * Ловить обидві маски одного файла — ролей і делегації: імена не перетинаються,
+ * а зайвий запис у мапі нікому не заважає.
+ */
 function rustRoleBits(source: string): Record<string, number> {
   const bits: Record<string, number> = {}
   for (const m of source.matchAll(/pub const (?<name>[A-Z_]+): u8 = 1 << (?<shift>\d+);/g)) {
@@ -49,6 +58,44 @@ describe('маска ролей', () => {
   it('розкладається на імена в порядку бітів', () => {
     expect(roleNames(ROLE.ADMIN | ROLE.COMPLIANCE)).toEqual(['ADMIN', 'COMPLIANCE'])
     expect(roleNames(ROLE.OBSERVER)).toEqual(['OBSERVER'])
+  })
+})
+
+describe('маска делегації', () => {
+  // Той самий дубль, що й у ролей, і з тієї ж причини: маска їде з
+  // `IssuerConfig.delegation_mask` просто числом, тож розходження було б тихим.
+  it('збігається з `delegation` у програмі', () => {
+    const rust = rustRoleBits(readFileSync(ISSUER_RS, 'utf8'))
+
+    expect(rust.THAW_HOLDER).toBe(DELEGATION.THAW_HOLDER)
+    expect(rust.SET_HOLDER_STATUS).toBe(DELEGATION.SET_HOLDER_STATUS)
+    expect(rust.SETTLE_REDEMPTION).toBe(DELEGATION.SETTLE_REDEMPTION)
+  })
+
+  /**
+   * Перелік закритий у програмі: у масці немає й не може бути повноваження, що
+   * рухає кошти (FR-035a). Тест тримає саме це — не «три біти», а те, що навіть
+   * **повна** делегація не накриває нічого, крім трьох рутинних дій.
+   */
+  it('повна делегація накриває рівно три рутинні дії', () => {
+    expect(DELEGATION_ALL).toBe(7)
+    expect(powerNames(DELEGATION_ALL)).toEqual([
+      'THAW_HOLDER',
+      'SET_HOLDER_STATUS',
+      'SETTLE_REDEMPTION',
+    ])
+  })
+
+  it('порожня маска не дає нічого', () => {
+    expect(hasPower(0, DELEGATION.THAW_HOLDER)).toBe(false)
+    expect(powerNames(0)).toEqual([])
+  })
+
+  // Біти двох масок збігаються числами, і саме тому імена функцій різні:
+  // `hasRole` над маскою делегації мовчки відповів би «так».
+  it('розморожування без права на статус — це різні біти', () => {
+    expect(hasPower(DELEGATION.THAW_HOLDER, DELEGATION.SET_HOLDER_STATUS)).toBe(false)
+    expect(powerNames(DELEGATION.THAW_HOLDER)).toEqual(['THAW_HOLDER'])
   })
 })
 

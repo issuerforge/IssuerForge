@@ -11,7 +11,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ChainReader } from './chain.ts'
 import type { Directory } from './directory.ts'
 import { unauthorized } from './errors.ts'
+import type { HolderStore } from './holders.ts'
 import type { IssuanceStore } from './issuance.ts'
+import type { OperationalSigner } from './operational.ts'
 import type { PrivyClient, PrivyUser } from './privy.ts'
 import { createServer, type ServerDeps } from './server.ts'
 
@@ -32,12 +34,31 @@ const membership = (issuerId: string, roles = ROLE.ADMIN): Membership => ({
  * Заглушки того, що ходить назовні. Ці тести перевіряють вхід і формат помилок,
  * тож мережі й резервації тут не існує: маршрути випуску мають власний файл.
  */
+const unreachable = (what: string) => () => {
+  throw new Error(`${what} у цих тестах не потрібне`)
+}
+
 const chain: ChainReader = {
   program: undefined as unknown as ChainReader['program'],
   tokenCount: async () => undefined,
-  latestBlockhash: async () => {
-    throw new Error('мережа в цих тестах не потрібна')
-  },
+  issuerConfig: unreachable('читання IssuerConfig'),
+  holderStatusWritten: unreachable('читання HolderStatus'),
+  latestBlockhash: unreachable('мережа'),
+}
+
+const holders: HolderStore = {
+  ownsToken: unreachable('база холдерів'),
+  list: unreachable('база холдерів'),
+  get: unreachable('база холдерів'),
+  enqueue: unreachable('база холдерів'),
+  markThawed: unreachable('база холдерів'),
+  saveStatus: unreachable('база холдерів'),
+}
+
+/** Ключ тут не потрібен: жоден із цих тестів не доходить до підпису. */
+const operational: OperationalSigner = {
+  publicKey: undefined as unknown as OperationalSigner['publicKey'],
+  submit: unreachable('підпис операційним ключем'),
 }
 
 const issuance: IssuanceStore = {
@@ -68,6 +89,8 @@ function app(
     requestId: () => 'req-fixed',
     chain,
     issuance,
+    holders,
+    operational,
     ...overrides,
     privy,
     directory,

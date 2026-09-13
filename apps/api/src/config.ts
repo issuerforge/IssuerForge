@@ -1,14 +1,16 @@
 // Конфіг процесу, валідований Zod на старті.
 //
 // Правило складу: тут лежить рівно те, що api читає **сьогодні**. Змінні,
-// потрібні майбутнім задачам (`OPERATIONAL_SECRET_KEY`, `PLATFORM_TREASURY`,
-// `OFFRAMP_BASE_URL`), приходять зі своїми задачами. Інакше процес падав би на
-// старті через відсутнє значення, якого ніхто не читає, — і команда навчилась
-// би ставити туди що завгодно, аби запуститись.
+// потрібні майбутнім задачам (`PLATFORM_TREASURY`, `OFFRAMP_BASE_URL`),
+// приходять зі своїми задачами. Інакше процес падав би на старті через
+// відсутнє значення, якого ніхто не читає, — і команда навчилась би ставити
+// туди що завгодно, аби запуститись. `OPERATIONAL_SECRET_KEY` прийшов зі своєю
+// (T022): з нього підписується перша делегована операція.
 //
 // `PROGRAM_ID` тут немає навмисно: адреса програми береться **тільки** з
 // вендорованого IDL (`packages/chain`, рішення T007). Друге джерело адреси
 // створює стан «IDL з одного деплою, адреса з іншого», який нічим не ловиться.
+import { base58ByteLength } from '@forge/chain'
 import { LOG_LEVELS, type LogLevel } from '@forge/shared/log'
 import { z } from 'zod'
 
@@ -68,6 +70,25 @@ const originsSchema = z
   )
   .pipe(z.array(httpUrlSchema).min(1, 'WEB_ORIGIN must list at least one origin'))
 
+/** Довжина секретного ключа ed25519 у байтах: 32 насіння + 32 публічних. */
+const SECRET_KEY_BYTES = 64
+
+/**
+ * Операційний ключ платформи — приватний ключ ed25519, base58 (FR-035).
+ *
+ * Розбирається **на старті**, а не при першому розморожуванні: інакше процес
+ * піднявся б із рядком, який ніхто не перевіряв, і перша делегована операція
+ * впала б виключенням із надр кодека — у момент, коли емітент уже чекає на
+ * підтвердження, і без жодної підказки, що виправляти в панелі хостингу.
+ *
+ * Довжина перевіряється окремо від розбору: 32-байтовий рядок теж є дійсним
+ * base58, і саме так виглядає **публічна** адреса, вставлена сюди помилково.
+ */
+const operationalKeySchema = secret('OPERATIONAL_SECRET_KEY').refine((value) => {
+  const length = base58ByteLength(value)
+  return length === SECRET_KEY_BYTES
+}, `expected a base58 ed25519 secret key of ${SECRET_KEY_BYTES} bytes`)
+
 const databaseUrlSchema = secret('DATABASE_URL').refine(
   (v) => v.startsWith('postgres://') || v.startsWith('postgresql://'),
   'expected a postgres:// connection string',
@@ -82,6 +103,7 @@ export const configSchema = z.object({
   WEB_ORIGIN: originsSchema.prefault('http://localhost:5173'),
   DATABASE_URL: databaseUrlSchema,
   DEVNET_RPC_URL: secret('DEVNET_RPC_URL').pipe(httpUrlSchema),
+  OPERATIONAL_SECRET_KEY: operationalKeySchema,
   PRIVY_APP_ID: secret('PRIVY_APP_ID'),
   PRIVY_APP_SECRET: secret('PRIVY_APP_SECRET'),
   PRIVY_VERIFICATION_KEY: verificationKeySchema,
@@ -95,6 +117,8 @@ export interface Config {
   webOrigins: string[]
   databaseUrl: string
   rpcUrl: string
+  /** base58; `Keypair` із нього збирає `operational.ts`, і більше ніхто. */
+  operationalSecretKey: string
   privy: {
     appId: string
     appSecret: string
@@ -130,6 +154,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webOrigins: e.WEB_ORIGIN,
     databaseUrl: e.DATABASE_URL,
     rpcUrl: e.DEVNET_RPC_URL,
+    operationalSecretKey: e.OPERATIONAL_SECRET_KEY,
     privy: {
       appId: e.PRIVY_APP_ID,
       appSecret: e.PRIVY_APP_SECRET,
