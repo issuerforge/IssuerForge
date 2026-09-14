@@ -12,9 +12,19 @@
 // Порожній пункт меню з чесним написом кращий за відсутній: на екрані видно
 // повну форму повноважень, а не ту її частину, яку встигли написати.
 import { ROLE, ROLE_ALL, type RoleName, roleNames } from '@forge/shared/api'
-import type { ReactElement } from 'react'
+import { lazy, type ReactElement, Suspense } from 'react'
 import Overview from './Overview'
 import Stub from './Stub'
+
+/**
+ * Майстер випуску вантажиться окремим шматком, і це не тільки про розмір.
+ *
+ * Він тягне за собою solana-частину Privy — підпис транзакцій, — а реєстр
+ * екранів мусить лишатися тим, чим є: списком, який читається без жодного
+ * гаманця. Статичний імпорт зробив би цей файл (і його тест) залежним від
+ * бібліотеки підпису заради рядка в меню.
+ */
+const Wizard = lazy(() => import('@/wizard/Wizard'))
 
 /** Ролі, підпис яких рахується в кворум: обидві бачать комплаєнс-роботу. */
 const AUTHORISING = ROLE.ADMIN | ROLE.COMPLIANCE
@@ -77,10 +87,9 @@ export const SCREENS: readonly Screen[] = [
     label: 'Issue a token',
     requires: ROLE.ADMIN,
     element: (
-      <Stub
-        task="T023"
-        what="The issuance wizard on live rules, with scenarios simulated before signing"
-      />
+      <Suspense fallback={<p className="muted py-8 text-[13px]">Opening the wizard…</p>}>
+        <Wizard />
+      </Suspense>
     ),
   },
   {

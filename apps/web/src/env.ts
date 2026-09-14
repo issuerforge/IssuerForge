@@ -33,6 +33,18 @@ export const webEnvSchema = z.object({
     .pipe(z.url({ protocol: /^https?$/ }))
     .transform((v) => v.replace(/\/+$/, '')),
   VITE_PRIVY_APP_ID: filled('VITE_PRIVY_APP_ID'),
+  /**
+   * Вузол, у який консоль **сама** відправляє підписані транзакції.
+   *
+   * Змінна окрема від серверної `DEVNET_RPC_URL`, і це не дублювання: api
+   * ходить через платний вузол із ключем у рядку запиту, а бандл читає кожен,
+   * хто відкрив сторінку. Сюди йде публічний devnet-вузол, який ключа не
+   * потребує, — тож єдиний спосіб «випадково» опублікувати ключ Helius це
+   * вписати його руками в цю змінну.
+   */
+  VITE_DEVNET_RPC_URL: filled('VITE_DEVNET_RPC_URL')
+    .pipe(z.url({ protocol: /^https?$/ }))
+    .transform((v) => v.replace(/\/+$/, '')),
 })
 
 export type WebEnv = z.infer<typeof webEnvSchema>

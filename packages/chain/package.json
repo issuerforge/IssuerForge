@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./idl": "./src/idl/issuer-forge.ts",
     "./pda": "./src/pda.ts",
+    "./plan": "./src/tx/plan.ts",
     "./program": "./src/program.ts",
     "./tx": "./src/tx/index.ts"
   },

@@ -52,6 +52,20 @@ interface TenantValue {
 
 const TenantContext = createContext<TenantValue | null>(null)
 const ApiContext = createContext<ApiClient | null>(null)
+const EnvContext = createContext<WebEnv | null>(null)
+
+/**
+ * Оточення як залежність, а не як глобальний `import.meta.env`.
+ *
+ * Читає його `main.tsx` — один раз і однією чистою функцією, — а екрани беруть
+ * готове значення звідси. Другого місця, де вирішується, що таке адреса вузла,
+ * у консолі немає (T023: майстер відправляє транзакції сам).
+ */
+export function useWebEnv(): WebEnv {
+  const ctx = useContext(EnvContext)
+  if (!ctx) throw new Error('useWebEnv must be used inside ConsoleProviders')
+  return ctx
+}
 
 export function useTenant(): TenantValue {
   const ctx = useContext(TenantContext)
@@ -128,7 +142,9 @@ export function ConsoleProviders({ env, children }: { env: WebEnv; children: Rea
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <ApiAndTenant apiUrl={env.VITE_API_URL}>{children}</ApiAndTenant>
+        <EnvContext.Provider value={env}>
+          <ApiAndTenant apiUrl={env.VITE_API_URL}>{children}</ApiAndTenant>
+        </EnvContext.Provider>
       </QueryClientProvider>
     </PrivyProvider>
   )

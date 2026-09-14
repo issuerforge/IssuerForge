@@ -22,13 +22,16 @@ import {
  * транзакції (T018), і консоль мусить показувати, на якій із них зупинився
  * майстер, а не «щось не вдалося».
  */
-export type TxStep =
-  | 'create-token'
-  | 'token-metadata'
-  | 'hook-accounts'
-  | 'thaw-holder'
-  | 'set-holder-status'
-  | 'transfer'
+export const TX_STEPS = [
+  'create-token',
+  'token-metadata',
+  'hook-accounts',
+  'thaw-holder',
+  'set-holder-status',
+  'transfer',
+] as const
+
+export type TxStep = (typeof TX_STEPS)[number]
 
 export type TxPlan = {
   readonly step: TxStep
@@ -129,6 +132,19 @@ export function compileTransaction(plan: TxPlan, blockhash: string): VersionedTr
   return new VersionedTransaction(message)
 }
 
+/**
+ * Base64 без `Buffer`.
+ *
+ * `fromBase64` існує саме для браузера — транзакція з двома підписами їздить
+ * між гаманцями рядком, — а `Buffer` там глобальним не буває: Vite його не
+ * підставляє, і виклик упав би `Buffer is not defined` уже після того, як
+ * людина натиснула «підписати». `btoa`/`atob` є з обох боків.
+ */
+export const base64FromBytes = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes))
+
+export const bytesFromBase64 = (value: string): Uint8Array =>
+  Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
+
 /** Найбільший розмір транзакції, який приймає мережа. */
 export const MAX_TRANSACTION_BYTES = 1232
 
@@ -172,7 +188,7 @@ export function toUnsigned(plan: TxPlan, blockhash: string): UnsignedTransaction
   return {
     step: plan.step,
     transaction,
-    base64: Buffer.from(transaction.serialize()).toString('base64'),
+    base64: base64FromBytes(transaction.serialize()),
     signers: plan.signers,
     dependsOnPrevious: plan.dependsOnPrevious,
   }
@@ -187,5 +203,5 @@ export function toUnsigned(plan: TxPlan, blockhash: string): UnsignedTransaction
  * стосується конкретних байтів.
  */
 export function fromBase64(base64: string): VersionedTransaction {
-  return VersionedTransaction.deserialize(Buffer.from(base64, 'base64'))
+  return VersionedTransaction.deserialize(bytesFromBase64(base64))
 }

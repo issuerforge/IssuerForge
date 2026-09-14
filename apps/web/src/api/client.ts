@@ -47,13 +47,27 @@ export class ApiRequestError extends Error {
 
 export interface ApiClient {
   get<T>(path: string, schema: z.ZodType<T>): Promise<T>
+  /**
+   * Тіло **не** валідується тут перед відправкою.
+   *
+   * Схему запиту знає той, хто його складає (майстер бере її з
+   * `@forge/api/contracts` — того самого файла, що й сервер), а клієнт лишається
+   * транспортом. Друга перевірка тут означала б два місця, де вирішується, що
+   * таке правильне тіло, і розійшлися б вони мовчки.
+   */
+  post<T>(path: string, body: unknown, schema: z.ZodType<T>): Promise<T>
 }
 
 export function createApiClient(deps: ApiClientDeps): ApiClient {
   const doFetch = deps.fetch ?? globalThis.fetch.bind(globalThis)
   const newRequestId = deps.requestId ?? (() => crypto.randomUUID())
 
-  async function request<T>(method: string, path: string, schema: z.ZodType<T>): Promise<T> {
+  async function request<T>(
+    method: string,
+    path: string,
+    schema: z.ZodType<T>,
+    body?: unknown,
+  ): Promise<T> {
     const requestId = newRequestId()
 
     // Вхід перевіряється до мережі: запит без токена api однаково відхилить, а
@@ -73,10 +87,15 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     // значення api читає як «не названо», і краще не надсилати його зовсім.
     const issuerId = deps.issuerId?.()
     if (issuerId !== undefined && issuerId !== '') headers.set(ISSUER_HEADER, issuerId)
+    if (body !== undefined) headers.set('content-type', 'application/json')
 
     let response: Response
     try {
-      response = await doFetch(`${deps.baseUrl}${path}`, { method, headers })
+      response = await doFetch(`${deps.baseUrl}${path}`, {
+        method,
+        headers,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
     } catch (cause) {
       // Мережевої помилки в переліку кодів немає: для екрана вона нічим не
       // відрізняється від «сервер не відповів», і це `INTERNAL`.
@@ -88,10 +107,10 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
     // Свій ідентифікатор перебивається тим, що назвав сервер: збігаються вони
     // завжди, крім випадку, коли запит не дійшов і відповів проксі.
     const echoed = response.headers.get(REQUEST_ID_HEADER) ?? requestId
-    const body: unknown = await response.json().catch(() => undefined)
+    const payload: unknown = await response.json().catch(() => undefined)
 
     if (!response.ok) {
-      const problem = apiErrorSchema.safeParse(body)
+      const problem = apiErrorSchema.safeParse(payload)
       if (!problem.success) {
         throw new ApiRequestError('INTERNAL', `api answered ${response.status}`, echoed)
       }
@@ -99,7 +118,7 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
       throw new ApiRequestError(code, message, echoed, details)
     }
 
-    const parsed = schema.safeParse(body)
+    const parsed = schema.safeParse(payload)
     if (!parsed.success) {
       throw new ApiRequestError('INTERNAL', 'api answered outside the contract', echoed, {
         issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
@@ -110,5 +129,6 @@ export function createApiClient(deps: ApiClientDeps): ApiClient {
 
   return {
     get: (path, schema) => request('GET', path, schema),
+    post: (path, body, schema) => request('POST', path, schema, body),
   }
 }

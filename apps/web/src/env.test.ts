@@ -4,6 +4,7 @@ import { readWebEnv, WebEnvError } from './env'
 const good = {
   VITE_API_URL: 'http://localhost:8787',
   VITE_PRIVY_APP_ID: 'clz0privyapp',
+  VITE_DEVNET_RPC_URL: 'https://api.devnet.solana.com',
 }
 
 const problems = (source: unknown): string[] => {
@@ -27,7 +28,7 @@ describe('readWebEnv', () => {
   })
 
   it('names every missing variable at once, not the first one', () => {
-    expect(problems({})).toHaveLength(2)
+    expect(problems({})).toHaveLength(3)
   })
 
   it('rejects the .env.example placeholder', () => {
