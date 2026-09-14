@@ -85,12 +85,12 @@ export interface SignatureReader {
 }
 
 export class ConfirmationError extends Error {
-  constructor(
-    message: string,
-    readonly signature: string,
-  ) {
+  readonly signature: string
+
+  constructor(message: string, signature: string) {
     super(message)
     this.name = 'ConfirmationError'
+    this.signature = signature
   }
 }
 

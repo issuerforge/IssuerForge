@@ -21,7 +21,7 @@ pub mod state;
 use hook::*;
 use instructions::*;
 
-declare_id!("ForgePo1icy11111111111111111111111111111111");
+declare_id!("DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5");
 
 #[program]
 pub mod issuer_forge {

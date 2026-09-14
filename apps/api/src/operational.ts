@@ -41,13 +41,12 @@ export interface OperationalSigner {
  * зламаний RPC, — і це вже збій API, а не відповідь.
  */
 export class SubmitError extends Error {
-  constructor(
-    message: string,
-    readonly program: ProgramError | undefined,
-    options?: { cause?: unknown },
-  ) {
+  readonly program: ProgramError | undefined
+
+  constructor(message: string, program: ProgramError | undefined, options?: { cause?: unknown }) {
     super(message, options)
     this.name = 'SubmitError'
+    this.program = program
   }
 }
 

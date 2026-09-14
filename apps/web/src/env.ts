@@ -50,9 +50,12 @@ export const webEnvSchema = z.object({
 export type WebEnv = z.infer<typeof webEnvSchema>
 
 export class WebEnvError extends Error {
-  constructor(readonly problems: readonly string[]) {
+  readonly problems: readonly string[]
+
+  constructor(problems: readonly string[]) {
     super(`console is misconfigured:\n${problems.map((p) => `  · ${p}`).join('\n')}`)
     this.name = 'WebEnvError'
+    this.problems = problems
   }
 }
 

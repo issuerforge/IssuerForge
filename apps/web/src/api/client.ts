@@ -34,14 +34,21 @@ export interface ApiClientDeps {
  * екран приймає рішення за кодом, а не за текстом повідомлення.
  */
 export class ApiRequestError extends Error {
+  readonly code: ErrorCode
+  readonly requestId: string
+  readonly details: Record<string, unknown> | undefined
+
   constructor(
-    readonly code: ErrorCode,
+    code: ErrorCode,
     message: string,
-    readonly requestId: string,
-    readonly details?: Record<string, unknown>,
+    requestId: string,
+    details?: Record<string, unknown>,
   ) {
     super(message)
     this.name = 'ApiRequestError'
+    this.code = code
+    this.requestId = requestId
+    this.details = details
   }
 }
 

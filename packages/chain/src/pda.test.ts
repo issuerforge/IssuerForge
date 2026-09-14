@@ -84,27 +84,32 @@ describe('мітки seeds', () => {
 describe('адреси PDA', () => {
   // Пін-значення: будь-яка зміна seeds або кодування ловиться тут, а не в
   // транзакції на девнеті.
+  //
+  // Значення перераховані один раз — коли `anchor keys sync` замінив заглушку
+  // `ForgePo1icy111…` на справжню адресу програми перед першим деплоєм (T024).
+  // Це єдина законна причина їх міняти: усе інше, що зрушить ці адреси, — це
+  // зміна seeds, тобто саме те, що тест і ловить.
   it.each([
-    ['IssuerConfig', issuerConfigPda(ISSUER_ID), 'EeYRwFELCb26ZFoiurGWwkekrDDAERBUWYKVXqs2ZDNw'],
-    ['mint', mintPda(ISSUER_ID, 0), '55mFwWmb2TK91JLRdq8Yvxf7UuxqkrLoBqYQ16sNndNn'],
-    ['TokenConfig', tokenConfigPda(MINT), '4yQao3mhkWiWNgY5jmtbvJSbuRikmgMy8iT4kkmpcYPN'],
-    ['PolicyConfig', policyConfigPda(MINT, 7), 'Edd5LtcqDu6CSGrKcXbtYBw5zjruZxuBiSEFbwBFSXAE'],
-    ['HolderStatus', holderStatusPda(MINT, WALLET), '7ZNF8xYgg1hr784ewVVEPu51vCY6688frAwPfkFE3pXP'],
+    ['IssuerConfig', issuerConfigPda(ISSUER_ID), '78JU4hsTQ33q6DgvU5K3BRjLdKe2eqgapNucWGcr3RuU'],
+    ['mint', mintPda(ISSUER_ID, 0), '91YeQseGJTGKM24XpSRjEC1zQWxKGuo5Bkf15xRX7ubS'],
+    ['TokenConfig', tokenConfigPda(MINT), '33UvoN3RFpgqvdfqDdhu5W8yXZKKcsseXDjBRJ9Gp8cy'],
+    ['PolicyConfig', policyConfigPda(MINT, 7), 'F69qxiRVkW8Arciysxy1VRp2ZCzRmB7sFj4pqSK8csM6'],
+    ['HolderStatus', holderStatusPda(MINT, WALLET), '2HZzDNCwFS4eov9i7tE3YVV9SphuzMEaHTkbEZqeqyJv'],
     [
       'VelocityCounter',
       velocityCounterPda(MINT, WALLET),
-      'p58tX7p3bQuH8xBRHhorK9bnTyF2AmogzafEgGzvfM9',
+      '7bUQHhSdGttaGvhVoHwJZeDYeMxQbRrMArrwKfRxp2rj',
     ],
-    ['ActionProposal', actionProposalPda(MINT, 9n), 'DGro4ay5DE2hXucH1oP6SPFm6Q9pZ6qfRBnWYjrRZPVy'],
+    ['ActionProposal', actionProposalPda(MINT, 9n), 'Hi33NTpXc2JnDTYasHPEmFPbNigkW5LHAFeyEuDVGrD2'],
     [
       'ReserveAttestation',
       reserveAttestationPda(MINT, 3n),
-      '6ES79hyhhst36qUwk5RMSg9iNvL33sCxsXwd73MCn6mh',
+      'FK1U9P45qLBpLm7ZjNMc9vxmxkTy4TzB4b4nAL25qyjc',
     ],
     [
       'RedemptionEscrow',
       redemptionEscrowPda(MINT, ISSUER_ID),
-      'B91BqGRN4mrgtNdVK2kwTNch8sokPswycj5R7CCxwM1x',
+      'ACvCyUZBRMpAToAW3jGpgPiXvESv14LRdBPvLDpoQDYp',
     ],
   ])('%s виводиться в закріплену адресу', (_name, actual, expected) => {
     expect(actual.toBase58()).toBe(expected)

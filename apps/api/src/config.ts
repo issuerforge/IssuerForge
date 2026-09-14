@@ -128,9 +128,15 @@ export interface Config {
 }
 
 export class ConfigError extends Error {
-  constructor(readonly issues: string[]) {
+  // Поле оголошене явно, а не параметром конструктора: `node src/index.ts`
+  // зрізає типи, не перетворюючи їх, і параметр-властивість там — синтаксична
+  // помилка. Процес api через це не піднімався взагалі (знайдено в T024).
+  readonly issues: string[]
+
+  constructor(issues: string[]) {
     super(`invalid environment:\n${issues.map((i) => `  - ${i}`).join('\n')}`)
     this.name = 'ConfigError'
+    this.issues = issues
   }
 }
 

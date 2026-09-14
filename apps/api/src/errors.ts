@@ -11,13 +11,16 @@ import { ZodError } from 'zod'
 import type { AppEnv } from './env.ts'
 
 export class ApiProblem extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    message: string,
-    readonly details?: Record<string, unknown>,
-  ) {
+  // Те саме, що в `config.ts`: параметр-властивість не переживає зрізання
+  // типів, яким Node запускає цей процес.
+  readonly code: ErrorCode
+  readonly details: Record<string, unknown> | undefined
+
+  constructor(code: ErrorCode, message: string, details?: Record<string, unknown>) {
     super(message)
     this.name = 'ApiProblem'
+    this.code = code
+    this.details = details
   }
 
   toBody(): ApiError {

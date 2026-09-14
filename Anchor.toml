@@ -7,10 +7,15 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-issuer_forge = "ForgePo1icy11111111111111111111111111111111"
+attacker = "9ZCmUGqkrtBrm83uiiMwBgRrV2cBPE9HGMgA25iRJGkQ"
+issuer_forge = "DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5"
 
 [programs.localnet]
+attacker = "Att4ckerRe1ay111111111111111111111111111111"
 issuer_forge = "ForgePo1icy11111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"

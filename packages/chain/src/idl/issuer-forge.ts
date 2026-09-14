@@ -10,7 +10,7 @@
 // рантайм не впливає.
 
 export type IssuerForge = {
-  "address": "ForgePo1icy11111111111111111111111111111111",
+  "address": "DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5",
   "metadata": {
     "name": "issuerForge",
     "version": "0.1.0",
@@ -2464,7 +2464,7 @@ export type IssuerForge = {
 }
 
 export const IDL: IssuerForge = {
-  "address": "ForgePo1icy11111111111111111111111111111111",
+  "address": "DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5",
   "metadata": {
     "name": "issuerForge",
     "version": "0.1.0",

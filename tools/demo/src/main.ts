@@ -1,0 +1,199 @@
+// Демо-сценарій US1 і вимір критеріїв M1 (T024).
+//
+// **Не тест, а вимір.** Тести доводять, що код робить те, що написано; цей
+// скрипт доводить числа, які стоять у таблиці віхи: скільки часу займає випуск,
+// скільки коштує переказ і скільки спроб порушити правило пройшло (жодна).
+//
+// Запуск:
+//   node tools/demo/src/main.ts --rpc http://127.0.0.1:8899
+//   node tools/demo/src/main.ts --rpc https://api.devnet.solana.com --api http://localhost:8787
+import { buildTransfer } from '@forge/chain'
+import type { PolicyRules } from '@forge/policy/model'
+import { PublicKey } from '@solana/web3.js'
+import { runAttacks } from './attacks.ts'
+import { createContext, fund, solOf } from './context.ts'
+import { measureCost } from './cost.ts'
+import { createAta, onboard, setStatus } from './holders.ts'
+import { issueToken } from './issuance.ts'
+import { createIssuer } from './issuer.ts'
+import { attemptOverReserve } from './reserve.ts'
+import { submitPlan } from './send.ts'
+
+/** Програма-посередник для вектора CPI. Адреса та, що в `Anchor.toml`. */
+const ATTACKER_PROGRAM = new PublicKey('9ZCmUGqkrtBrm83uiiMwBgRrV2cBPE9HGMgA25iRJGkQ')
+
+interface Options {
+  readonly rpc: string
+  /** База api. Порожня — демо йде прямо в ланцюг, повз резервацію номера. */
+  readonly api: string | undefined
+}
+
+function parseArgs(argv: readonly string[]): Options {
+  const value = (flag: string): string | undefined => {
+    const index = argv.indexOf(flag)
+    return index === -1 ? undefined : argv[index + 1]
+  }
+  return {
+    rpc: value('--rpc') ?? 'http://127.0.0.1:8899',
+    api: value('--api'),
+  }
+}
+
+/**
+ * Політика демо: власний реєстр емітента, рівень 2, дві країни, обидва ліміти.
+ *
+ * Джерело `provider` навмисно не приймається. Атестації провайдера живуть у
+ * спільному сервісі атестацій, якого на локальному валідаторі немає; політика,
+ * що їх приймає, дала б `*_STATUS_MISSING` на кожному переказі — тобто
+ * вимірювала б відсутність сервісу, а не роботу правила.
+ */
+const DEMO_POLICY: PolicyRules = {
+  status: { sources: ['register'], minTier: 2 },
+  jurisdictions: ['GH', 'NG'],
+  transferLimit: '50000000',
+  periodLimit: { amount: '200000000', windowSeconds: 24 * 3600 },
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2))
+  const context = createContext(options.rpc)
+  const { keys, connection } = context
+
+  console.log(`cluster: ${options.rpc}`)
+  console.log(`founder: ${keys.founder.publicKey.toBase58()}`)
+
+  // Засновник платить оренду за все: конфіг емітента, mint, політику,
+  // атестацію, два акаунти на кожного холдера.
+  const funded = await fund(connection, keys.founder.publicKey, 5)
+  // Операційний ключ платить за власні транзакції сам: `set_holder_status`
+  // платника окремо не має, тож комісію несе той, хто санкціонує (T020). Це не
+  // деталь демо, а економічний наслідок делегації — платформа платить за
+  // рутину, яку їй доручили.
+  await fund(connection, keys.operational.publicKey, 1)
+  const balance = await connection.getBalance(keys.founder.publicKey)
+  console.log(
+    `balance: ${solOf(balance)} SOL${funded ? '' : ' (airdrop refused; using what is there)'}`,
+  )
+
+  const issuer = await createIssuer(context)
+  console.log(`issuer:  ${issuer.issuerId.toBase58()} · ${issuer.sent.computeUnits ?? '?'} CU`)
+
+  const issuance = await issueToken(context, {
+    issuerId: issuer.issuerId,
+    tokenIndex: 0,
+    decimals: 2,
+    policy: DEMO_POLICY,
+    initialSupply: 2_500_000_000n,
+    reserveAmount: 2_540_000_000n,
+    reserveCurrency: 'NGN',
+    feeBps: 12,
+    attestationMaxAge: BigInt(24 * 3600),
+    name: 'Vantara Naira',
+    symbol: 'vNGN',
+    uri: 'https://vantara.example/vngn.json',
+  })
+
+  console.log(`mint:    ${issuance.addresses.mint.toBase58()}`)
+  for (const [index, step] of issuance.steps.entries()) {
+    console.log(
+      `  ${index + 1}. ${step.bytes} bytes · ${step.computeUnits ?? '?'} CU · ${step.feeLamports ?? '?'} lamports`,
+    )
+  }
+  console.log(`issued in ${(issuance.elapsedMs / 1000).toFixed(1)} s`)
+
+  const mint = issuance.addresses.mint
+
+  // Двоє холдерів, обидва в дозволеній юрисдикції й з потрібним рівнем: усе,
+  // що далі відмовляє, відмовляє через **правило**, а не через незаповнений
+  // статус.
+  const alice = await onboard(context, mint, issuer.issuerId, keys.alice, {
+    tier: 2,
+    jurisdiction: 'NG',
+    denied: false,
+    expiresAt: 0n,
+  })
+  const bob = await onboard(context, mint, issuer.issuerId, keys.bob, {
+    tier: 2,
+    jurisdiction: 'GH',
+    denied: false,
+    expiresAt: 0n,
+  })
+  console.log(`holders: alice ${alice.thawed.computeUnits} CU · bob ${bob.thawed.computeUnits} CU`)
+
+  // Засновник тримає весь випуск: перший переказ іде від нього.
+  const founderAta = await onboard(context, mint, issuer.issuerId, keys.founder, {
+    tier: 2,
+    jurisdiction: 'NG',
+    denied: false,
+    expiresAt: 0n,
+  }).catch(() => undefined)
+  void founderAta
+
+  const transfer = await buildTransfer(context.connection, {
+    mint,
+    owner: keys.founder.publicKey,
+    recipient: keys.alice.publicKey,
+    amount: 10_000n,
+    decimals: 2,
+  })
+  const moved = await submitPlan(context.connection, transfer, [keys.founder])
+  console.log(
+    `transfer: ${moved.computeUnits} CU · ${moved.bytes} bytes · ${moved.feeLamports} lamports`,
+  )
+
+  const restated = await setStatus(context, mint, issuer.issuerId, keys.bob.publicKey, {
+    tier: 1,
+    jurisdiction: 'GH',
+    denied: false,
+    expiresAt: 0n,
+  })
+  console.log(`status:  ${restated.computeUnits} CU`)
+
+  // ── SC-003: скільки коштує правило ────────────────────────────────────────
+  const cost = await measureCost(context, moved, 2, keys.alice.publicKey)
+  console.log(
+    `cost:    with rule ${cost.withRule.computeUnits} CU / ${cost.withRule.feeLamports} lamports` +
+      ` · without ${cost.withoutRule.computeUnits} CU / ${cost.withoutRule.feeLamports} lamports`,
+  )
+  console.log(
+    `         ratio ${cost.computeRatio?.toFixed(2) ?? '?'}× in compute, ` +
+      `${cost.feeRatio?.toFixed(2) ?? '?'}× in lamports`,
+  )
+
+  // ── SC-002: спроби порушити правило ───────────────────────────────────────
+  // Чужий рахунок заводиться, але не розморожується: він існує, він порожній і
+  // він заморожений — рівно те, чим є адреса, якої емітент не впускав.
+  await createAta(context, mint, keys.stranger.publicKey)
+
+  const attacks = await runAttacks(context, {
+    mint,
+    decimals: 2,
+    holder: keys.founder,
+    stranger: keys.stranger,
+    allowed: keys.alice.publicKey,
+    transferLimit: 50_000_000n,
+    repeats: 8,
+    attackerProgram: ATTACKER_PROGRAM,
+  })
+
+  console.log(`attacks: ${attacks.refused} refused of ${attacks.total}`)
+  for (const [vector, tally] of Object.entries(attacks.byVector)) {
+    console.log(`  ${vector.padEnd(12)} ${tally.refused}/${tally.total}`)
+  }
+  const codes = new Map<string, number>()
+  for (const item of attacks.attempts) {
+    const key = item.refusalCode ?? item.refusedBy ?? 'not refused'
+    codes.set(key, (codes.get(key) ?? 0) + 1)
+  }
+  for (const [code, count] of codes) console.log(`  ${code}: ${count}`)
+
+  // ── SC-005 (частково): випуск понад атестований резерв ────────────────────
+  const reserve = await attemptOverReserve(context, issuer.issuerId, DEMO_POLICY, 10, 1)
+  console.log(`reserve: ${reserve.refused} refused of ${reserve.attempts}`)
+  console.log(`  ${[...new Set(reserve.codes)].join(', ')}`)
+}
+
+main().catch((error: unknown) => {
+  console.error(error)
+  process.exit(1)
+})
