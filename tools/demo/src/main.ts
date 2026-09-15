@@ -16,6 +16,7 @@ import { measureCost } from './cost.ts'
 import { createAta, onboard, setStatus } from './holders.ts'
 import { issueToken } from './issuance.ts'
 import { createIssuer } from './issuer.ts'
+import { checkParity, type Party, type Scenario } from './parity.ts'
 import { attemptOverReserve } from './reserve.ts'
 import { submitPlan } from './send.ts'
 
@@ -149,6 +150,77 @@ async function main() {
   })
   console.log(`status:  ${restated.computeUnits} CU`)
 
+  // ── SC-008: симуляція проти мережі ────────────────────────────────────────
+  // Стоїть **перед** спробами порушення: ті вичерпують ліміт за період, і
+  // після них кожен сценарій відмовляв би однією й тією ж причиною.
+  const carol = await onboard(context, mint, issuer.issuerId, keys.carol, {
+    tier: 2,
+    jurisdiction: 'PL',
+    denied: false,
+    expiresAt: 0n,
+  })
+  const dave = await onboard(context, mint, issuer.issuerId, keys.dave, {
+    tier: 2,
+    jurisdiction: 'NG',
+    denied: true,
+    expiresAt: 0n,
+  })
+  void carol
+  void dave
+  await createAta(context, mint, keys.stranger.publicKey)
+
+  const party = (wallet: typeof keys.alice, over: Partial<Party> = {}): Party => ({
+    wallet,
+    tier: 2,
+    jurisdiction: 'NG',
+    denied: false,
+    unregistered: false,
+    ...over,
+  })
+
+  const LIMIT = 50_000_000n
+  const allowed = party(keys.alice)
+  const lowTier = party(keys.bob, { tier: 1, jurisdiction: 'GH' })
+  const foreign = party(keys.carol, { jurisdiction: 'PL' })
+  const denied = party(keys.dave, { denied: true })
+  const frozen = party(keys.stranger, { unregistered: true })
+
+  const scenarios: Scenario[] = [
+    { name: 'allowed holder, small amount', recipient: allowed, amount: 1_000n },
+    { name: 'allowed holder, exactly the limit', recipient: allowed, amount: LIMIT },
+    { name: 'allowed holder, one over the limit', recipient: allowed, amount: LIMIT + 1n },
+    { name: 'tier below the minimum, small', recipient: lowTier, amount: 1_000n },
+    { name: 'tier below the minimum, over the limit', recipient: lowTier, amount: LIMIT + 1n },
+    { name: 'jurisdiction not allowed, small', recipient: foreign, amount: 1_000n },
+    { name: 'jurisdiction not allowed, over the limit', recipient: foreign, amount: LIMIT + 1n },
+    { name: 'denied in the register, small', recipient: denied, amount: 1_000n },
+    { name: 'denied in the register, over the limit', recipient: denied, amount: LIMIT + 1n },
+    { name: 'never let in, small', recipient: frozen, amount: 1_000n },
+    { name: 'never let in, over the limit', recipient: frozen, amount: LIMIT + 1n },
+    { name: 'allowed holder, second slice', recipient: allowed, amount: LIMIT },
+    { name: 'allowed holder, third slice', recipient: allowed, amount: LIMIT },
+    { name: 'allowed holder, fourth slice', recipient: allowed, amount: LIMIT },
+    { name: 'allowed holder, past the period limit', recipient: allowed, amount: LIMIT },
+    { name: 'allowed holder, well past the period limit', recipient: allowed, amount: 1_000n },
+  ]
+
+  const parity = await checkParity(context, {
+    mint,
+    decimals: 2,
+    policy: DEMO_POLICY,
+    sender: party(keys.founder),
+    scenarios,
+    policyVersion: 1,
+  })
+
+  console.log(`parity:  ${parity.agreed} of ${parity.total} agree`)
+  for (const row of parity.rows) {
+    if (row.agrees) continue
+    console.log(
+      `  MISMATCH ${row.name}: simulated ${verdictOf(row.simulated)}, chain ${verdictOf(row.onChain)}`,
+    )
+  }
+
   // ── SC-003: скільки коштує правило ────────────────────────────────────────
   const cost = await measureCost(context, moved, 2, keys.alice.publicKey)
   console.log(
@@ -161,10 +233,6 @@ async function main() {
   )
 
   // ── SC-002: спроби порушити правило ───────────────────────────────────────
-  // Чужий рахунок заводиться, але не розморожується: він існує, він порожній і
-  // він заморожений — рівно те, чим є адреса, якої емітент не впускав.
-  await createAta(context, mint, keys.stranger.publicKey)
-
   const attacks = await runAttacks(context, {
     mint,
     decimals: 2,
@@ -192,6 +260,9 @@ async function main() {
   console.log(`reserve: ${reserve.refused} refused of ${reserve.attempts}`)
   console.log(`  ${[...new Set(reserve.codes)].join(', ')}`)
 }
+
+const verdictOf = (verdict: { allowed: boolean; code?: string }): string =>
+  verdict.allowed ? 'allowed' : (verdict.code ?? 'refused')
 
 main().catch((error: unknown) => {
   console.error(error)

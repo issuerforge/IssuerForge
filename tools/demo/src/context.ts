@@ -29,6 +29,10 @@ export interface DemoKeys {
   /** Два холдери: між ними йдуть перекази, і на них міряються відмови. */
   readonly alice: Keypair
   readonly bob: Keypair
+  /** Юрисдикція поза дозволеними. */
+  readonly carol: Keypair
+  /** Заборонений у власному реєстрі емітента. */
+  readonly dave: Keypair
   /** Той, кого емітент не впускав: жоден його переказ не має пройти. */
   readonly stranger: Keypair
 }
@@ -50,6 +54,8 @@ export function newKeys(): DemoKeys {
     treasury: Keypair.generate(),
     alice: Keypair.generate(),
     bob: Keypair.generate(),
+    carol: Keypair.generate(),
+    dave: Keypair.generate(),
     stranger: Keypair.generate(),
   }
 }
