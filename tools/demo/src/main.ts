@@ -6,12 +6,13 @@
 //
 // Запуск:
 //   node tools/demo/src/main.ts --rpc http://127.0.0.1:8899
-//   node tools/demo/src/main.ts --rpc https://api.devnet.solana.com --api http://localhost:8787
+//   node tools/demo/src/main.ts --rpc https://api.devnet.solana.com \
+//     --payer ~/.config/solana/id.json
 import { buildTransfer } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
-import { PublicKey } from '@solana/web3.js'
+import { type Keypair, PublicKey } from '@solana/web3.js'
 import { runAttacks } from './attacks.ts'
-import { createContext, fund, solOf } from './context.ts'
+import { createContext, fund, loadKeypair, solOf } from './context.ts'
 import { measureCost } from './cost.ts'
 import { createAta, onboard, setStatus } from './holders.ts'
 import { issueToken } from './issuance.ts'
@@ -27,6 +28,14 @@ interface Options {
   readonly rpc: string
   /** База api. Порожня — демо йде прямо в ланцюг, повз резервацію номера. */
   readonly api: string | undefined
+  /**
+   * Файл ключа, з якого беруться гроші на прогін. Порожній — кран.
+   *
+   * На devnet кран дає 2 SOL за раз і не завжди, тож прогін залежав би від
+   * настрою крана, а не від коду. Гаманець деплою вже має гроші й на devnet
+   * потрібен однаково — це той самий ключ, яким програма туди покладена.
+   */
+  readonly payer: string | undefined
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -37,8 +46,26 @@ function parseArgs(argv: readonly string[]): Options {
   return {
     rpc: value('--rpc') ?? 'http://127.0.0.1:8899',
     api: value('--api'),
+    payer: value('--payer'),
   }
 }
+
+/**
+ * Скільки наливається засновнику й операційному ключу.
+ *
+ * З крана береться щедро: локально це нічого не коштує. З гаманця — рівно
+ * стільки, скільки треба з запасом: прогін не прибирає за собою (борг №5), тож
+ * усе, що налито понад витрачене, лишається на одноразовому ключі назавжди.
+ *
+ * Числа зняті з виміру, а не назначені: повний прогін спалює **0,0475 SOL** на
+ * засновнику (оренда емітента, mint, політики, атестації та семи ATA плюс
+ * комісії ста тридцяти транзакцій) і соті цього на операційному ключі. Запас —
+ * чотирикратний.
+ */
+const FUNDING = {
+  faucet: { founder: 5, operational: 1 },
+  wallet: { founder: 0.2, operational: 0.05 },
+} as const
 
 /**
  * Політика демо: власний реєстр емітента, рівень 2, дві країни, обидва ліміти.
@@ -63,14 +90,29 @@ async function main() {
   console.log(`cluster: ${options.rpc}`)
   console.log(`founder: ${keys.founder.publicKey.toBase58()}`)
 
+  const payer: Keypair | undefined =
+    options.payer === undefined ? undefined : loadKeypair(options.payer)
+  const amounts = payer === undefined ? FUNDING.faucet : FUNDING.wallet
+
+  if (payer !== undefined) {
+    const available = solOf(await connection.getBalance(payer.publicKey))
+    console.log(`payer:   ${payer.publicKey.toBase58()} · ${available} SOL`)
+    // Перевірка тут, а не «перша транзакція скаже»: порожній гаманець посеред
+    // прогону лишає позаду половину емітента й спалені комісії.
+    const needed = amounts.founder + amounts.operational
+    if (available < needed) {
+      throw new Error(`payer holds ${available} SOL, and the run needs at least ${needed}`)
+    }
+  }
+
   // Засновник платить оренду за все: конфіг емітента, mint, політику,
   // атестацію, два акаунти на кожного холдера.
-  const funded = await fund(connection, keys.founder.publicKey, 5)
+  const funded = await fund(connection, keys.founder.publicKey, amounts.founder, payer)
   // Операційний ключ платить за власні транзакції сам: `set_holder_status`
   // платника окремо не має, тож комісію несе той, хто санкціонує (T020). Це не
   // деталь демо, а економічний наслідок делегації — платформа платить за
   // рутину, яку їй доручили.
-  await fund(connection, keys.operational.publicKey, 1)
+  await fund(connection, keys.operational.publicKey, amounts.operational, payer)
   const balance = await connection.getBalance(keys.founder.publicKey)
   console.log(
     `balance: ${solOf(balance)} SOL${funded ? '' : ' (airdrop refused; using what is there)'}`,

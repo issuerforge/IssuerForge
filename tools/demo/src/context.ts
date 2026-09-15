@@ -4,8 +4,20 @@
 // створює власного емітента з нуля — саме це й міряє SC-001 («на чистому
 // акаунті»). Постійний ключ зробив би другий прогін дешевшим за перший, тобто
 // зіпсував би вимір, заради якого все й робиться.
+//
+// `--payer` цього не міняє: гаманець деплою лише **доливає** свіжим ключам
+// замість крана, а підписують і володіють усім усе ті самі одноразові ключі.
+import { readFileSync } from 'node:fs'
 import { createForgeProgram, type ForgeProgram } from '@forge/chain'
-import { Connection, Keypair, LAMPORTS_PER_SOL, type PublicKey } from '@solana/web3.js'
+import {
+  Connection,
+  type FetchFn,
+  Keypair,
+  LAMPORTS_PER_SOL,
+  type PublicKey,
+  SystemProgram,
+} from '@solana/web3.js'
+import { submit } from './send.ts'
 
 export interface DemoKeys {
   /** Платник оренди й комісій. Він же засновник-адміністратор. */
@@ -60,8 +72,72 @@ export function newKeys(): DemoKeys {
   }
 }
 
+/**
+ * Ліміт звертань до вузла: сплеск і темп поповнення.
+ *
+ * Публічний devnet ріже двома лічильниками — ~100 запитів за 10 секунд разом і
+ * ~40 за 10 секунд на **один метод**, — а повний прогін це понад сотня
+ * транзакцій і стільки ж читань. Без ліміту вимір показував би не роботу
+ * правила, а `429`: він приходить замість відмови програми й лягає у звіт як
+ * «спроба не зібралась».
+ *
+ * **Чому відро, а не рівний проміжок.** Рівний проміжок обкладає податком і
+ * випуск теж, а випуск — це SC-001, тобто число, заради якого демо існує.
+ * Перший прогін на devnet із проміжком 120 мс дав 10,0 с замість 1,2 с
+ * локальних, і майже вся різниця — відкоти після `429`, а не ланцюг. Відро
+ * пропускає перші тридцять запитів без затримки (випуск вкладається цілком) і
+ * притримує тільки довгі цикли атак і звірки, де час нічого не міряє.
+ *
+ * Три запити за секунду — це 30 за десять, тобто нижче за менший із двох
+ * лічильників навіть у найгіршому випадку, коли всі запити одного методу.
+ */
+const NODE_LIMIT = { burst: 30, perSecond: 3 } as const
+
+const isLocal = (rpcUrl: string): boolean =>
+  rpcUrl.includes('127.0.0.1') || rpcUrl.includes('localhost')
+
+/**
+ * `fetch` із відром токенів. `limit === undefined` — без обмежень.
+ *
+ * Черга потрібна, щоб два одночасні запити не забрали один токен двічі.
+ * Повтор на `429` робить сам web3.js (`Retry-After`), і ці повтори теж беруть
+ * токени — інакше відкат розганяв би саме те, від чого тікає.
+ */
+function pacedFetch(limit: { burst: number; perSecond: number } | undefined): FetchFn {
+  let queue: Promise<void> = Promise.resolve()
+  let tokens = limit?.burst ?? 0
+  let filled = Date.now()
+
+  const take = async (rate: { burst: number; perSecond: number }): Promise<void> => {
+    const now = Date.now()
+    tokens = Math.min(rate.burst, tokens + ((now - filled) / 1000) * rate.perSecond)
+    filled = now
+    if (tokens < 1) {
+      await new Promise((resolve) => setTimeout(resolve, ((1 - tokens) / rate.perSecond) * 1000))
+      filled = Date.now()
+    }
+    tokens = Math.max(0, tokens - 1)
+  }
+
+  const paced = async (input: unknown, init: unknown): Promise<unknown> => {
+    if (limit !== undefined) {
+      const turn = queue.then(() => take(limit))
+      queue = turn
+      await turn
+    }
+    return await fetch(input as string, init as RequestInit)
+  }
+
+  // `FetchFn` описаний типами node-fetch, а в рантаймі це глобальний `fetch`
+  // Node. Каст стоїть рівно на цій межі й більше ніде.
+  return paced as unknown as FetchFn
+}
+
 export function createContext(rpcUrl: string): DemoContext {
-  const connection = new Connection(rpcUrl, 'confirmed')
+  const connection = new Connection(rpcUrl, {
+    commitment: 'confirmed',
+    fetch: pacedFetch(isLocal(rpcUrl) ? undefined : NODE_LIMIT),
+  })
   return {
     connection,
     program: createForgeProgram(connection),
@@ -71,18 +147,53 @@ export function createContext(rpcUrl: string): DemoContext {
 }
 
 /**
- * Наливає SOL там, де це можливо, і мовчки пропускає там, де ні.
+ * Ключ із файла `solana-keygen`: масив із 64 байтів у JSON.
+ *
+ * Формат перевіряється тут, а не першою транзакцією: «невірний підпис» через
+ * п'ять хвилин прогону не каже, що не так із файлом.
+ */
+export function loadKeypair(path: string): Keypair {
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  if (!Array.isArray(parsed) || parsed.length !== 64) {
+    throw new Error(`${path}: expected a solana keypair file — a JSON array of 64 bytes`)
+  }
+  return Keypair.fromSecretKey(Uint8Array.from(parsed as number[]))
+}
+
+/**
+ * Наливає SOL: переказом із гаманця, якщо він названий, інакше з крана.
  *
  * На локальному валідаторі airdrop безкоштовний і миттєвий. На devnet він
- * обмежений, тож гаманець наповнюється заздалегідь і рукою — і саме тому
- * невдалий airdrop тут **не** зупиняє прогін: він лише не додає грошей, а
- * бракує їх чи ні, скаже перша ж транзакція.
+ * обмежений, і саме тому існує `--payer`: гаманець деплою вже має гроші, і
+ * прогін бере їх звідти, а не стає в чергу до крана.
+ *
+ * Невдалий airdrop **не** зупиняє прогін: він лише не додає грошей, а бракує
+ * їх чи ні, скаже перша ж транзакція. Невдалий переказ із гаманця — навпаки,
+ * зупиняє: названий гаманець, з якого не вийшло взяти, — це помилка запуску,
+ * а не властивість мережі.
  */
 export async function fund(
   connection: Connection,
   address: PublicKey,
   sol: number,
+  payer?: Keypair,
 ): Promise<boolean> {
+  if (payer !== undefined) {
+    await submit(
+      connection,
+      payer.publicKey,
+      [
+        SystemProgram.transfer({
+          fromPubkey: payer.publicKey,
+          toPubkey: address,
+          lamports: Math.round(sol * LAMPORTS_PER_SOL),
+        }),
+      ],
+      [payer],
+    )
+    return true
+  }
+
   try {
     const signature = await connection.requestAirdrop(address, sol * LAMPORTS_PER_SOL)
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash()
