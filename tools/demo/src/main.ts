@@ -4,21 +4,38 @@
 // скрипт доводить числа, які стоять у таблиці віхи: скільки часу займає випуск,
 // скільки коштує переказ і скільки спроб порушити правило пройшло (жодна).
 //
-// Запуск:
-//   node tools/demo/src/main.ts --rpc http://127.0.0.1:8899
-//   node tools/demo/src/main.ts --rpc https://api.devnet.solana.com \
-//     --payer ~/.config/solana/id.json
+// Запуск (оточення читається з кореневого `.env`):
+//   node --env-file=.env tools/demo/src/main.ts --rpc http://127.0.0.1:8899
+//   node --env-file=.env tools/demo/src/main.ts \
+//     --rpc https://api.devnet.solana.com --payer ~/.config/solana/id.json
+//
+// `--api http://127.0.0.1:8787` веде випуск і онбординг через api — тим самим
+// шляхом, яким іде майстер. Без нього демо збирає транзакції сама, і SC-001
+// міряє лише ончейн-половину. Атаки, звірка й вартість переказу прямі в обох
+// випадках: вони міряють правило, і http у цьому вимірі був би шумом.
 import { buildTransfer } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
+import { DELEGATION } from '@forge/shared/api'
 import { type Keypair, PublicKey } from '@solana/web3.js'
+import { type ApiClient, createApiClient } from './api.ts'
 import { runAttacks } from './attacks.ts'
-import { createContext, fund, loadKeypair, solOf } from './context.ts'
+import {
+  createContext,
+  type DemoContext,
+  fund,
+  keypairFromBase58,
+  loadKeypair,
+  solOf,
+} from './context.ts'
 import { measureCost } from './cost.ts'
 import { createAta, onboard, setStatus } from './holders.ts'
 import { issueToken } from './issuance.ts'
+import { issueViaApi } from './issuance-api.ts'
 import { createIssuer } from './issuer.ts'
+import { type LoginSession, startLogin } from './login.ts'
 import { checkParity, type Party, type Scenario } from './parity.ts'
 import { attemptOverReserve } from './reserve.ts'
+import { closeDatabase, openDatabase, seedIssuer } from './seed.ts'
 import { submitPlan } from './send.ts'
 
 /** Програма-посередник для вектора CPI. Адреса та, що в `Anchor.toml`. */
@@ -67,6 +84,76 @@ const FUNDING = {
   wallet: { founder: 0.2, operational: 0.05 },
 } as const
 
+/** Змінна оточення, без якої шлях `--api` не почнеться. */
+function required(name: string): string {
+  const value = process.env[name]
+  if (value === undefined || value === '' || value.includes('REPLACE_ME')) {
+    throw new Error(`${name} is required for --api (read from .env via --env-file-if-exists)`)
+  }
+  return value
+}
+
+/**
+ * Усе, що потрібно, щоб демо ввійшла в api так само, як консоль.
+ *
+ * Три кроки, і жоден із них не є обходом входу: склад пишеться в базу (це
+ * робота індексатора T031, якого ще немає), фікстура відповідає на той самий
+ * запит, що й Privy, а токен підписується ключем, чию публічну половину api
+ * читає з оточення й перевіряє сама.
+ */
+async function openApiSession(
+  context: ReturnType<typeof createContext>,
+  issuerId: PublicKey,
+  baseUrl: string,
+): Promise<{ api: ApiClient; login: LoginSession; close: () => Promise<void> }> {
+  const { keys, connection } = context
+
+  const db = openDatabase(required('DATABASE_URL'))
+  await seedIssuer(db, {
+    issuerId,
+    keys,
+    quorumN: 2,
+    delegationMask: DELEGATION.THAW_HOLDER | DELEGATION.SET_HOLDER_STATUS,
+    slot: await connection.getSlot('confirmed'),
+  })
+
+  // Порт береться з тієї самої адреси, яку читає api: два числа розійшлися б
+  // мовчки, і api ходив би в порожнечу.
+  const fixtureUrl = new URL(required('PRIVY_API_URL'))
+
+  const login = await startLogin(
+    {
+      signingKeyPem: required('LOGIN_SIGNING_KEY').replaceAll('\\n', '\n'),
+      appId: required('PRIVY_APP_ID'),
+      port: Number(fixtureUrl.port || '80'),
+    },
+    // Рівно ті адреси, які стоять у складі: фікстура не має права «довести»
+    // більше, ніж довів би Privy.
+    [
+      keys.founder.publicKey.toBase58(),
+      keys.officer.publicKey.toBase58(),
+      keys.attestor.publicKey.toBase58(),
+    ],
+  )
+
+  const api = createApiClient({
+    baseUrl: baseUrl.replace(/\/+$/, ''),
+    accessToken: login.accessToken,
+    issuerId: issuerId.toBase58(),
+  })
+
+  return {
+    api,
+    login,
+    // Обидва ресурси тримають подієвий цикл: без них процес не завершується
+    // навіть тоді, коли всі числа вже надруковані.
+    close: async () => {
+      await login.close()
+      await closeDatabase(db)
+    },
+  }
+}
+
 /**
  * Політика демо: власний реєстр емітента, рівень 2, дві країни, обидва ліміти.
  *
@@ -84,7 +171,15 @@ const DEMO_POLICY: PolicyRules = {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
-  const context = createContext(options.rpc)
+  // Операційний ключ у шляху `--api` належить процесу api, а не демо: емітент
+  // створюється з **його** адресою, інакше делеговане розморожування відмовить
+  // на `require_routine`.
+  const context = createContext(
+    options.rpc,
+    options.api === undefined
+      ? {}
+      : { operational: keypairFromBase58(required('OPERATIONAL_SECRET_KEY')) },
+  )
   const { keys, connection } = context
 
   console.log(`cluster: ${options.rpc}`)
@@ -118,59 +213,134 @@ async function main() {
     `balance: ${solOf(balance)} SOL${funded ? '' : ' (airdrop refused; using what is there)'}`,
   )
 
+  // Емітента створює сам засновник і в обох шляхах однаково: маршруту для
+  // цього немає й не буде — `initialize_issuer` це єдина дія без кворуму (T007),
+  // і робить її людина своїм ключем, а не платформа за неї.
   const issuer = await createIssuer(context)
   console.log(`issuer:  ${issuer.issuerId.toBase58()} · ${issuer.sent.computeUnits ?? '?'} CU`)
 
-  const issuance = await issueToken(context, {
-    issuerId: issuer.issuerId,
-    tokenIndex: 0,
+  // ── Шлях через api ────────────────────────────────────────────────────────
+  // Далі розгалуження рівно в одному місці: випуск і онбординг. Атаки, звірка
+  // й вимір вартості лишаються прямими навмисно — вони міряють **правило**, і
+  // проводити їх через http означало б міряти http.
+  const session =
+    options.api === undefined
+      ? undefined
+      : await openApiSession(context, issuer.issuerId, options.api)
+
+  if (session !== undefined) {
+    console.log(`api:     ${options.api} · login ${session.login.did}`)
+  }
+
+  try {
+    await measure(context, session?.api, issuer)
+  } finally {
+    // Фікстура тримає порт, і без цього процес не завершився б навіть після
+    // успішного прогону.
+    await session?.close()
+  }
+}
+
+/**
+ * Онбординг через api: заявка, потім розморожування.
+ *
+ * **ATA все одно створює демо.** Маршрут його не створює й не має: рахунок
+ * належить холдеру, і платить за нього той, хто його заводить. У продукті це
+ * робить гаманець власника; тут — засновник, бо холдери демо своїх грошей не
+ * мають.
+ *
+ * CU назад не повертається: делегований шлях віддає підпис, а не вимір. Число
+ * для звіту тут не потрібне — його вже дав прямий прогін, а `--api` міряє час
+ * шляху, а не вартість інструкції.
+ */
+async function onboardViaApi(
+  context: DemoContext,
+  api: ApiClient,
+  mint: PublicKey,
+  wallet: PublicKey,
+  jurisdiction: string,
+): Promise<number | undefined> {
+  await createAta(context, mint, wallet)
+  await api.queueHolder(mint.toBase58(), {
+    wallet: wallet.toBase58(),
+    tier: 2,
+    jurisdiction,
+    expiresAt: null,
+  })
+  const thawed = await api.thawHolder(mint.toBase58(), wallet.toBase58())
+  // Непідписаний шлях означав би, що делегація не діє, — а вона є суттю T022.
+  if (thawed.mode !== 'delegated') {
+    throw new Error(`expected the operational key to sign the thaw, got mode=${thawed.mode}`)
+  }
+  return undefined
+}
+
+/** Сам вимір. Шлях до токена вже обраний: `api` є або його немає. */
+async function measure(
+  context: DemoContext,
+  api: ApiClient | undefined,
+  issuer: Awaited<ReturnType<typeof createIssuer>>,
+) {
+  const { keys } = context
+
+  const ISSUANCE = {
     decimals: 2,
     policy: DEMO_POLICY,
     initialSupply: 2_500_000_000n,
     reserveAmount: 2_540_000_000n,
     reserveCurrency: 'NGN',
     feeBps: 12,
-    attestationMaxAge: BigInt(24 * 3600),
     name: 'Vantara Naira',
     symbol: 'vNGN',
     uri: 'https://vantara.example/vngn.json',
-  })
+  } as const
 
-  console.log(`mint:    ${issuance.addresses.mint.toBase58()}`)
+  const issuance =
+    api === undefined
+      ? await issueToken(context, {
+          ...ISSUANCE,
+          issuerId: issuer.issuerId,
+          tokenIndex: 0,
+          attestationMaxAge: BigInt(24 * 3600),
+        })
+      : await issueViaApi(context, api, { ...ISSUANCE, attestationMaxAge: 24 * 3600 })
+
+  const mint = 'mint' in issuance ? issuance.mint : issuance.addresses.mint
+
+  console.log(`mint:    ${mint.toBase58()}`)
   for (const [index, step] of issuance.steps.entries()) {
     console.log(
       `  ${index + 1}. ${step.bytes} bytes · ${step.computeUnits ?? '?'} CU · ${step.feeLamports ?? '?'} lamports`,
     )
   }
-  console.log(`issued in ${(issuance.elapsedMs / 1000).toFixed(1)} s`)
-
-  const mint = issuance.addresses.mint
+  console.log(
+    `issued in ${(issuance.elapsedMs / 1000).toFixed(1)} s` +
+      ('apiMs' in issuance ? ` (api ${(issuance.apiMs / 1000).toFixed(1)} s of it)` : ''),
+  )
 
   // Двоє холдерів, обидва в дозволеній юрисдикції й з потрібним рівнем: усе,
   // що далі відмовляє, відмовляє через **правило**, а не через незаповнений
   // статус.
-  const alice = await onboard(context, mint, issuer.issuerId, keys.alice, {
-    tier: 2,
-    jurisdiction: 'NG',
-    denied: false,
-    expiresAt: 0n,
-  })
-  const bob = await onboard(context, mint, issuer.issuerId, keys.bob, {
-    tier: 2,
-    jurisdiction: 'GH',
-    denied: false,
-    expiresAt: 0n,
-  })
-  console.log(`holders: alice ${alice.thawed.computeUnits} CU · bob ${bob.thawed.computeUnits} CU`)
+  const onboardOne = async (holder: Keypair, jurisdiction: string) =>
+    api === undefined
+      ? (
+          await onboard(context, mint, issuer.issuerId, holder, {
+            tier: 2,
+            jurisdiction,
+            denied: false,
+            expiresAt: 0n,
+          })
+        ).thawed.computeUnits
+      : await onboardViaApi(context, api, mint, holder.publicKey, jurisdiction)
 
-  // Засновник тримає весь випуск: перший переказ іде від нього.
-  const founderAta = await onboard(context, mint, issuer.issuerId, keys.founder, {
-    tier: 2,
-    jurisdiction: 'NG',
-    denied: false,
-    expiresAt: 0n,
-  }).catch(() => undefined)
-  void founderAta
+  const aliceCu = await onboardOne(keys.alice, 'NG')
+  const bobCu = await onboardOne(keys.bob, 'GH')
+  console.log(`holders: alice ${aliceCu ?? '?'} CU · bob ${bobCu ?? '?'} CU`)
+
+  // Засновник тримає весь випуск: перший переказ іде від нього. Його рахунок
+  // уже розморожений самим випуском (`founderStatus`), тож повторна спроба
+  // законно відмовляє — і саме тому вона не є помилкою прогону.
+  await onboardOne(keys.founder, 'NG').catch(() => undefined)
 
   const transfer = await buildTransfer(context.connection, {
     mint,

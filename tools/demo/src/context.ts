@@ -8,7 +8,7 @@
 // `--payer` цього не міняє: гаманець деплою лише **доливає** свіжим ключам
 // замість крана, а підписують і володіють усім усе ті самі одноразові ключі.
 import { readFileSync } from 'node:fs'
-import { createForgeProgram, type ForgeProgram } from '@forge/chain'
+import { createForgeProgram, decodeBase58, type ForgeProgram } from '@forge/chain'
 import {
   Connection,
   type FetchFn,
@@ -133,7 +133,7 @@ function pacedFetch(limit: { burst: number; perSecond: number } | undefined): Fe
   return paced as unknown as FetchFn
 }
 
-export function createContext(rpcUrl: string): DemoContext {
+export function createContext(rpcUrl: string, overrides: Partial<DemoKeys> = {}): DemoContext {
   const connection = new Connection(rpcUrl, {
     commitment: 'confirmed',
     fetch: pacedFetch(isLocal(rpcUrl) ? undefined : NODE_LIMIT),
@@ -141,9 +141,18 @@ export function createContext(rpcUrl: string): DemoContext {
   return {
     connection,
     program: createForgeProgram(connection),
-    keys: newKeys(),
+    // Перекриття існує рівно для одного ключа й однієї причини: у шляху `--api`
+    // операційним ключем володіє процес api, а не демо. Згенерований тут ключ
+    // не збігся б із `operational_key`, який перевіряє програма, і кожне
+    // делеговане розморожування відмовляло б.
+    keys: { ...newKeys(), ...overrides },
     cluster: rpcUrl,
   }
+}
+
+/** Секретний ключ ed25519 у base58 (формат `OPERATIONAL_SECRET_KEY`) → `Keypair`. */
+export function keypairFromBase58(secret: string): Keypair {
+  return Keypair.fromSecretKey(decodeBase58(secret))
 }
 
 /**

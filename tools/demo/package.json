@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "us1": "node src/main.ts",
+    "us1": "node --env-file-if-exists=../../.env src/main.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -12,9 +12,11 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@forge/api": "workspace:^",
     "@forge/chain": "workspace:^",
+    "@forge/db": "workspace:^",
     "@forge/policy": "workspace:^",
     "@forge/shared": "workspace:^",
     "@solana/spl-token": "^0.4.15",
-    "@solana/web3.js": "^1.98.4"
+    "@solana/web3.js": "^1.98.4",
+    "jose": "^6.2.10"
   }
 }
