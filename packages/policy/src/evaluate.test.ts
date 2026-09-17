@@ -22,7 +22,7 @@ import {
 import { decodeRules, encodeRules, PolicyLayoutError, toHex } from './layout.ts'
 import { MAX_ATTESTATION_AGE_SECONDS, type PolicyRules, policyRulesSchema } from './model.ts'
 
-/** Фіксований час блоку: результат оцінювача не має залежати від годинника. */
+/** A fixed block time: the evaluator's result must not depend on the clock. */
 const NOW = 1_800_000_000
 
 const bothSources: PolicyRules['status'] = {
@@ -34,7 +34,7 @@ const bothSources: PolicyRules['status'] = {
 const policy = (over: Partial<PolicyRules> = {}): PolicyRules =>
   policyRulesSchema.parse({ status: bothSources, ...over })
 
-/** Політика, яка приймає статус тільки з власного реєстру емітента. */
+/** A policy that accepts a status only from the issuer's own registry. */
 const registerOnly = (over: Partial<PolicyRules> = {}): PolicyRules =>
   policyRulesSchema.parse({ status: { sources: ['register'], minTier: 0 }, ...over })
 
@@ -65,7 +65,7 @@ const fromProvider = (over: Partial<ProviderStatus> = {}): PartyContext['provide
   record: providerStatus(over),
 })
 
-/** За замовчуванням сторона має чинний запис у реєстрі й нічого в провайдера. */
+/** By default a party has a current record in the registry and nothing at the provider. */
 const party = (over: Partial<PartyContext> = {}): PartyContext => ({
   provider: ABSENT,
   register: fromRegister(),
@@ -82,7 +82,7 @@ const context = (over: Partial<TransferContext> = {}): TransferContext => ({
   ...over,
 })
 
-/** Код відмови або `null` на дозволі — так вердикти читаються в одну колонку. */
+/** The refusal code, or `null` on an allow — so verdicts read as one column. */
 const codeOf = (verdict: TransferVerdict): RefusalCode | null =>
   verdict.allowed ? null : verdict.code
 
@@ -103,13 +103,14 @@ describe('the shape of the answer', () => {
 })
 
 describe('the order of checks', () => {
-  // Перелік перевірок не живе в оцінювачі: він іде `REFUSAL_CODES`. Цей тест
-  // ловить зворотне — код відмови, оголошений хуковим, для якого перевірки
-  // немає, і перевірку, що лишилась без оголошеного коду.
+  // The list of checks does not live in the evaluator: it walks
+  // `REFUSAL_CODES`. This test catches the reverse — a refusal code declared
+  // as the hook's with no check for it, and a check left without a declared
+  // code.
   it('implements the hook codes its input is able to express', () => {
-    // `UNKNOWN_RULE_KIND` хук повертає, а цей оцінювач — ні: він бере розібрану
-    // модель, і невідомий вид правила нею не виражається. Тест вимагає не
-    // збігу, а **названої причини** для кожної розбіжності.
+    // The hook returns `UNKNOWN_RULE_KIND`, this evaluator does not: it takes
+    // the parsed model, and an unknown rule kind cannot be expressed by it. The
+    // test demands not a match but a **named reason** for every divergence.
     const named = new Map(refusalCodesCheckedElsewhere().map((row) => [row.code, row.checkedBy]))
     for (const code of hookRefusalCodes()) {
       if (implementedRefusalCodes().includes(code)) continue
@@ -127,8 +128,8 @@ describe('the order of checks', () => {
     expect(implementedRefusalCodes()).toEqual(declared)
   })
 
-  // Кожен код мусить бути досяжним: перевірка, яку жоден переказ не вмикає, —
-  // це або мертвий код, або зайвий код відмови в спільній таблиці.
+  // Every code must be reachable: a check that no transfer triggers is either
+  // dead code or a redundant refusal code in the shared table.
   const reachable: ReadonlyArray<[RefusalCode, PolicyRules, TransferContext]> = [
     ['POLICY_VERSION_MISMATCH', policy(), context({ policyVersion: 2 })],
     ['SENDER_STATUS_MISSING', policy(), context({ sender: party({ register: ABSENT }) })],
@@ -168,8 +169,8 @@ describe('the order of checks', () => {
     expect(verdict(rules, ctx)).toBe(code)
   })
 
-  // Порядок значущий сам по собі: дві реалізації, які відхилили той самий
-  // переказ із різних причин, розійшлися, навіть якщо обидві сказали «ні».
+  // The order is significant in itself: two implementations that rejected the
+  // same transfer for different reasons have diverged, even if both said "no".
   it('names the first failed check, not the worst one', () => {
     const broken = context({
       policyVersion: 2,
@@ -197,8 +198,8 @@ describe('the order of checks', () => {
 })
 
 describe('merging the two sources of status', () => {
-  // FR-008a1: `sources` називає джерела, які можуть ДОЗВОЛИТИ. Заборона діє з
-  // будь-якого джерела незалежно від переліку.
+  // FR-008a1: `sources` names the sources that may ALLOW. A denial applies
+  // from any source regardless of the list.
   it('honours a denial from a source the rule does not accept', () => {
     const ctx = context({
       sender: party({ provider: fromProvider({ denied: true }), register: fromRegister() }),
@@ -211,8 +212,8 @@ describe('merging the two sources of status', () => {
     expect(verdict(registerOnly(), ctx)).toBe('STATUS_SOURCE_NOT_ACCEPTED')
   })
 
-  // Розбіжність у рівні розв'язується суворішим значенням: друге джерело може
-  // тільки звузити коло, дозволене першим.
+  // A disagreement on the tier resolves to the stricter value: the second
+  // source can only narrow the circle allowed by the first.
   it('takes the lowest tier among the accepted sources', () => {
     const ctx = context({
       recipient: party({
@@ -241,8 +242,8 @@ describe('merging the two sources of status', () => {
     expect(verdict(policy(), ctx)).toBeNull()
   })
 
-  // FR-013: недоступність джерела не послаблює політику — навіть коли друге
-  // джерело вже дало чинний дозвіл.
+  // FR-013: source unavailability does not weaken the policy — even when the
+  // second source has already given a current allow.
   it('refuses an unavailable source even when the other one allows', () => {
     const ctx = context({ recipient: party({ provider: UNAVAILABLE, register: fromRegister() }) })
     expect(verdict(policy(), ctx)).toBe('STATUS_SOURCE_UNAVAILABLE')
@@ -254,7 +255,7 @@ describe('an attestation that is no longer current', () => {
     status: { sources: ['provider'], minTier: 0, maxAttestationAgeSeconds: 3600 },
   })
 
-  /** Політика приймає тільки атестацію, тож реєстр у сторонах треба прибрати. */
+  /** The policy accepts only the attestation, so the registry must be removed from the parties. */
   const onlyProvider = (over: Partial<ProviderStatus> = {}): PartyContext => ({
     provider: fromProvider(over),
     register: ABSENT,
@@ -263,9 +264,9 @@ describe('an attestation that is no longer current', () => {
   const providerContext = (senderRecord: Partial<ProviderStatus> = {}): TransferContext =>
     context({ sender: onlyProvider(senderRecord), recipient: onlyProvider() })
 
-  // FR-008a2: протермінована атестація прирівнюється до відсутньої, тож рішення
-  // ухвалює те саме правило статусу — на виході `*_STATUS_MISSING`, а не
-  // окремий код «протерміновано». Такого коду немає навмисно.
+  // FR-008a2: an expired attestation is treated as absent, so the decision is
+  // made by the same status rule — the outcome is `*_STATUS_MISSING`, not a
+  // separate "expired" code. There is deliberately no such code.
   it('reads as absent, not as a refusal of its own', () => {
     expect(verdict(shortLived, providerContext({ issuedAt: NOW - 3601 }))).toBe(
       'SENDER_STATUS_MISSING',
@@ -280,8 +281,8 @@ describe('an attestation that is no longer current', () => {
     expect(verdict(shortLived, providerContext({ expiresAt: NOW }))).toBe('SENDER_STATUS_MISSING')
   })
 
-  // Наслідок того самого правила, який легко втратити: вибуваючи з чинних
-  // записів, протермінована атестація забирає з собою і свою заборону.
+  // A consequence of the same rule that is easy to lose: dropping out of the
+  // current records, an expired attestation takes its denial with it.
   it('stops denying once it is expired', () => {
     const ctx = context({
       sender: party({
@@ -299,7 +300,7 @@ describe('an attestation that is no longer current', () => {
     expect(verdict(policy(), ctx)).toBeNull()
   })
 
-  // Строк реєстру — власне поле запису; політика його віком не обмежує.
+  // The registry expiry is the record's own field; the policy does not bound it by age.
   it('applies the record expiry to the issuer register too', () => {
     const ctx = context({ sender: party({ register: fromRegister({ expiresAt: NOW }) }) })
     expect(verdict(policy(), ctx)).toBe('SENDER_STATUS_MISSING')
@@ -332,9 +333,10 @@ describe('the limits', () => {
     expect(verdict(periodRules, ctx)).toBe('PERIOD_LIMIT_EXCEEDED')
   })
 
-  // Лічильник скидається на межі вікна, і хук робить це в тій самій інструкції.
-  // Читати витрачене без порівняння з початком вікна означало б рахувати
-  // позаминулий тиждень у поточному ліміті.
+  // The counter resets at the window boundary, and the hook does that in the
+  // same instruction. Reading the spent amount without comparing against the
+  // window start would mean counting the week before last into the current
+  // limit.
   it('ignores what was spent in a window that has already closed', () => {
     const ctx = context({
       amount: '100',
@@ -351,13 +353,13 @@ describe('the limits', () => {
     expect(verdict(periodRules, ctx)).toBe('PERIOD_LIMIT_EXCEEDED')
   })
 
-  // Хук не створює акаунтів: лічильник з'являється при `thaw_holder`, і його
-  // відсутність — відмова, а не пропуск перевірки (FR-013).
+  // The hook creates no accounts: the counter appears at `thaw_holder`, and
+  // its absence is a refusal, not a skipped check (FR-013).
   it('refuses when the period rule has no counter to read', () => {
     expect(verdict(periodRules, context())).toBe('VELOCITY_COUNTER_MISSING')
   })
 
-  // «Правила немає = перевірки немає»: без правила лічильник просто не читається.
+  // "No rule = no check": without the rule the counter is simply not read.
   it('ignores a missing counter when no period rule asks for one', () => {
     expect(verdict(policy(), context())).toBeNull()
   })
@@ -368,8 +370,8 @@ describe('the token-program layer', () => {
     expect(simulateTransfer(policy(), context())).toEqual(evaluateTransfer(policy(), context()))
   })
 
-  // Пауза й заморозка спрацьовують до виклику хука, тож вони перекривають
-  // будь-яку відмову правил — хоча в `REFUSAL_CODES` стоять останніми.
+  // Pause and freeze fire before the hook is called, so they override any
+  // rule refusal — even though they come last in `REFUSAL_CODES`.
   it('reports the pause before any rule gets a say', () => {
     const broken = context({ policyVersion: 2, sender: party({ register: ABSENT }) })
     const state = { paused: true, senderFrozen: true, recipientFrozen: false }
@@ -383,8 +385,9 @@ describe('the token-program layer', () => {
 })
 
 describe('the context it accepts', () => {
-  // Контекст, якого не могло статися в мережі, дав би майстру відповідь, якої
-  // ланцюг не дасть, — тому він відхиляється, а не тлумачиться.
+  // A context that could not have happened on the network would give the
+  // wizard an answer the chain will not give — so it is rejected, not
+  // interpreted.
   it('rejects a jurisdiction that is not an ISO alpha-2 code', () => {
     const ctx = context({ recipient: party({ register: fromRegister({ jurisdiction: 'ng' }) }) })
     expect(() => evaluateTransfer(policy(), ctx)).toThrow()
@@ -423,36 +426,40 @@ describe('the context it accepts', () => {
   })
 })
 
-// ─── Диференційні фікстури (SC-008, T019) ────────────────────────────────────
+// ─── Differential fixtures (SC-008, T019) ────────────────────────────────────
 
 /**
- * Спільні фікстури `fixtures/rules/`. Цей файл — **одна з двох** сторін звірки;
- * друга — `programs/issuer-forge/tests/rules.rs`, і вона читає ті самі файли.
+ * The shared fixtures in `fixtures/rules/`. This file is **one of the two**
+ * sides of the comparison; the other is `programs/issuer-forge/tests/rules.rs`,
+ * and it reads the same files.
  *
- * **Очікуваний вердикт у фікстурі написаний рукою з вимоги, а не знятий із
- * реалізації.** Через це тест ловить не тільки розходження двох реалізацій, а й
- * згоду обох на неправильному: фікстура є специфікацією моделі, а не знімком її
- * поведінки. Ціна — кожен новий сценарій треба продумати, а не згенерувати.
+ * **The expected verdict in a fixture is written by hand from the
+ * requirement, not taken from the implementation.** Because of that the test
+ * catches not only a divergence between the two implementations but also
+ * both agreeing on the wrong thing: the fixture is a specification of the
+ * model, not a snapshot of its behaviour. The price is that every new
+ * scenario has to be thought through, not generated.
  *
- * Політика лежить у фікстурі **двічі**: структурою (щоб її можна було прочитати
- * очима) і канонічними 384 байтами (бо саме їх читає Rust). Тест нижче звіряє,
- * що це те саме, тож `layout` потрапляє під ту саму звірку безкоштовно.
+ * The policy sits in the fixture **twice**: as a structure (so it can be read
+ * by eye) and as the canonical 384 bytes (because that is what Rust reads).
+ * The test below checks that they are the same thing, so `layout` falls under
+ * the same comparison for free.
  */
 const FIXTURE_DIR = new URL('../../../fixtures/rules/', import.meta.url)
 
 const fixtureSchema = z.object({
   name: z.string(),
   why: z.string().min(1),
-  /** Немає у фікстурі, якої модель TS не виражає, — див. `tsDecodeThrows`. */
+  /** Absent from a fixture the TS model cannot express — see `tsDecodeThrows`. */
   policy: z.unknown().optional(),
   rules: z.string().regex(/^[0-9a-f]+$/),
   context: z.unknown(),
   expect: z.union([z.literal('ALLOWED'), refusalCodeSchema]),
   /**
-   * Байти, які `decodeRules` відхиляє. Такі фікстури існують: хук повертає
-   * `UNKNOWN_RULE_KIND`, а модель TS невідомого виду правила не виражає взагалі.
-   * Прапорець не є звільненням від перевірки — він її **міняє**: замість
-   * вердикту TS-половина стверджує, що декодування кидає.
+   * Bytes that `decodeRules` rejects. Such fixtures exist: the hook returns
+   * `UNKNOWN_RULE_KIND`, while the TS model cannot express an unknown rule
+   * kind at all. The flag is not an exemption from the check — it **changes**
+   * it: instead of a verdict, the TS half asserts that decoding throws.
    */
   tsDecodeThrows: z.boolean().optional(),
 })
@@ -465,8 +472,9 @@ function loadFixtures(): Fixture[] {
     .sort()
   return names.map((file) => {
     const parsed = fixtureSchema.parse(JSON.parse(readFileSync(new URL(file, FIXTURE_DIR), 'utf8')))
-    // Ім'я файла і поле `name` — те саме: інакше повідомлення тесту вказувало б
-    // не на той файл, а це найдорожча дрібниця в диференційному тесті.
+    // The file name and the `name` field are the same thing: otherwise the
+    // test message would point at the wrong file, and that is the costliest
+    // trifle in a differential test.
     expect(`${parsed.name}.json`).toBe(file)
     return parsed
   })
@@ -479,44 +487,46 @@ const FIXTURES = loadFixtures()
 
 describe('differential fixtures', () => {
   it('there are enough of them, and each is named once', () => {
-    // SC-008 просить ≥15 сценаріїв. Число тут — не стеля, а підлога.
+    // SC-008 asks for ≥15 scenarios. The number here is a floor, not a ceiling.
     expect(FIXTURES.length).toBeGreaterThanOrEqual(15)
     expect(new Set(FIXTURES.map((f) => f.name)).size).toBe(FIXTURES.length)
   })
 
   /**
-   * Набір повний тоді, коли кожен код, який цей модуль **уміє** повернути,
-   * має свій сценарій. Перелік береться з таблиці перевірок, а не з другого
-   * списку тут: код, дописаний у модель без фікстури, падає цим тестом.
+   * The set is complete when every code this module **can** return has its
+   * own scenario. The list is taken from the table of checks, not from a
+   * second list here: a code added to the model without a fixture fails this
+   * test.
    */
   it('cover every refusal code the evaluator can return', () => {
     const covered = new Set(FIXTURES.map((f) => f.expect))
     expect(implementedRefusalCodes().filter((code) => !covered.has(code))).toEqual([])
-    // Дозвіл — теж вердикт, і без нього набір складався б із самих відмов.
+    // An allow is a verdict too, and without it the set would consist of nothing but refusals.
     expect(covered.has('ALLOWED')).toBe(true)
-    // Код, якого TS не виражає, теж мусить бути покритий — з іншого боку.
+    // A code TS cannot express must be covered too — from the other side.
     expect(FIXTURES.some((f) => f.expect === 'UNKNOWN_RULE_KIND' && f.tsDecodeThrows)).toBe(true)
   })
 
   it.each(FIXTURES.map((f): [string, Fixture] => [f.name, f]))(
-    '%s — байти політики збігаються з її структурою',
+    '%s — the policy bytes match its structure',
     (_name, fixture) => {
       if (fixture.tsDecodeThrows) {
-        // Тут перевіряється саме те, що модель цих байтів не приймає: без цього
-        // рядка фікстура була б у наборі, але нічого б не доводила.
+        // What is checked here is precisely that the model does not accept these
+        // bytes: without this line the fixture would be in the set but prove
+        // nothing.
         expect(() => decodeRules(fromHex(fixture.rules))).toThrow(PolicyLayoutError)
         return
       }
       const structured = policyRulesSchema.parse(fixture.policy)
       expect(toHex(encodeRules(structured))).toBe(fixture.rules)
-      // Круг замикається в обидва боки: байти, які читає Rust, дають ту саму
-      // політику, яку прочитала людина.
+      // The circle closes in both directions: the bytes Rust reads yield the
+      // same policy a person read.
       expect(decodeRules(fromHex(fixture.rules))).toEqual(structured)
     },
   )
 
   it.each(FIXTURES.filter((f) => !f.tsDecodeThrows).map((f): [string, Fixture] => [f.name, f]))(
-    '%s — вердикт збігається з написаним у фікстурі',
+    '%s — the verdict matches what is written in the fixture',
     (_name, fixture) => {
       const rules = decodeRules(fromHex(fixture.rules))
       const ctx = transferContextSchema.parse(fixture.context)

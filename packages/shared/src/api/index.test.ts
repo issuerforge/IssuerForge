@@ -20,10 +20,11 @@ const ISSUER_RS = fileURLToPath(
 )
 
 /**
- * `pub const ADMIN: u8 = 1 << 0;` → 1. Дужок і арифметики складнішої там немає.
+ * `pub const ADMIN: u8 = 1 << 0;` → 1. There are no parentheses and no more
+ * complex arithmetic there.
  *
- * Ловить обидві маски одного файла — ролей і делегації: імена не перетинаються,
- * а зайвий запис у мапі нікому не заважає.
+ * Catches both masks of the same file — roles and delegation: the names do
+ * not overlap, and an extra entry in the map bothers no one.
  */
 function rustRoleBits(source: string): Record<string, number> {
   const bits: Record<string, number> = {}
@@ -35,9 +36,10 @@ function rustRoleBits(source: string): Record<string, number> {
 }
 
 describe('the role mask', () => {
-  // Це той самий дубль, що й у `CHECK` бази: маска їде ланцюг → база → екран
-  // без перекодування, тож розійтись їй нема де — але саме тому розходження
-  // було б тихим. Тест читає Rust, а не копію числа.
+  // This is the same duplicate as the database `CHECK`: the mask travels
+  // chain → database → screen without re-encoding, so it has nowhere to
+  // diverge — but that is exactly why a divergence would be silent. The test
+  // reads the Rust, not a copy of the number.
   it('matches `role` in the program', () => {
     const rust = rustRoleBits(readFileSync(ISSUER_RS, 'utf8'))
 
@@ -50,7 +52,7 @@ describe('the role mask', () => {
   it('ALL covers four bits, AUTHORISING — the two quorum roles', () => {
     expect(ROLE_ALL).toBe(15)
     expect(ROLE_AUTHORISING).toBe(ROLE.ADMIN | ROLE.COMPLIANCE)
-    // Атестатор не підписує кворум (FR-024), спостерігач не діє (FR-033).
+    // The attestor does not sign the quorum (FR-024), the observer does not act (FR-033).
     expect(hasRole(ROLE_AUTHORISING, ROLE.ATTESTOR)).toBe(false)
     expect(hasRole(ROLE_AUTHORISING, ROLE.OBSERVER)).toBe(false)
   })
@@ -62,8 +64,9 @@ describe('the role mask', () => {
 })
 
 describe('the delegation mask', () => {
-  // Той самий дубль, що й у ролей, і з тієї ж причини: маска їде з
-  // `IssuerConfig.delegation_mask` просто числом, тож розходження було б тихим.
+  // The same duplicate as with roles, and for the same reason: the mask comes
+  // from `IssuerConfig.delegation_mask` as a plain number, so a divergence
+  // would be silent.
   it('matches `delegation` in the program', () => {
     const rust = rustRoleBits(readFileSync(ISSUER_RS, 'utf8'))
 
@@ -73,9 +76,10 @@ describe('the delegation mask', () => {
   })
 
   /**
-   * Перелік закритий у програмі: у масці немає й не може бути повноваження, що
-   * рухає кошти (FR-035a). Тест тримає саме це — не «три біти», а те, що навіть
-   * **повна** делегація не накриває нічого, крім трьох рутинних дій.
+   * The list is closed in the program: the mask has no power that moves funds
+   * and cannot have one (FR-035a). The test holds exactly that — not "three
+   * bits", but the fact that even a **full** delegation covers nothing beyond
+   * three routine actions.
    */
   it('full delegation covers exactly three routine actions', () => {
     expect(DELEGATION_ALL).toBe(7)
@@ -91,8 +95,9 @@ describe('the delegation mask', () => {
     expect(powerNames(0)).toEqual([])
   })
 
-  // Біти двох масок збігаються числами, і саме тому імена функцій різні:
-  // `hasRole` над маскою делегації мовчки відповів би «так».
+  // The bits of the two masks coincide numerically, which is exactly why the
+  // function names differ: `hasRole` over a delegation mask would silently
+  // answer "yes".
   it('thawing without the status right — these are different bits', () => {
     expect(hasPower(DELEGATION.THAW_HOLDER, DELEGATION.SET_HOLDER_STATUS)).toBe(false)
     expect(powerNames(DELEGATION.THAW_HOLDER)).toEqual(['THAW_HOLDER'])
@@ -111,8 +116,8 @@ describe('the membership schema', () => {
     expect(membershipSchema.safeParse(valid).success).toBe(true)
   })
 
-  // Порожня маска — вільний слот складу, а не учасник без прав: у дзеркалі
-  // такого рядка немає, і в сесії він не має з'явитись поготів.
+  // An empty mask is a free membership slot, not a member without rights: the
+  // mirror has no such row, and it must not appear in a session either.
   it('rejects an empty role mask', () => {
     expect(membershipSchema.safeParse({ ...valid, roles: 0 }).success).toBe(false)
   })

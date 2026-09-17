@@ -21,7 +21,7 @@ describe('addressSchema', () => {
   })
 
   it('rejects base58-illegal characters and wrong lengths', () => {
-    // 0, O, I та l у base58 не існують — саме на них ловиться підмінений рядок.
+    // 0, O, I and l do not exist in base58 — a substituted string is caught on exactly those.
     expect(addressSchema.safeParse('0OIl1111111111111111111111111111111111111').success).toBe(false)
     expect(addressSchema.safeParse('abc').success).toBe(false)
   })
@@ -62,8 +62,8 @@ describe('u64Schema', () => {
   })
 
   it('fails a malformed value instead of throwing inside the refine', () => {
-    // Zod 4 проганяє refine навіть після невдалого regex, а BigInt('1.5')
-    // кидає SyntaxError — без повторної перевірки форми це був би 500.
+    // Zod 4 runs the refine even after a failed regex, and BigInt('1.5')
+    // throws a SyntaxError — without re-checking the shape this would be a 500.
     expect(() => u64Schema.safeParse('1.5')).not.toThrow()
     expect(() => u64Schema.safeParse('nope')).not.toThrow()
   })

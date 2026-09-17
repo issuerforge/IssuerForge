@@ -1,14 +1,16 @@
-// Контракти, спільні для сервера й консолі: маска ролей, форма сесії та імена
-// заголовків. Схеми звідси валідують і відповідь на сервері, і те, що прочитав
-// браузер, тож розбіжність між двома сторонами неможлива за побудовою.
+// Contracts shared by the server and the console: the role mask, the session
+// shape and the header names. The schemas here validate both the response on
+// the server and what the browser read, so a divergence between the two sides
+// is impossible by construction.
 import { z } from 'zod'
 import { addressSchema } from '../primitives.ts'
 
 /**
- * Бітмаска ролей — дзеркало `role` з `programs/issuer-forge/src/state/issuer.rs`.
- * Числа не «узгоджені», а ті самі: у базі лежить `role_assignments.roles`,
- * скопійований із `IssuerConfig.members[i].roles`, і будь-яке перекодування на
- * шляху ланцюг → база → екран було б місцем, де роль може змінитися мовчки.
+ * Role bitmask — a mirror of `role` in `programs/issuer-forge/src/state/issuer.rs`.
+ * The numbers are not "agreed", they are the same ones: the database holds
+ * `role_assignments.roles` copied from `IssuerConfig.members[i].roles`, and any
+ * re-encoding on the path chain → database → screen would be a place where a
+ * role could change silently.
  */
 export const ROLE = {
   ADMIN: 1 << 0,
@@ -21,15 +23,15 @@ export type RoleName = keyof typeof ROLE
 
 export const ROLE_NAMES = Object.keys(ROLE) as readonly RoleName[]
 
-/** Усі відомі біти. Те саме число стоїть `CHECK`-ом у `role_assignments`. */
+/** All known bits. The same number stands as a `CHECK` on `role_assignments`. */
 export const ROLE_ALL = ROLE.ADMIN | ROLE.COMPLIANCE | ROLE.ATTESTOR | ROLE.OBSERVER
 
-/** Ролі, підпис яких рахується в кворум (FR-019). */
+/** Roles whose signature counts towards the quorum (FR-019). */
 export const ROLE_AUTHORISING = ROLE.ADMIN | ROLE.COMPLIANCE
 
 /**
- * Порожня маска не є роллю: рядок складу з `roles == 0` — це вільний слот, а не
- * учасник без повноважень (для останнього існує `OBSERVER`).
+ * An empty mask is not a role: a membership row with `roles == 0` is a free
+ * slot, not a member without powers (`OBSERVER` exists for the latter).
  */
 export const roleMaskSchema = z.number().int().min(1).max(ROLE_ALL)
 
@@ -42,12 +44,13 @@ export function roleNames(mask: number): RoleName[] {
 }
 
 /**
- * Повноваження, делеговані операційному ключу платформи (FR-035) — дзеркало
- * `delegation` з того самого `state/issuer.rs`.
+ * Powers delegated to the platform's operational key (FR-035) — a mirror of
+ * `delegation` in the same `state/issuer.rs`.
  *
- * Перелік закритий **у програмі**, а не в конфігурації: емісії, вилучення,
- * паузи й зміни політики тут немає й бути не може, тож скомпрометований
- * операційний ключ не отримує їх навіть із «повною» маскою (FR-035a).
+ * The list is closed **in the program**, not in configuration: issuance,
+ * seizure, pause and policy change are not here and cannot be, so a
+ * compromised operational key does not get them even with a "full" mask
+ * (FR-035a).
  */
 export const DELEGATION = {
   THAW_HOLDER: 1 << 0,
@@ -63,12 +66,12 @@ export const DELEGATION_ALL =
   DELEGATION.THAW_HOLDER | DELEGATION.SET_HOLDER_STATUS | DELEGATION.SETTLE_REDEMPTION
 
 /**
- * Та сама арифметика, що в `hasRole`, і навмисно **окрема назва**.
+ * The same arithmetic as `hasRole`, and deliberately a **separate name**.
  *
- * Обидві маски — `number`, тож типи не втримають плутанини: `hasRole(mask,
- * ROLE.ADMIN)` над маскою делегації скомпілювався б і мовчки відповів би «так»
- * на `THAW_HOLDER`. Різні імена лишають цю помилку видимою при читанні — це
- * єдиний бар'єр, який тут узагалі можливий.
+ * Both masks are `number`, so the types will not hold the confusion back:
+ * `hasRole(mask, ROLE.ADMIN)` over a delegation mask would compile and
+ * silently answer "yes" to `THAW_HOLDER`. Different names keep that mistake
+ * visible when reading — the only barrier that is possible here at all.
  */
 export function hasPower(mask: number, power: number): boolean {
   return (mask & power) !== 0
@@ -79,12 +82,13 @@ export function powerNames(mask: number): PowerName[] {
 }
 
 /**
- * Членство одного користувача в одного емітента.
+ * One user's membership in one issuer.
  *
- * `wallets` — ті з підтверджених адрес входу, які справді стоять у складі цього
- * емітента; маска — об'єднання їхніх ролей. `syncedAt` — вік дзеркала складу,
- * і він показується в консолі: екран, що мовчки малює вчорашній склад ролей, у
- * комплаєнс-продукті гірший за порожній.
+ * `wallets` are those of the verified login addresses that really are in this
+ * issuer's membership; the mask is the union of their roles. `syncedAt` is the
+ * age of the membership mirror, and it is shown in the console: a screen that
+ * silently draws yesterday's role membership is worse than an empty one in a
+ * compliance product.
  */
 export const membershipSchema = z.object({
   issuerId: addressSchema,
@@ -96,20 +100,23 @@ export const membershipSchema = z.object({
 export type Membership = z.infer<typeof membershipSchema>
 
 /**
- * Сесія — те, що сервер вивів із перевіреного токена входу, і **тільки воно**.
+ * The session is what the server derived from the verified login token, and
+ * **only that**.
  *
- * `issuerId` тут не з параметра запиту: він або єдиний серед членств, або
- * обраний заголовком `X-Issuer-Id` серед уже доведених членств. Заголовок
- * звужує вибір, а не надає доступ, тож правило FR-036 «жоден параметр запиту не
- * перекриває `issuer_id` сесії» лишається дійсним.
+ * `issuerId` here does not come from a request parameter: it is either the
+ * only membership, or the one chosen by the `X-Issuer-Id` header among
+ * memberships already proven. The header narrows the choice, it does not grant
+ * access, so the FR-036 rule "no request parameter overrides the session's
+ * `issuer_id`" stays intact.
  *
- * Роль у сесії відкриває екрани й ручки. Дії з коштами вона не дозволяє: їх
- * перевіряє програма за кворумом (FR-019), і сесія на це не впливає ніяк.
+ * The role in the session opens screens and handlers. It does not authorise
+ * actions with funds: those are checked by the program against the quorum
+ * (FR-019), and the session has no influence on that whatsoever.
  */
 export const sessionSchema = z.object({
-  /** DID постачальника входу. Ролі до нього не прив'язані (FR-034a). */
+  /** DID of the login provider. Roles are not bound to it (FR-034a). */
   userId: z.string().min(1),
-  /** Усі підтверджені Solana-адреси акаунта входу. */
+  /** All verified Solana addresses of the login account. */
   wallets: z.array(addressSchema),
   issuerId: addressSchema,
   roles: roleMaskSchema,
@@ -118,8 +125,8 @@ export const sessionSchema = z.object({
 
 export type Session = z.infer<typeof sessionSchema>
 
-/** Вибір емітента, коли членств кілька. Значення мусить бути серед членств. */
+/** Issuer selection when there are several memberships. The value must be among them. */
 export const ISSUER_HEADER = 'x-issuer-id'
 
-/** Наскрізний ідентифікатор запиту: приймається від клієнта, інакше свій. */
+/** End-to-end request identifier: accepted from the client, otherwise our own. */
 export const REQUEST_ID_HEADER = 'x-request-id'

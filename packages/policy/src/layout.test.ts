@@ -34,7 +34,7 @@ const full: PolicyRules = policyRulesSchema.parse({
 const slotAt = (bytes: Uint8Array, index: number): Uint8Array =>
   bytes.subarray(index * RULE_SLOT_BYTES, (index + 1) * RULE_SLOT_BYTES)
 
-/** Копія з однією зміненою позицією — щоб псувати байти, не псуючи оригінал. */
+/** A copy with one position changed — to corrupt bytes without corrupting the original. */
 const mutate = (bytes: Uint8Array, at: number, value: number): Uint8Array => {
   const copy = Uint8Array.from(bytes)
   copy[at] = value
@@ -64,7 +64,7 @@ describe('encoding', () => {
     expect(slot[1]).toBe(0)
     expect(slot[2]).toBe(STATUS_SOURCE.provider | STATUS_SOURCE.register)
     expect(slot[3]).toBe(2)
-    // u32 little-endian, як seeds у T007: одна домовленість на весь проєкт.
+    // u32 little-endian, like the seeds in T007: one convention for the whole project.
     expect(new DataView(slot.buffer, slot.byteOffset).getUint32(4, true)).toBe(30 * 24 * 3600)
   })
 
@@ -129,7 +129,7 @@ describe('the round trip', () => {
     expect(decodeRules(encodeRules(wide)).jurisdictions).toEqual(codes)
   })
 
-  // Канонічність: у прийнятих байтів рівно одне прочитання й одне записування.
+  // Canonicity: accepted bytes have exactly one reading and one writing.
   it('re-encodes accepted bytes into exactly the same bytes', () => {
     for (const policy of [OPEN_POLICY, full]) {
       const bytes = encodeRules(policy)
@@ -144,13 +144,13 @@ describe('decoding refuses what encoding could not have produced', () => {
     expect(failure(new Uint8Array(RULES_BYTES + 1))).toContain('expected 384 bytes')
   })
 
-  // Байт мав би лишатись нулем; будь-що інше змінює `rules_hash`, не змінюючи
-  // змісту, і саме тому воно не проходить.
+  // The byte should stay zero; anything else changes `rules_hash` without
+  // changing the content, and that is exactly why it does not pass.
   it('a non-zero reserved byte', () => {
     expect(failure(mutate(encodeRules(full), 1, 7))).toContain('reserved byte')
   })
 
-  // Політика, яку читач не розуміє повністю, не стає слабшою мовчки.
+  // A policy the reader does not fully understand does not get weaker silently.
   it('an unknown rule kind', () => {
     expect(failure(mutate(encodeRules(full), 3 * RULE_SLOT_BYTES, 99))).toContain(
       'unknown rule kind 99',
@@ -177,12 +177,12 @@ describe('decoding refuses what encoding could not have produced', () => {
     const bytes = encodeRules(full)
     const doubled = Uint8Array.from(bytes)
     doubled.set(slotAt(bytes, 2), 3 * RULE_SLOT_BYTES)
-    // Дубль називається дублем, а не порушенням порядку: причина точніша, і
-    // саме вона піде в повідомлення, яке прочитає людина.
+    // A duplicate is called a duplicate, not an order violation: the reason is
+    // more precise, and it is what goes into the message a person will read.
     expect(failure(doubled)).toContain('appears twice')
   })
 
-  // Дірка дала б два кодування однієї політики, тобто два різні хеші.
+  // A gap would give two encodings of one policy, i.e. two different hashes.
   it('a rule after an empty slot', () => {
     const bytes = encodeRules(full)
     const holed = Uint8Array.from(bytes)
@@ -221,8 +221,8 @@ describe('rules_hash', () => {
     expect(toHex(rulesHash(full))).toBe(toHex(rulesHash(full)))
   })
 
-  // Це і є розрахунок за нормалізацію множин у моделі: та сама політика,
-  // набрана в іншому порядку, не має читатись як зміна політики.
+  // This is the payoff of normalising sets in the model: the same policy,
+  // entered in a different order, must not read as a policy change.
   it('does not change when a set is given in another order', () => {
     const one = policyRulesSchema.parse({ status, jurisdictions: ['KE', 'NG', 'GH'] })
     const two = policyRulesSchema.parse({
@@ -242,8 +242,8 @@ describe('rules_hash', () => {
     expect(toHex(rulesHash(policyRulesSchema.parse(rest)))).not.toBe(toHex(rulesHash(full)))
   })
 
-  // Верифікатор журналу (SC-006) бере зріз даних акаунта й хешує його, нічого
-  // не знаючи про те, скільки слотів заповнено.
+  // The journal verifier (SC-006) takes a slice of the account data and
+  // hashes it, knowing nothing about how many slots are filled.
   it('is computable from the raw account slice alone', () => {
     const account = new Uint8Array(8 + RULES_BYTES + 32)
     account.set(encodeRules(full), 8)

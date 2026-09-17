@@ -1,11 +1,12 @@
 import { z } from 'zod'
 
 /**
- * Скінченний перелік кодів помилки API. Формат — за `02-CODE-RULES`.
+ * Finite list of API error codes. Format follows `02-CODE-RULES`.
  *
- * Це **не** коди відмови в переказі: ті живуть у `refusal.ts`, приходять із
- * мережі й нічого не кажуть про здоров'я API. Відмова політики — це успішна
- * відповідь ручки симуляції й невдала транзакція, а не помилка запиту.
+ * These are **not** transfer refusal codes: those live in `refusal.ts`, come
+ * from the network and say nothing about the health of the API. A policy
+ * refusal is a successful response of the simulation handler and a failed
+ * transaction, not a request error.
  */
 export const ERROR_CODES = [
   'INVALID_INPUT',
@@ -30,8 +31,9 @@ export const apiErrorSchema = z.object({
 export type ApiError = z.infer<typeof apiErrorSchema>
 
 /**
- * Єдине місце, де код помилки перетворюється на HTTP-статус. Тримається тут,
- * а не в маршрутах, щоб дві ручки не відповідали різними статусами на те саме.
+ * The single place where an error code becomes an HTTP status. Kept here
+ * rather than in the routes so that two handlers cannot answer the same thing
+ * with different statuses.
  */
 export const HTTP_STATUS_BY_ERROR_CODE = {
   INVALID_INPUT: 400,
@@ -48,11 +50,12 @@ export function httpStatusFor(code: ErrorCode): HttpStatus {
 }
 
 /**
- * Будує тіло помилки. Жоден маршрут не складає цей об'єкт руками.
+ * Builds the error body. No route assembles this object by hand.
  *
- * `details` не потрапляє в тіло, якщо його немає: `{ details: undefined }`
- * серіалізується в те саме, що й відсутнє поле, але порівнюється інакше — і
- * тест на точну форму відповіді ловив би різницю, якої клієнт не бачить.
+ * `details` is left out of the body when absent: `{ details: undefined }`
+ * serialises to the same thing as a missing field but compares differently —
+ * and a test on the exact shape of the response would catch a difference the
+ * client never sees.
  */
 export function apiError(
   code: ErrorCode,

@@ -10,40 +10,42 @@ import {
 import { refusalCodeSchema } from '../refusal.ts'
 
 /**
- * Індексовані події: те, що `apps/worker` виймає з логів програми й токен-програми
- * і що потім живе трьома життями — стрічкою в консолі (FR-037), рядками журналу
- * (FR-018) і дзеркалом у Postgres (`docs/PLAN.md` → «Модель даних»).
+ * Indexed events: what `apps/worker` pulls out of the program's and the token
+ * program's logs, and what then lives three lives — as the feed in the console
+ * (FR-037), as journal lines (FR-018) and as the mirror in Postgres
+ * (`docs/PLAN.md` → "Data model").
  *
- * Один союз на всіх трьох споживачів, а не три схожі типи. Причина в SC-006:
- * незалежний верифікатор читає експортований NDJSON і звіряє його з мережею, не
- * звертаючись до API. Якби журнал мав власну форму, звірка доводила б збіг
- * журналу з мережею, але нічого не казала б про те, що бачив емітент у консолі.
+ * One union for all three consumers, not three similar types. The reason is
+ * SC-006: the independent verifier reads the exported NDJSON and reconciles it
+ * against the network without talking to the API. If the journal had its own
+ * shape, the reconciliation would prove that the journal matches the network
+ * but say nothing about what the issuer saw in the console.
  *
- * Ончейн лишається джерелом правди; кожна подія несе `signature` і `slot`, тобто
- * рівно те, з чим її можна перевірити, маючи лише RPC.
+ * On-chain remains the source of truth; every event carries `signature` and
+ * `slot`, i.e. exactly what is needed to verify it with nothing but an RPC.
  */
 
 /**
- * Спільні поля. Ідентичність події — пара `signature` + `eventIndex`: одна
- * транзакція законно містить кілька переказів (дроблення — це сценарій із
- * SC-002), тож підпис сам по собі ключем не є.
+ * Shared fields. The identity of an event is the pair `signature` +
+ * `eventIndex`: one transaction legitimately contains several transfers
+ * (splitting is a scenario from SC-002), so the signature alone is not a key.
  */
 const envelope = {
   signature: signatureSchema,
   slot: slotSchema,
   blockTime: blockTimeSchema,
-  /** Порядковий номер події всередині транзакції, від нуля. */
+  /** Ordinal of the event inside the transaction, from zero. */
   eventIndex: z.number().int().nonnegative(),
   mint: addressSchema,
 }
 
 /**
- * Виконаний переказ (FR-037).
+ * An executed transfer (FR-037).
  *
- * Несе і токен-акаунти, і гаманці власників: перші потрібні, щоб звірити подію
- * з інструкцією в транзакції, другі — щоб показати сторону людині. Хук читає
- * `owner` із даних токен-акаунта, тож обидві пари він має в руках і без
- * додаткових запитів до RPC.
+ * Carries both the token accounts and the owners' wallets: the former are
+ * needed to match the event against the instruction in the transaction, the
+ * latter to show a party to a person. The hook reads `owner` from the token
+ * account data, so it has both pairs in hand without extra RPC requests.
  */
 export const transferEventSchema = z.object({
   kind: z.literal('transfer'),
@@ -56,16 +58,17 @@ export const transferEventSchema = z.object({
 })
 
 /**
- * Відхилений переказ (FR-011).
+ * A refused transfer (FR-011).
  *
- * `code` — розібрана назва причини, `programError` — сире число з мережі.
- * Тримаються обидва: воркер старший за програму бачить незнайомий номер, і
- * подія з `code: null` лишається перевірюваною й не зникає зі стрічки.
+ * `code` is the parsed name of the reason, `programError` the raw number from
+ * the network. Both are kept: a worker older than the program sees an
+ * unfamiliar number, and an event with `code: null` stays verifiable and does
+ * not vanish from the feed.
  *
- * `ruleSlot` — номер слоту в `PolicyConfig.rules` (0…15), який спрацював, або
- * `null` для відмов, що не походять від правила (розбіжність версії політики,
- * пауза, заморозка). Саме він зв'язує відмову з пунктом збірника правил, який
- * емітент бачив у майстрі.
+ * `ruleSlot` is the slot number in `PolicyConfig.rules` (0…15) that fired, or
+ * `null` for refusals that do not originate from a rule (policy version
+ * mismatch, pause, freeze). It is what links the refusal to the item of the
+ * rulebook the issuer saw in the wizard.
  */
 export const refusalEventSchema = z.object({
   kind: z.literal('refusal'),
@@ -81,12 +84,12 @@ export const refusalEventSchema = z.object({
 })
 
 /**
- * Дії, які вимагають коду підстави й посилання на кейс (FR-017).
+ * Actions that require a reason code and a case reference (FR-017).
  *
- * Розморожування рахунку при онбордингу сюди **не** входить: воно не має кейсу,
- * підписується операційним ключем у межах делегації (FR-035) і є зміною
- * реєстру статусів, а не комплаєнс-дією. Його місце — черга розморожування
- * (FR-008b2), задачі T022 і T031.
+ * Thawing an account during onboarding is **not** among them: it has no case,
+ * is signed by the operational key within its delegation (FR-035) and is a
+ * change of the status registry, not a compliance action. Its place is the
+ * thaw queue (FR-008b2), tasks T022 and T031.
  */
 export const COMPLIANCE_ACTIONS = [
   'freeze',
@@ -104,16 +107,17 @@ export type ComplianceAction = (typeof COMPLIANCE_ACTIONS)[number]
 export const complianceActionSchema = z.enum(COMPLIANCE_ACTIONS)
 
 /**
- * Комплаєнс-дія (FR-017, FR-018, FR-019c).
+ * A compliance action (FR-017, FR-018, FR-019c).
  *
- * `signers` — поіменний склад, а не лічильник: FR-019c вимагає показати, **хто**
- * санкціонував дію з коштами, і «кворум зібрано» цю вимогу не задовольняє.
- * Мінімум один підпис: заморозку окремого рахунку виконує офіцер одноосібно
- * (FR-014), кворум потрібен лише діям із коштами (FR-019).
+ * `signers` is a named list, not a counter: FR-019c requires showing **who**
+ * authorised an action with funds, and "quorum reached" does not satisfy that
+ * requirement. At least one signature: freezing an individual account is done
+ * by an officer alone (FR-014), a quorum is only needed for actions with funds
+ * (FR-019).
  *
- * `target` і `amount` нульові там, де їх немає за змістом: пауза не має цілі,
- * зміна політики не має суми. Порожній рядок чи нуль на цих місцях читалися б
- * як значення.
+ * `target` and `amount` are null where they have no meaning: a pause has no
+ * target, a policy change has no amount. An empty string or a zero in those
+ * places would read as values.
  */
 export const complianceEventSchema = z.object({
   kind: z.literal('compliance'),
@@ -127,13 +131,15 @@ export const complianceEventSchema = z.object({
 })
 
 /**
- * Опублікована атестація резерву (FR-021, FR-026).
+ * A published reserve attestation (FR-021, FR-026).
  *
- * `index` — позиція в append-only послідовності `["reserve", mint, index]`:
- * запис не редагується й не видаляється, тож індекс і є історією.
+ * `index` is the position in the append-only sequence `["reserve", mint,
+ * index]`: a record is neither edited nor deleted, so the index is the
+ * history.
  *
- * `currency` — валюта резерву, не токена, і вона не обов'язково збігається з
- * валютою обігу. `amount` — у найменших одиницях цієї валюти.
+ * `currency` is the currency of the reserve, not of the token, and it does not
+ * necessarily match the currency in circulation. `amount` is in the smallest
+ * unit of that currency.
  */
 export const attestationEventSchema = z.object({
   kind: z.literal('attestation'),
@@ -147,11 +153,12 @@ export const attestationEventSchema = z.object({
 })
 
 /**
- * Союз усього, що індексується до M2 включно.
+ * The union of everything indexed up to and including M2.
  *
- * Пропозиції дій (FR-019b) і погашення (US4) сюди ще не входять — вони
- * приходять зі своїми задачами (T031/T032 і T048). Дискримінатор `kind` робить
- * розширення додаванням члена: наявні споживачі від нового члена не ламаються.
+ * Action proposals (FR-019b) and redemptions (US4) are not in it yet — they
+ * arrive with their own tasks (T031/T032 and T048). The `kind` discriminator
+ * makes extension a matter of adding a member: existing consumers do not
+ * break on a new one.
  */
 export const indexedEventSchema = z.discriminatedUnion('kind', [
   transferEventSchema,
@@ -169,10 +176,11 @@ export type IndexedEvent = z.infer<typeof indexedEventSchema>
 export type IndexedEventKind = IndexedEvent['kind']
 
 /**
- * Ключ події для дедуплікації.
+ * Event key for deduplication.
  *
- * Індексатор перечитує логи після переривання зв'язку, тож та сама подія
- * приходить двічі; ключ має бути похідним від мережі, а не від часу вставки.
+ * The indexer re-reads the logs after a connection drop, so the same event
+ * arrives twice; the key has to be derived from the network, not from the
+ * insertion time.
  */
 export function eventKey(event: IndexedEvent): string {
   return `${event.signature}:${event.eventIndex}`

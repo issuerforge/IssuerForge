@@ -15,16 +15,16 @@ describe('refusal table', () => {
   })
 
   it('numbers the hook codes densely from zero', () => {
-    // Щільність — не естетика: Anchor нумерує помилки послідовно від 6000, тож
-    // дірка в цьому переліку зсуває всі наступні коди й тихо перейменовує
-    // причини відмов у вже виданому журналі.
+    // Density is not aesthetics: Anchor numbers errors sequentially from 6000,
+    // so a gap in this list shifts every following code and silently renames
+    // refusal reasons in a journal already issued.
     const indexes = hookRefusalCodes().map((code) => REFUSAL_TABLE[code].hookIndex)
     expect(indexes).toEqual(indexes.map((_, i) => i))
   })
 
   it('gives the token-program codes no hook number', () => {
-    // Пауза й заморозка спрацьовують у Token-2022 до виклику хука — наш код їх
-    // не повертає, і мати номер у Rust-переліку вони не можуть.
+    // Pause and freeze fire in Token-2022 before the hook is called — our code
+    // does not return them, and they cannot have a number in the Rust enum.
     const tokenProgram = REFUSAL_CODES.filter(
       (code) => REFUSAL_TABLE[code].source === 'token-program',
     )
@@ -36,9 +36,9 @@ describe('refusal table', () => {
   })
 
   it('keeps the checks in the order the hook runs them', () => {
-    // Відмова — це перша перевірка, що не пройшла. Переставлений порядок дає
-    // іншу причину на тому самому переказі, і диференційні тести (SC-008)
-    // порівнюють саме причину, а не сам факт відмови.
+    // A refusal is the first check that failed. A reordered sequence yields a
+    // different reason on the same transfer, and the differential tests
+    // (SC-008) compare the reason itself, not the mere fact of refusal.
     expect(hookRefusalCodes()).toEqual([
       'POLICY_VERSION_MISMATCH',
       'SENDER_STATUS_MISSING',
@@ -52,8 +52,8 @@ describe('refusal table', () => {
       'TRANSFER_LIMIT_EXCEEDED',
       'VELOCITY_COUNTER_MISSING',
       'PERIOD_LIMIT_EXCEEDED',
-      // Останній навмисно: невідомий вид правила робить неможливим саме «так»,
-      // тож точніша причина, якщо вона є, називається першою.
+      // Last on purpose: an unknown rule kind makes "yes" itself impossible,
+      // so a more precise reason, if there is one, is named first.
       'UNKNOWN_RULE_KIND',
     ])
   })
@@ -73,8 +73,8 @@ describe('anchor error round trip', () => {
   })
 
   it('returns null for a number this build does not know', () => {
-    // Воркер старший за програму — очікуваний стан, а не збій: подія має
-    // записатися з нерозібраним кодом, а не загубитися.
+    // A worker older than the program is an expected state, not a failure:
+    // the event must be recorded with an unparsed code, not lost.
     expect(refusalCodeFromAnchorError(ANCHOR_ERROR_OFFSET + 999)).toBeNull()
     expect(refusalCodeFromAnchorError(0)).toBeNull()
   })

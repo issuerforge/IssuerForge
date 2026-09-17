@@ -1,52 +1,56 @@
-// Модель правил політики: типи, параметри й межі значень.
+// The policy rule model: types, parameters and value bounds.
 //
-// Це джерело правди для трьох споживачів — майстра випуску, API і бінарного
-// layout (T012), — і воно **іменоване**, а не списком слотів. Ончейн правила
-// лежать масивом із 16 слотів по 24 байти, але то форма зберігання: у моделі
-// «ліміт на один переказ» — це одне поле, і другого такого правила не існує за
-// типом. Питання «а що означає другий слот того самого виду — звужує чи
-// розширює?» тут не виникає взагалі, а не відповідається однаково в двох
-// реалізаціях.
+// This is the source of truth for three consumers — the issuance wizard, the
+// API and the binary layout (T012) — and it is **named**, not a list of slots.
+// On-chain the rules sit in an array of 16 slots of 24 bytes, but that is the
+// storage form: in the model "limit per transfer" is one field, and a second
+// rule of that kind does not exist by type. The question "what does a second
+// slot of the same kind mean — narrowing or widening?" simply never arises
+// here, rather than being answered identically in two implementations.
 //
-// **Порядок перевірок задає не ця модель, а `REFUSAL_CODES`** у
-// `@forge/shared/refusal`: відмова — це перша перевірка, що не пройшла, і саме
-// цей порядок звіряють диференційні тести (SC-008). Поля тут нічого не
-// впорядковують.
+// **The order of checks is set not by this model but by `REFUSAL_CODES`** in
+// `@forge/shared/refusal`: a refusal is the first check that failed, and it is
+// that order the differential tests compare (SC-008). The fields here order
+// nothing.
 //
-// **Паузи серед правил немає навмисно.** FR-007 називає її поряд із рештою, але
-// виконує її розширення `Pausable` на mint: при паузі токен-програма відхиляє
-// переказ **до** виклику хука, і `TRANSFERS_PAUSED` тому й позначений
-// `source: 'token-program'` із `hookIndex: null`. Прапорець паузи в політиці був
-// би другим джерелом правди про той самий стан, і розходження між ними
-// («розширення каже йде, політика каже стоїть») нічим не розв'язується.
-// Якщо `Pausable` конфліктуватиме з хуком (`PLAN.md` → ризик 7), прапорець
-// переїде сюди — і це буде свідома зміна, а не заповнення пропуску.
+// **There is deliberately no pause among the rules.** FR-007 names it
+// alongside the rest, but it is executed by the `Pausable` extension on the
+// mint: when paused, the token program rejects the transfer **before** the
+// hook is called, which is why `TRANSFERS_PAUSED` is marked
+// `source: 'token-program'` with `hookIndex: null`. A pause flag in the policy
+// would be a second source of truth about the same state, and a divergence
+// between them ("the extension says go, the policy says stop") has no
+// resolution. If `Pausable` ever conflicts with the hook (`PLAN.md` → risk 7),
+// the flag will move here — and that will be a deliberate change, not the
+// filling of a gap.
 import { toU64, u64Schema } from '@forge/shared/primitives'
 import { z } from 'zod'
 
-// ─── Межі, задані бінарним layout ────────────────────────────────────────────
+// ─── Bounds set by the binary layout ─────────────────────────────────────────
 //
-// Числа стоять тут, а не в `layout.ts`, бо з них випливають межі значень, які
-// перевіряє схема. T012 кодує, T011 вирішує, що взагалі можна закодувати.
+// The numbers sit here rather than in `layout.ts` because the value bounds
+// the schema checks follow from them. T012 encodes, T011 decides what can be
+// encoded at all.
 
-/** Слотів у `PolicyConfig.rules`. Фіксовано під zero-copy читання в хуку. */
+/** Slots in `PolicyConfig.rules`. Fixed for zero-copy reading in the hook. */
 export const MAX_RULE_SLOTS = 16
 
-/** Байтів на слот: `kind: u8`, `op: u8`, `params: [u8; 22]`. */
+/** Bytes per slot: `kind: u8`, `op: u8`, `params: [u8; 22]`. */
 export const RULE_SLOT_BYTES = 24
 
-/** Байтів параметрів у слоті — саме цей бюджет обмежує кожне правило. */
+/** Parameter bytes in a slot — this budget is what limits every rule. */
 export const RULE_PARAMS_BYTES = 22
 
 /**
- * Код виду правила — перший байт слота.
+ * Rule kind code — the first byte of a slot.
  *
- * **Нуль зарезервований за порожнім слотом**, тож нумерація починається з 1:
- * масив фіксованої довжини завжди має хвіст із нулів, і вид правила з кодом 0
- * зробив би цей хвіст шістнадцятьма мовчазними правилами.
+ * **Zero is reserved for an empty slot**, so numbering starts at 1: a
+ * fixed-length array always has a tail of zeros, and a rule kind with code 0
+ * would turn that tail into sixteen silent rules.
  *
- * Коди тільки дописуються в кінець. Перенумерація тихо змінює зміст уже
- * підписаних політик, які лежать в акаунтах і не перечитуються.
+ * Codes are only ever appended at the end. Renumbering silently changes the
+ * meaning of already signed policies that sit in accounts and are never
+ * re-read.
  */
 export const RULE_KIND = {
   STATUS: 1,
@@ -60,22 +64,23 @@ export type RuleKind = (typeof RULE_KIND)[RuleKindName]
 
 export const RULE_KIND_NAMES = Object.keys(RULE_KIND) as readonly RuleKindName[]
 
-// ─── Джерела статусу (FR-008a) ───────────────────────────────────────────────
+// ─── Status sources (FR-008a) ────────────────────────────────────────────────
 
 /**
- * Звідки береться статус адреси.
+ * Where an address's status comes from.
  *
- * `provider` — атестація зовнішнього сервісу верифікації; `register` — власний
- * ончейн-реєстр емітента. Бітові значення оголошені тут і дзеркаляться в Rust
- * (T015/T016), як маска ролей дзеркалиться з `issuer.rs`.
+ * `provider` is an attestation by an external verification service;
+ * `register` is the issuer's own on-chain registry. The bit values are
+ * declared here and mirrored in Rust (T015/T016), the way the role mask is
+ * mirrored from `issuer.rs`.
  */
 export const STATUS_SOURCES = ['provider', 'register'] as const
 
 export type StatusSource = (typeof STATUS_SOURCES)[number]
 
 /**
- * Бітові значення. Порядок кортежу вище — він же канонічний порядок у
- * нормалізованій політиці, тож перелічення й маска не можуть розійтись.
+ * Bit values. The tuple order above is also the canonical order in a
+ * normalised policy, so the list and the mask cannot diverge.
  */
 export const STATUS_SOURCE = {
   provider: 1 << 0,
@@ -88,69 +93,72 @@ export function statusSourceMask(sources: readonly StatusSource[]): number {
   return sources.reduce((mask, source) => mask | STATUS_SOURCE[source], 0)
 }
 
-// ─── Межі окремих параметрів ─────────────────────────────────────────────────
+// ─── Bounds of individual parameters ─────────────────────────────────────────
 
 /**
- * Юрисдикцій в одному правилі.
+ * Jurisdictions in one rule.
  *
- * Стеля не вибрана, а порахована: код ISO 3166-1 alpha-2 — це два байти ASCII,
- * а параметрів у слоті рівно 22. Її треба казати вголос при показі: токен, чиє
- * коло юрисдикцій ширше за одинадцять, цією моделлю не виражається.
+ * The ceiling is not chosen but computed: an ISO 3166-1 alpha-2 code is two
+ * ASCII bytes, and a slot has exactly 22 parameter bytes. It has to be said
+ * out loud when displayed: a token whose circle of jurisdictions is wider than
+ * eleven cannot be expressed by this model.
  */
 export const MAX_JURISDICTIONS = RULE_PARAMS_BYTES / 2
 
 /**
- * Вікно ліміту за період.
+ * Window of the period limit.
  *
- * Знизу — година: вікно, коротше за час підтвердження кількох транзакцій,
- * перетворює ліміт на випадкову величину. Зверху — 31 доба: `VelocityCounter`
- * скидається на межі вікна, і річне вікно означає лічильник, який не
- * скидається ніколи, тобто ліміт на весь час життя рахунку — а це інша вимога,
- * ніж «ліміт за період».
+ * The floor is an hour: a window shorter than the confirmation time of a few
+ * transactions turns the limit into a random variable. The ceiling is 31
+ * days: `VelocityCounter` resets at the window boundary, and a yearly window
+ * means a counter that never resets, i.e. a limit for the whole life of the
+ * account — which is a different requirement from "limit per period".
  */
 export const MIN_PERIOD_SECONDS = 3600
 export const MAX_PERIOD_SECONDS = 31 * 24 * 3600
 
 /**
- * Строк придатності атестації провайдера (FR-008a2).
+ * Validity period of a provider attestation (FR-008a2).
  *
- * Знизу — година, бо атестація, що протермінувалась швидше за час підтвердження
- * переказу, відмовляє за годинником, а не за змістом. Зверху — рік: строк, що
- * переживає будь-яку перевірку KYC, дорівнює його відсутності.
+ * The floor is an hour, because an attestation that expires faster than a
+ * transfer confirms refuses by the clock, not by substance. The ceiling is a
+ * year: a period that outlives any KYC check is equivalent to having none.
  */
 export const MIN_ATTESTATION_AGE_SECONDS = 3600
 export const MAX_ATTESTATION_AGE_SECONDS = 365 * 24 * 3600
 
-// ─── Схеми ───────────────────────────────────────────────────────────────────
+// ─── Schemas ─────────────────────────────────────────────────────────────────
 
 /**
- * Код ISO 3166-1 alpha-2 у верхньому регістрі.
+ * Upper-case ISO 3166-1 alpha-2 code.
  *
- * Експортований, бо ту саму форму має юрисдикція **в записі статусу**, який
- * читає оцінювач (T013). Другий регексп для того самого коду країни розійшовся
- * б із цим мовчки — і розійшовся б саме в порівнянні «юрисдикція отримувача
- * входить у дозволені», тобто там, де ціна розбіжності найвища.
+ * Exported because the jurisdiction **in a status record**, which the
+ * evaluator reads (T013), has the same shape. A second regexp for the same
+ * country code would diverge from this one silently — and would diverge
+ * precisely in the comparison "the recipient's jurisdiction is among the
+ * allowed ones", i.e. where the cost of a divergence is highest.
  */
 export const jurisdictionSchema = z
   .string()
   .regex(/^[A-Z]{2}$/, 'expected an upper-case ISO 3166-1 alpha-2 code')
 
 /**
- * Рівень верифікації — байт.
+ * Verification tier — a byte.
  *
- * Експортований з тієї ж причини: `minTier` у правилі й `tier` у записі статусу
- * порівнюються між собою, тож їхні межі мусять бути одним значенням, а не двома
- * однаковими.
+ * Exported for the same reason: `minTier` in the rule and `tier` in the
+ * status record are compared against each other, so their bounds must be one
+ * value, not two identical ones.
  */
 export const tierSchema = z.number().int().min(0).max(255)
 
 /**
- * Сума-ліміт у найменших одиницях.
+ * Limit amount in the smallest unit.
  *
- * Нуль відхиляється: правило з нульовим лімітом відмовляє в кожному переказі, і
- * це не «ліміт», а зупинка обігу, для якої існує пауза. Важливіше інше — поруч
- * стоїть домовленість «правила немає = перевірки немає», і два різні способи
- * сказати протилежні речі нулем і відсутністю читалися б однаково погано.
+ * Zero is rejected: a rule with a zero limit refuses every transfer, and that
+ * is not a "limit" but a halt of circulation, for which a pause exists. More
+ * importantly, the convention "no rule = no check" sits right next to it, and
+ * two different ways of saying opposite things with zero and absence would
+ * read equally badly.
  */
 const limitAmountSchema = u64Schema.refine(
   (value) => toU64(value) > 0n,
@@ -158,48 +166,49 @@ const limitAmountSchema = u64Schema.refine(
 )
 
 /**
- * Правило статусу — **єдине обов'язкове**.
+ * The status rule — **the only mandatory one**.
  *
- * Політика без відповіді на питання «хто може тримати» неможлива за типом.
- * Це не суворість заради суворості: FR-008b1 вимагає, щоб рахунок,
- * розблокований учора, отримав відмову сьогодні, якщо статус більше не
- * задовольняє політику, — а це постійна перевірка, а не разове розморожування.
- * «Обмежень статусу немає» записується явно: усі джерела, `minTier: 0`.
+ * A policy without an answer to "who may hold" is impossible by type. This is
+ * not strictness for its own sake: FR-008b1 requires that an account thawed
+ * yesterday be refused today if its status no longer satisfies the policy —
+ * and that is a continuous check, not a one-off thaw. "No status
+ * restrictions" is written out explicitly: all sources, `minTier: 0`.
  *
- * `sources` називає джерела, які можуть **дозволити**. Заборона діє з будь-якого
- * джерела незалежно від цього переліку (FR-008a1): власний реєстр емітента
- * звужує коло, дозволене провайдером, і ніколи його не розширює. Тому поля
- * «джерела заборон» тут немає й бути не може.
+ * `sources` names the sources that may **allow**. A denial applies from any
+ * source regardless of this list (FR-008a1): the issuer's own registry
+ * narrows the circle allowed by the provider and never widens it. So there is
+ * no "denial sources" field here, and there cannot be one.
  */
 export const statusRuleSchema = z
   .object({
-    /** Мінімум одне джерело: порожній перелік — це «дозволити нікому». */
+    /** At least one source: an empty list is "allow no one". */
     sources: z
       .array(z.enum(STATUS_SOURCES))
       .min(1, 'name at least one source of status')
       .max(STATUS_SOURCES.length)
       .refine((s) => new Set(s).size === s.length, 'a source is named twice')
-      // Порядок нормалізується: множина джерел не має порядку, а `rules_hash`
-      // (T012) має бути той самий для тієї самої політики. Інакше майстер
-      // показував би «політика змінилась» на перестановці двох галочок.
+      // The order is normalised: a set of sources has no order, and
+      // `rules_hash` (T012) must be the same for the same policy. Otherwise
+      // the wizard would show "policy changed" on swapping two checkboxes.
       .transform((s) => STATUS_SOURCES.filter((source) => s.includes(source))),
     /**
-     * Мінімальний рівень верифікації отримувача. `0` — рівень не перевіряється,
-     * достатньо чинного статусу.
+     * Minimum verification tier of the recipient. `0` — the tier is not
+     * checked, a current status is enough.
      *
-     * Стеля — байт, а не продуктове число: рівні призначає провайдер верифікації,
-     * і вигадана тут межа відкинула б дійсну політику з причини, якої немає в
-     * жодній вимозі.
+     * The ceiling is a byte, not a product number: tiers are assigned by the
+     * verification provider, and a bound invented here would reject a valid
+     * policy for a reason found in no requirement.
      */
     minTier: tierSchema,
     /**
-     * Скільки атестація провайдера лишається чинною (FR-008a2). Протермінована
-     * прирівнюється до відсутньої, а не до заборони: далі рішення ухвалює те саме
-     * правило, тобто на виході буде `*_STATUS_MISSING` або дозвіл із іншого
-     * джерела.
+     * How long a provider attestation stays current (FR-008a2). An expired one
+     * is treated as absent, not as a denial: the same rule then makes the
+     * decision, so the outcome is `*_STATUS_MISSING` or an allow from another
+     * source.
      *
-     * Поле обов'язкове, коли серед джерел є `provider`: атестація без строку
-     * придатності — це верифікація, зроблена колись і чинна назавжди.
+     * The field is mandatory when `provider` is among the sources: an
+     * attestation without a validity period is a verification done once and
+     * valid forever.
      */
     maxAttestationAgeSeconds: z
       .number()
@@ -208,9 +217,10 @@ export const statusRuleSchema = z
       .max(MAX_ATTESTATION_AGE_SECONDS)
       .optional(),
   })
-  // Не декоративна перевірка: політика, що приймає атестації провайдера й не
-  // називає строку їх придатності, — це верифікація, зроблена колись і чинна
-  // назавжди. FR-008a2 існує саме проти цього, і забути поле не можна.
+  // Not a decorative check: a policy that accepts provider attestations and
+  // does not name their validity period is a verification done once and valid
+  // forever. FR-008a2 exists precisely against that, and the field must not be
+  // forgettable.
   .refine(
     (rule) => !rule.sources.includes('provider') || rule.maxAttestationAgeSeconds !== undefined,
     {
@@ -221,17 +231,17 @@ export const statusRuleSchema = z
 
 export type StatusRule = z.infer<typeof statusRuleSchema>
 
-/** Дозволені юрисдикції отримувача. Правила немає — юрисдикція не перевіряється. */
+/** Allowed recipient jurisdictions. No rule — the jurisdiction is not checked. */
 export const jurisdictionsRuleSchema = z
   .array(jurisdictionSchema)
   .min(1, 'name at least one jurisdiction, or omit the rule to allow all')
   .max(MAX_JURISDICTIONS, `a rule holds at most ${MAX_JURISDICTIONS} jurisdictions`)
   .refine((codes) => new Set(codes).size === codes.length, 'a jurisdiction is named twice')
-  // Сортування — та сама детермінованість, що й у `sources`: множина країн не
-  // має порядку, а хеш політики мусить бути однаковий для однакового змісту.
+  // Sorting is the same determinism as in `sources`: a set of countries has
+  // no order, and the policy hash must be identical for identical content.
   .transform((codes) => [...codes].sort())
 
-/** Ліміт за період: сума й вікно, у якому вона рахується. */
+/** Period limit: the amount and the window in which it is counted. */
 export const periodLimitRuleSchema = z.object({
   amount: limitAmountSchema,
   windowSeconds: z.number().int().min(MIN_PERIOD_SECONDS).max(MAX_PERIOD_SECONDS),
@@ -240,16 +250,16 @@ export const periodLimitRuleSchema = z.object({
 export type PeriodLimitRule = z.infer<typeof periodLimitRuleSchema>
 
 /**
- * Тіло політики.
+ * The policy body.
  *
- * Правило, якого немає, — це перевірка, якої немає. Домовленість одна на всі
- * поля, і саме тому нуль не є допустимою сумою ліміту, а порожній перелік
- * юрисдикцій не є способом сказати «усі».
+ * A rule that is absent is a check that is absent. One convention for all
+ * fields, which is exactly why zero is not a valid limit amount and an empty
+ * list of jurisdictions is not a way to say "all".
  */
 export const policyRulesSchema = z.object({
   status: statusRuleSchema,
   jurisdictions: jurisdictionsRuleSchema.optional(),
-  /** Ліміт на один переказ, у найменших одиницях. */
+  /** Limit per single transfer, in the smallest unit. */
   transferLimit: limitAmountSchema.optional(),
   periodLimit: periodLimitRuleSchema.optional(),
 })
@@ -257,11 +267,11 @@ export const policyRulesSchema = z.object({
 export type PolicyRules = z.infer<typeof policyRulesSchema>
 
 /**
- * Скільки слотів займе політика при кодуванні (T012).
+ * How many slots the policy takes when encoded (T012).
  *
- * Живе тут, бо це властивість моделі, а не кодувальника: якщо видів правил
- * колись стане більше за `MAX_RULE_SLOTS`, ламається саме модель, і ловити це
- * має тест поруч із нею.
+ * Lives here because it is a property of the model, not of the encoder: if
+ * the number of rule kinds ever exceeds `MAX_RULE_SLOTS`, it is the model that
+ * breaks, and the test next to it should be what catches it.
  */
 export function usedRuleSlots(rules: PolicyRules): number {
   return (
@@ -273,15 +283,16 @@ export function usedRuleSlots(rules: PolicyRules): number {
 }
 
 /**
- * Найслабша політика, яку модель дозволяє записати.
+ * The weakest policy the model allows to be written.
  *
- * Не «порожня»: такої не буває. Вона приймає обидва джерела статусу, не вимагає
- * рівня й дає атестації найдовший допустимий строк — але статус усе одно
- * потрібен, а заборона з реєстру емітента діє й тут (FR-008a1).
+ * Not "empty": there is no such thing. It accepts both status sources,
+ * requires no tier and gives the attestation the longest allowed validity —
+ * but a status is still required, and a denial from the issuer's registry
+ * applies here too (FR-008a1).
  *
- * Існує як опорна точка: з неї починає майстер випуску (T023) і від неї
- * відштовхуються фікстури диференційних тестів (T019). Другого «нульового»
- * значення політики в проєкті бути не повинно.
+ * Exists as a reference point: the issuance wizard starts from it (T023) and
+ * the differential test fixtures build on it (T019). There should be no
+ * second "zero" policy value in the project.
  */
 export const OPEN_POLICY: PolicyRules = {
   status: {

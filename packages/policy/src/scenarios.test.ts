@@ -38,7 +38,7 @@ describe('the scenario set', () => {
     expect(verdicts(OPEN_POLICY)).toEqual({
       verified: 'allowed',
       unverified: 'RECIPIENT_STATUS_MISSING',
-      // Ліміту немає — питання без змісту, і воно видиме як дозвіл, а не зникає.
+      // No limit — a question without content, and it is visible as an allow rather than vanishing.
       'over-limit': 'allowed',
       denied: 'RECIPIENT_DENIED',
       paused: 'TRANSFERS_PAUSED',
@@ -130,8 +130,8 @@ describe('the parties to the transfer', () => {
     const rules = withLimits({ jurisdictions: ['NG', 'KE'] })
     const { context } = buildScenario(rules, 'verified', NOW)
 
-    // Перелік нормалізований сортуванням, тож перша — `KE`, а не та, що стояла
-    // першою в запиті. Саме її й мусить взяти сценарій.
+    // The list is normalised by sorting, so the first is `KE`, not the one
+    // that came first in the request. That is the one the scenario must take.
     expect(context.recipient.register).toMatchObject({ record: { jurisdiction: 'KE' } })
     expect(verdicts(rules).verified).toBe('allowed')
   })

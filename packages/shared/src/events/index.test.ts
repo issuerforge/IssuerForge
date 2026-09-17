@@ -73,8 +73,8 @@ describe('indexedEventSchema', () => {
   })
 
   it('rejects a kind that is not indexed yet', () => {
-    // Погашення приходять на M4 (T048), пропозиції — на M2 (T031/T032).
-    // Доти вони не мають мовчки проходити як подія невідомої форми.
+    // Redemptions arrive at M4 (T048), proposals at M2 (T031/T032). Until
+    // then they must not silently pass as an event of unknown shape.
     expect(indexedEventSchema.safeParse({ ...transfer, kind: 'redemption' }).success).toBe(false)
   })
 
@@ -119,13 +119,13 @@ describe('transfer and refusal events', () => {
 
 describe('compliance event', () => {
   it('refuses an action with no reason code or case reference', () => {
-    // FR-017: без підстави дія не виконується, отже й записатися не може.
+    // FR-017: without a reason the action is not executed, so it cannot be recorded either.
     expect(complianceEventSchema.safeParse({ ...compliance, reasonCode: '' }).success).toBe(false)
     expect(complianceEventSchema.safeParse({ ...compliance, caseRef: '' }).success).toBe(false)
   })
 
   it('refuses an action nobody signed', () => {
-    // FR-019c: журнал показує поіменно, хто санкціонував дію.
+    // FR-019c: the journal shows by name who authorised the action.
     expect(complianceEventSchema.safeParse({ ...compliance, signers: [] }).success).toBe(false)
   })
 
@@ -173,8 +173,9 @@ describe('attestation event', () => {
 
 describe('eventKey', () => {
   it('separates two events of the same transaction', () => {
-    // Дроблення переказу — сценарій із SC-002: одна транзакція законно несе
-    // кілька переказів, тож підпис сам по собі ключем не є.
+    // Splitting a transfer is a scenario from SC-002: one transaction
+    // legitimately carries several transfers, so the signature alone is not
+    // a key.
     expect(eventKey(transferEventSchema.parse(transfer))).not.toBe(
       eventKey(refusalEventSchema.parse(refusal)),
     )

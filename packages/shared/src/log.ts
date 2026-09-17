@@ -1,7 +1,7 @@
-// Логер процесу. Живе в `shared`, а не в `apps/api`, бо той самий формат мають
-// давати воркер-індексатор (T031) і скрипти демо: журнал комплаєнс-продукту
-// зшивається за `requestId` і `issuerId`, і два різні формати роблять це
-// зшивання ручною роботою.
+// Process logger. Lives in `shared` rather than `apps/api` because the indexer
+// worker (T031) and the demo scripts must emit the same format: the journal of
+// a compliance product is stitched together by `requestId` and `issuerId`, and
+// two different formats turn that stitching into manual work.
 import type { Writable } from 'node:stream'
 import { type Logger, type LoggerOptions, pino } from 'pino'
 
@@ -12,15 +12,16 @@ export type LogLevel = (typeof LOG_LEVELS)[number]
 export type { Logger }
 
 /**
- * Шляхи, значення яких у лог не потрапляють ніколи.
+ * Paths whose values never reach the log.
  *
- * `authorization` — це токен Privy у пред'явленому вигляді: рядок із лога
- * дозволяє ходити в API від імені людини, поки не вичерпається `exp`.
- * `databaseUrl` і `*Secret` — пароль бази й секрет застосунку Privy.
+ * `authorization` is the Privy token as presented: a line from the log lets
+ * anyone call the API on behalf of a person until `exp` runs out.
+ * `databaseUrl` and `*Secret` are the database password and the Privy app
+ * secret.
  *
- * Перелік навмисно накриває і кореневе поле, і вкладення в `req`/`headers`:
- * pino редагує за точним шляхом, тож `redact: ['authorization']` не чіпає
- * `req.headers.authorization`, і навпаки.
+ * The list deliberately covers both the root field and the nesting under
+ * `req`/`headers`: pino redacts by exact path, so `redact: ['authorization']`
+ * does not touch `req.headers.authorization`, and vice versa.
  */
 const REDACTED_PATHS = [
   'authorization',
@@ -37,13 +38,13 @@ const REDACTED_PATHS = [
 
 export interface LoggerConfig {
   level: LogLevel
-  /** Ім'я процесу в кожному рядку: `api`, `worker`, `demo`. */
+  /** Process name on every line: `api`, `worker`, `demo`. */
   service: string
 }
 
 /**
- * `destination` існує заради тестів: редагування секретів перевіряється на
- * тому, що логер справді написав, а не на тому, як його налаштували.
+ * `destination` exists for the tests: secret redaction is checked against
+ * what the logger actually wrote, not against how it was configured.
  */
 export function createLogger(
   config: LoggerConfig,

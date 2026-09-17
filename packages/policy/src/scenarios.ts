@@ -1,22 +1,26 @@
-// Каталог сценаріїв симуляції (FR-004): «переказ верифікованому, неверифікованому,
-// понад ліміт, на заборонену адресу, при паузі».
+// The catalogue of simulation scenarios (FR-004): "a transfer to a verified
+// holder, to an unverified one, over the limit, to a denied address, while
+// paused".
 //
-// **Сценарій виводиться з політики, а не описується поруч із нею.** П'ять імен
-// із вимоги — це п'ять питань до правил, і відповідь на кожне залежить від того,
-// які правила ввімкнені: «понад ліміт» без жодного ліміту — питання без змісту,
-// а «понад ліміт» при ліміті на переказ і ліміті за період означає перший із
-// них, бо він спрацює раніше. Тримати цю логіку в консолі означало б, що екран
-// майстра й демо-сценарій (T024) розійдуться в тому, що вважати порушенням.
+// **A scenario is derived from the policy, not described next to it.** The
+// five names in the requirement are five questions to the rules, and the
+// answer to each depends on which rules are enabled: "over the limit" with no
+// limit at all is a question without content, and "over the limit" with both a
+// per-transfer and a per-period limit means the first of them, because it
+// fires earlier. Keeping this logic in the console would mean the wizard
+// screen and the demo scenario (T024) diverging on what counts as a violation.
 //
-// **Каталог живе в `policy`, а не в `apps/api`.** Він будує `TransferContext` —
-// тобто говорить мовою моделі правил, а не мовою HTTP; маршрут симуляції з нього
-// лише читає. Побічний наслідок: та сама функція годиться і майстрові, і демо,
-// і жодне з двох місць не вигадує власного «понад ліміт».
+// **The catalogue lives in `policy`, not in `apps/api`.** It builds a
+// `TransferContext` — i.e. it speaks the language of the rule model, not of
+// HTTP; the simulation route only reads from it. A side effect: the same
+// function serves both the wizard and the demo, and neither place invents its
+// own "over the limit".
 //
-// **Сума верифікованого переказу — це рівно ліміт**, а не одиниця. Межа
-// показова: поруч стоять «рівно ліміт — дозволено» і «ліміт плюс один —
-// відмова», тож людина бачить, де саме проходить лінія, а не два числа без
-// зв'язку. Політика без лімітів дає одиницю — найменшу суму, яка взагалі буває.
+// **The amount of the verified transfer is exactly the limit**, not one. The
+// boundary is demonstrative: "exactly the limit — allowed" and "the limit plus
+// one — refused" stand side by side, so a person sees precisely where the line
+// runs rather than two unrelated numbers. A policy without limits yields one —
+// the smallest amount there is.
 import {
   fromU64,
   toU64,
@@ -36,8 +40,9 @@ import {
 import { type PolicyRules, policyRulesSchema } from './model.ts'
 
 /**
- * Імена сценаріїв у порядку FR-004. Порядок не декоративний: майстер показує
- * їх списком згори вниз, і вимога читається саме цим рядком.
+ * Scenario names in FR-004 order. The order is not decorative: the wizard
+ * shows them as a list top to bottom, and the requirement reads in exactly
+ * that line.
  */
 export const SCENARIO_NAMES = ['verified', 'unverified', 'over-limit', 'denied', 'paused'] as const
 
@@ -46,33 +51,36 @@ export type ScenarioName = (typeof SCENARIO_NAMES)[number]
 export const scenarioNameSchema = z.enum(SCENARIO_NAMES)
 
 /**
- * Юрисдикція учасників, коли політика країн не обмежує.
+ * The parties' jurisdiction when the policy does not restrict countries.
  *
- * Потрібна тому, що `HolderStatus` без країни не буває — поле обов'язкове в
- * обох джерелах. Коли правило юрисдикцій є, береться перша з дозволених, і тоді
- * ця константа не використовується взагалі.
+ * Needed because a `HolderStatus` without a country does not exist — the
+ * field is mandatory in both sources. When there is a jurisdictions rule, the
+ * first allowed one is taken, and then this constant is not used at all.
  */
 export const SIMULATED_JURISDICTION = 'UA'
 
 /**
- * Версія політики в симуляції — та сама з обох боків.
+ * The policy version in the simulation — the same on both sides.
  *
- * `POLICY_VERSION_MISMATCH` — це стан мережі (підсунутий не той `PolicyConfig`),
- * а не властивість правил, тож окремим сценарієм він тут не з'являється: майстер
- * питає «що робить моя політика», а не «що буде, якщо підмінити акаунт».
+ * `POLICY_VERSION_MISMATCH` is a state of the network (the wrong
+ * `PolicyConfig` slipped in), not a property of the rules, so it does not
+ * appear here as a separate scenario: the wizard asks "what does my policy
+ * do", not "what happens if the account is swapped".
  */
 const SIMULATED_POLICY_VERSION = 1
 
-/** Сума верифікованого переказу, коли політика не має жодного ліміту. */
+/** The amount of the verified transfer when the policy has no limit at all. */
 const MINIMAL_AMOUNT = 1n
 
 /**
- * Один сценарій: питання до правил разом із тим, чим воно є для оцінювача.
+ * One scenario: a question to the rules together with what it is for the
+ * evaluator.
  *
- * `applicable` — чи має сценарій зміст за цієї політики. Незастосовний сценарій
- * не ховається: «понад ліміт» при політиці без лімітів мусить бути видимим
- * рядком «ліміту немає — переказ дозволено», інакше майстер мовчки покаже
- * чотири сценарії з п'яти, і зникнення пʼятого прочитається як «усе гаразд».
+ * `applicable` — whether the scenario has content under this policy. An
+ * inapplicable scenario is not hidden: "over the limit" under a policy
+ * without limits must be a visible line "no limit — transfer allowed",
+ * otherwise the wizard silently shows four scenarios out of five, and the
+ * disappearance of the fifth reads as "all fine".
  */
 export type Scenario = {
   readonly name: ScenarioName
@@ -85,15 +93,16 @@ export type Scenario = {
 export type ScenarioResult = Scenario & { readonly verdict: TransferVerdict }
 
 /**
- * Сторона переказу в тому вигляді, у якому її бачить хук.
+ * A party to the transfer as the hook sees it.
  *
- * Запис кладеться **тільки в ті джерела, які приймає правило**: джерело поза
- * переліком дало б `STATUS_SOURCE_NOT_ACCEPTED` — правильну відмову на неправильне
- * питання, бо сценарій «верифікований» питає не про це.
+ * The record is placed **only in the sources the rule accepts**: a source
+ * outside the list would yield `STATUS_SOURCE_NOT_ACCEPTED` — the right
+ * refusal to the wrong question, because the "verified" scenario is not
+ * asking about that.
  *
- * `expiresAt: null` — запис без строку. Протермінування має власні коди й власні
- * фікстури (T019); підмішувати його в кожен сценарій означало б, що «понад
- * ліміт» одного дня почне відмовляти з іншої причини.
+ * `expiresAt: null` — a record without a validity period. Expiry has its own
+ * codes and its own fixtures (T019); mixing it into every scenario would mean
+ * that "over the limit" one day starts refusing for a different reason.
  */
 function party(
   policy: PolicyRules,
@@ -117,11 +126,12 @@ function party(
 }
 
 /**
- * Ліміт, який спрацює першим, — найменший із чинних.
+ * The limit that fires first — the smallest of those in force.
  *
- * Не «ліміт на переказ, а якщо його немає, то за період»: політика з обома
- * лімітами відхилить суму меншим із них, і сценарій «понад ліміт», побудований
- * від більшого, показав би відмову з коду, якого людина не очікує.
+ * Not "the per-transfer limit, and if there is none, the per-period one": a
+ * policy with both limits rejects the amount by the smaller of them, and an
+ * "over the limit" scenario built from the larger one would show a refusal
+ * with a code the person does not expect.
  */
 function bindingLimit(policy: PolicyRules): bigint | undefined {
   const limits = [policy.transferLimit, policy.periodLimit?.amount]
@@ -130,7 +140,7 @@ function bindingLimit(policy: PolicyRules): bigint | undefined {
   return limits.length === 0 ? undefined : limits.reduce((a, b) => (a < b ? a : b))
 }
 
-/** Контекст переказу: усе, крім того, що вирішує сам сценарій. */
+/** The transfer context: everything except what the scenario itself decides. */
 function context(
   policy: PolicyRules,
   options: {
@@ -143,9 +153,9 @@ function context(
     sender: party(policy, { now: options.now, known: true, denied: false }),
     recipient: options.recipient,
     amount: fromU64(options.amount),
-    // Лічильник відправника є рівно тоді, коли політика має ліміт за період:
-    // його відсутність за такої політики — це `VELOCITY_COUNTER_MISSING`,
-    // тобто стан рахунку, а не сценарій правил.
+    // The sender's counter exists exactly when the policy has a period limit:
+    // its absence under such a policy is `VELOCITY_COUNTER_MISSING`, i.e. a
+    // state of the account, not a rules scenario.
     velocity:
       policy.periodLimit === undefined
         ? undefined
@@ -157,11 +167,11 @@ function context(
 }
 
 /**
- * Один сценарій за іменем.
+ * One scenario by name.
  *
- * Політика проганяється через схему: нормалізація (порядок джерел, порядок
- * юрисдикцій) впливає на те, яку країну візьме сценарій, тож рахувати треба з
- * того самого значення, яке потім побачить оцінювач.
+ * The policy is run through the schema: normalisation (the order of sources,
+ * the order of jurisdictions) affects which country the scenario takes, so it
+ * has to be computed from the same value the evaluator will later see.
  */
 export function buildScenario(rules: PolicyRules, name: ScenarioName, now: number): Scenario {
   const policy = policyRulesSchema.parse(rules)
@@ -191,9 +201,9 @@ export function buildScenario(rules: PolicyRules, name: ScenarioName, now: numbe
       return scenario(withinLimit, party(policy, { now: at, known: false, denied: false }))
 
     case 'over-limit': {
-      // Ліміт у стелю u64 перевищити нічим: сценарію не існує, і вигадувати
-      // йому суму означало б показати «дозволено» як відповідь на питання,
-      // якого не поставили.
+      // There is nothing to exceed a limit at the u64 ceiling with: the
+      // scenario does not exist, and inventing an amount for it would show
+      // "allowed" as the answer to a question that was not asked.
       const exceeds = limit !== undefined && limit < U64_MAX
       return scenario(exceeds ? withinLimit + 1n : withinLimit, known(), OPEN_TOKEN_STATE, exceeds)
     }
@@ -207,10 +217,11 @@ export function buildScenario(rules: PolicyRules, name: ScenarioName, now: numbe
 }
 
 /**
- * Увесь набір (або названа його частина) разом із вердиктами.
+ * The whole set (or a named part of it) together with the verdicts.
  *
- * `simulateTransfer`, а не `evaluateTransfer`: сценарій «при паузі» живе на шарі
- * токен-програми, і без нього п'ятірка з FR-004 неповна.
+ * `simulateTransfer`, not `evaluateTransfer`: the "while paused" scenario
+ * lives on the token program layer, and without it the five of FR-004 are
+ * incomplete.
  */
 export function simulateScenarios(
   rules: PolicyRules,

@@ -2,7 +2,7 @@ import { Writable } from 'node:stream'
 import { describe, expect, it } from 'vitest'
 import { createLogger, type LogLevel } from './log.ts'
 
-/** Логер, підключений до пам'яті: перевіряємо написане, а не налаштування. */
+/** A logger wired to memory: we check what was written, not how it was configured. */
 function capture(level: LogLevel) {
   const lines: Record<string, unknown>[] = []
   const destination = new Writable({
@@ -30,12 +30,12 @@ describe('the logger', () => {
 
     const [line] = lines
     expect(line).toBeDefined()
-    // Токен із лога дозволяє ходити в API від імені людини до самого `exp`.
+    // A token from the log lets anyone call the API on behalf of a person until `exp`.
     expect(JSON.stringify(line)).not.toContain('super-secret')
     expect(JSON.stringify(line)).not.toContain('hunter2')
     expect(line?.authorization).toBe('[redacted]')
     expect(line?.databaseUrl).toBe('[redacted]')
-    // Те, за чим зшивається журнал, лишається на видноті.
+    // What the journal is stitched together by stays in plain sight.
     expect(line?.issuerId).toBe('visible')
     expect(line?.service).toBe('api')
   })

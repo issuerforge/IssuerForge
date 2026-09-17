@@ -1,26 +1,28 @@
-// Детермінований бінарний layout політики і `rules_hash`.
+// The deterministic binary layout of a policy and `rules_hash`.
 //
-// Це друга половина пари «модель ↔ байти»: `model.ts` каже, що політика може
-// сказати, а тут вона стає тими самими 384 байтами, які лежать у
-// `PolicyConfig.rules` і які читає хук без алокацій.
+// This is the second half of the pair "model ↔ bytes": `model.ts` says what a
+// policy can say, and here it becomes the very 384 bytes that sit in
+// `PolicyConfig.rules` and that the hook reads without allocations.
 //
-// **Кодування канонічне: у політики рівно одне представлення в байтах.** Звідси
-// три властивості, які треба тримати разом, бо поодинці кожна нічого не варта:
+// **The encoding is canonical: a policy has exactly one representation in
+// bytes.** Three properties follow, and they have to be kept together because
+// each alone is worth nothing:
 //
-// 1. `encode` детермінований — слоти йдуть за зростанням `kind`, множини вже
-//    впорядковані моделлю, набивка нульова;
-// 2. `decode` відхиляє все, що не могло вийти з `encode` — ненульову набивку,
-//    ненульовий `op`, невідомий `kind`, порядок не за зростанням;
-// 3. `encode(decode(bytes)) === bytes` для будь-яких прийнятих байтів.
+// 1. `encode` is deterministic — slots go in ascending `kind`, sets are
+//    already ordered by the model, padding is zero;
+// 2. `decode` rejects everything that could not have come out of `encode` —
+//    non-zero padding, a non-zero `op`, an unknown `kind`, a non-ascending
+//    order;
+// 3. `encode(decode(bytes)) === bytes` for any accepted bytes.
 //
-// Без (2) два різні масиви байтів означали б ту саму політику й мали різний
-// `rules_hash` — тобто хеш перестав би бути іменем політики й став би іменем
-// однієї з її записів.
+// Without (2) two different byte arrays would mean the same policy and have
+// different `rules_hash`es — i.e. the hash would stop being the name of the
+// policy and become the name of one of its spellings.
 //
-// **`rules_hash` рахується над усіма 16 слотами**, як вони лежать в акаунті.
-// Незалежному верифікатору (SC-006) не треба знати, скільки слотів заповнено:
-// він бере зріз даних акаунта, хешує його й порівнює. Хеш доводить вміст
-// акаунта байт у байт, а не його тлумачення.
+// **`rules_hash` is computed over all 16 slots**, as they sit in the account.
+// The independent verifier (SC-006) does not need to know how many slots are
+// filled: it takes a slice of the account data, hashes it and compares. The
+// hash proves the account contents byte for byte, not their interpretation.
 import { fromU64, toU64 } from '@forge/shared/primitives'
 import { sha256 } from '@noble/hashes/sha2.js'
 import {
@@ -36,27 +38,28 @@ import {
   statusSourceMask,
 } from './model.ts'
 
-/** Повний розмір поля `rules` в акаунті. */
+/** Full size of the `rules` field in the account. */
 export const RULES_BYTES = MAX_RULE_SLOTS * RULE_SLOT_BYTES
 
 /**
- * Другий байт слота.
+ * The second byte of a slot.
  *
- * `PLAN.md` задумував тут оператор порівняння, але з іменованою моделлю вид
- * правила вже визначає оператор, і другий спосіб сказати те саме міг би з ним
- * розійтися (`TRANSFER_LIMIT` із `gte` — що це означає?). Байт лишається нулем
- * і **перевіряється**: інакше він стає тихим каналом, у який щось потрапляє й
- * змінює `rules_hash`, нічого не змінюючи в змісті.
+ * `PLAN.md` intended a comparison operator here, but with a named model the
+ * rule kind already determines the operator, and a second way of saying the
+ * same thing could diverge from it (`TRANSFER_LIMIT` with `gte` — what would
+ * that mean?). The byte stays zero and **is checked**: otherwise it becomes a
+ * silent channel into which something gets in and changes `rules_hash`
+ * without changing anything in the content.
  *
- * Нове кодування параметрів — це новий `kind`, а не нове значення тут. Одна
- * вісь версій замість двох, і підписана політика ніколи не міняє сенсу.
+ * A new parameter encoding is a new `kind`, not a new value here. One axis of
+ * versions instead of two, and a signed policy never changes meaning.
  */
 export const RULE_OP_RESERVED = 0
 
-/** Зміщення слота в масиві. */
+/** Offset of a slot in the array. */
 const slotOffset = (index: number): number => index * RULE_SLOT_BYTES
 
-/** Порядок слотів — за зростанням `kind`. Іншого детермінованого немає. */
+/** Slot order — ascending `kind`. There is no other deterministic one. */
 const SLOT_ORDER = [
   RULE_KIND.STATUS,
   RULE_KIND.JURISDICTIONS,
@@ -71,7 +74,7 @@ export class PolicyLayoutError extends Error {
   }
 }
 
-// ─── Кодування ───────────────────────────────────────────────────────────────
+// ─── Encoding ────────────────────────────────────────────────────────────────
 
 function writeSlot(out: Uint8Array, index: number, kind: number, params: Uint8Array): void {
   if (params.length > RULE_PARAMS_BYTES) {
@@ -87,8 +90,8 @@ function statusParams(rules: PolicyRules): Uint8Array {
   const params = new Uint8Array(RULE_PARAMS_BYTES)
   params[0] = statusSourceMask(rules.status.sources)
   params[1] = rules.status.minTier
-  // Нуль означає «строку немає»: модель не дозволяє значення менше за годину,
-  // тож нуль не є дійсним строком і читається однозначно.
+  // Zero means "no validity period": the model allows no value below an
+  // hour, so zero is not a valid period and reads unambiguously.
   new DataView(params.buffer).setUint32(2, rules.status.maxAttestationAgeSeconds ?? 0, true)
   return params
 }
@@ -111,11 +114,11 @@ function amountParams(amount: string, windowSeconds?: number): Uint8Array {
 }
 
 /**
- * Політика → 384 байти поля `rules`.
+ * Policy → the 384 bytes of the `rules` field.
  *
- * Вхід проганяється через схему: кодувати неперевірену політику означає
- * записати в акаунт значення, яке модель відхилила б, — і дізнатись про це
- * відмовою в переказі через тиждень.
+ * The input is run through the schema: encoding an unchecked policy means
+ * writing into the account a value the model would have rejected — and
+ * learning about it from a refused transfer a week later.
  */
 export function encodeRules(rules: PolicyRules): Uint8Array {
   const checked = policyRulesSchema.parse(rules)
@@ -149,16 +152,16 @@ export function encodeRules(rules: PolicyRules): Uint8Array {
   return out
 }
 
-// ─── Декодування ─────────────────────────────────────────────────────────────
+// ─── Decoding ────────────────────────────────────────────────────────────────
 
-/** Читання чисел із параметрів слота. Зміщення — від початку `params`. */
+/** Reads numbers from a slot's parameters. Offsets are from the start of `params`. */
 const paramsView = (params: Uint8Array): DataView =>
   new DataView(params.buffer, params.byteOffset, params.byteLength)
 
 function readStatus(params: Uint8Array): PolicyRules['status'] {
   const mask = params[0] ?? 0
-  // Невідомий біт джерела — та сама відмова, що й невідомий вид правила:
-  // джерело, якого читач не знає, не можна ані виконати, ані пропустити.
+  // An unknown source bit is the same refusal as an unknown rule kind: a
+  // source the reader does not know can be neither executed nor skipped.
   if (mask === 0 || (mask & ~STATUS_SOURCE_ALL) !== 0) {
     throw new PolicyLayoutError(`status rule names no known source (mask ${mask})`)
   }
@@ -183,11 +186,12 @@ function readJurisdictions(params: Uint8Array): string[] {
 }
 
 /**
- * 384 байти → політика.
+ * 384 bytes → policy.
  *
- * Відхиляє все, що не могло вийти з `encode`. Це не педантизм: `rules_hash`
- * іменує політику, і два різні масиви з однаковим змістом зробили б це ім'я
- * неоднозначним у той самий момент, коли на нього посилається запис журналу.
+ * Rejects everything that could not have come out of `encode`. This is not
+ * pedantry: `rules_hash` names the policy, and two different arrays with the
+ * same content would make that name ambiguous at the very moment a journal
+ * record refers to it.
  */
 export function decodeRules(bytes: Uint8Array): PolicyRules {
   if (bytes.length !== RULES_BYTES) {
@@ -207,8 +211,8 @@ export function decodeRules(bytes: Uint8Array): PolicyRules {
     const params = slot.subarray(2)
 
     if (kind === 0) {
-      // Порожній слот мусить бути порожній цілком: ненульовий хвіст не змінює
-      // змісту політики, але змінює її хеш.
+      // An empty slot must be entirely empty: a non-zero tail does not change
+      // the content of the policy, but it changes its hash.
       if (slot.some((byte) => byte !== 0)) {
         throw new PolicyLayoutError(`slot ${index} is empty but not zeroed`)
       }
@@ -216,7 +220,7 @@ export function decodeRules(bytes: Uint8Array): PolicyRules {
       continue
     }
 
-    // Дірка між правилами дала б два кодування однієї політики.
+    // A gap between rules would give two encodings of one policy.
     if (ended) throw new PolicyLayoutError(`slot ${index} follows an empty slot`)
     if (op !== RULE_OP_RESERVED) {
       throw new PolicyLayoutError(`slot ${index} sets the reserved byte to ${op}`)
@@ -246,17 +250,17 @@ export function decodeRules(bytes: Uint8Array): PolicyRules {
         }
         break
       }
-      // Невідомий вид правила — відмова, а не пропуск. Політика, яку читач не
-      // розуміє повністю, не стає слабшою мовчки: це той самий принцип, що й
-      // FR-013 про недоступне джерело статусу. `set_policy` не пропустить таке
-      // при записі (T014), а хук однаково відмовить (T015).
+      // An unknown rule kind is a refusal, not a skip. A policy the reader does
+      // not fully understand does not get weaker silently: the same principle
+      // as FR-013 about an unavailable status source. `set_policy` will not let
+      // this through on write (T014), and the hook refuses it anyway (T015).
       default:
         throw new PolicyLayoutError(`slot ${index} carries an unknown rule kind ${kind}`)
     }
   }
 
-  // Схема ловить решту: набивку, що не є дійсним значенням, суму нуль,
-  // відсутнє обов'язкове правило статусу.
+  // The schema catches the rest: padding that is not a valid value, a zero
+  // amount, a missing mandatory status rule.
   const parsed = policyRulesSchema.safeParse(draft)
   if (!parsed.success) {
     throw new PolicyLayoutError(
@@ -268,15 +272,15 @@ export function decodeRules(bytes: Uint8Array): PolicyRules {
   return parsed.data
 }
 
-// ─── Хеш ─────────────────────────────────────────────────────────────────────
+// ─── Hash ────────────────────────────────────────────────────────────────────
 
 /**
- * sha256 над полем `rules` цілком.
+ * sha256 over the whole `rules` field.
  *
- * sha256, а не щось інше, бо його рахує сама програма: у Solana це нативний
- * syscall, тобто один дешевий виклик при зміні політики — і жодного на
- * переказі. Хеш, який ончейн-код не може перерахувати, доводив би тільки те,
- * що клієнт уміє рахувати хеші.
+ * sha256 and not something else, because the program itself computes it: on
+ * Solana it is a native syscall, i.e. one cheap call on a policy change — and
+ * none on a transfer. A hash the on-chain code cannot recompute would prove
+ * only that the client knows how to compute hashes.
  */
 export function hashEncodedRules(bytes: Uint8Array): Uint8Array {
   if (bytes.length !== RULES_BYTES) {
@@ -285,12 +289,12 @@ export function hashEncodedRules(bytes: Uint8Array): Uint8Array {
   return sha256(bytes)
 }
 
-/** `rules_hash` політики. Те саме, що `hashEncodedRules(encodeRules(rules))`. */
+/** The policy's `rules_hash`. The same as `hashEncodedRules(encodeRules(rules))`. */
 export function rulesHash(rules: PolicyRules): Uint8Array {
   return hashEncodedRules(encodeRules(rules))
 }
 
-/** Шістнадцятковий рядок — те, що показує майстер і що лежить у `policy_versions`. */
+/** Hex string — what the wizard shows and what sits in `policy_versions`. */
 export function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }

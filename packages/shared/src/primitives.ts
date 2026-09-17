@@ -1,10 +1,10 @@
 import { z } from 'zod'
 
-/** base58 не має 0, O, I та l — звідси діапазони. Адреса Solana: 32 байти. */
+/** base58 has no 0, O, I or l — hence the ranges. A Solana address is 32 bytes. */
 const BASE58_ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
-/** Підпис транзакції — 64 байти, тобто 86–88 символів base58. */
+/** A transaction signature is 64 bytes, i.e. 86–88 base58 characters. */
 const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{86,88}$/
-/** Десятковий цілий рядок без провідних нулів. */
+/** Decimal integer string without leading zeros. */
 const DECIMAL_U64 = /^(0|[1-9][0-9]*)$/
 
 export const U64_MAX = 18_446_744_073_709_551_615n
@@ -16,57 +16,62 @@ export const signatureSchema = z
   .regex(BASE58_SIGNATURE, 'expected a base58 transaction signature')
 
 /**
- * Сума в найменших одиницях — через JSON їде **рядком**, не числом.
+ * An amount in the smallest unit travels through JSON as a **string**, not a
+ * number.
  *
- * u64 не влазить у double. Тут це не теоретичне зауваження: обіг стейблкоїна з
- * двома знаками й атестований резерв у найменших одиницях фіату — числа, які
- * порівнюються між собою в перевірці «емісія + обіг ≤ атестованого» (FR-022).
- * Мовчазна втрата молодших розрядів у цьому порівнянні означає емісію понад
- * резерв, тобто рівно те, чого весь продукт не має дозволяти.
+ * u64 does not fit in a double. This is not a theoretical remark here: the
+ * circulation of a two-decimal stablecoin and the attested reserve in the
+ * smallest fiat unit are numbers compared against each other in the check
+ * "issuance + circulation ≤ attested" (FR-022). Silently losing the low digits
+ * in that comparison means issuing beyond the reserve, i.e. exactly what the
+ * whole product must never allow.
  */
 export const u64Schema = z
   .string()
   .regex(DECIMAL_U64, 'expected a non-negative integer in the smallest unit, as a decimal string')
-  // Zod 4 проганяє всі перевірки, навіть коли попередня вже впала, тож форму
-  // треба звірити ще раз: `BigInt('1.5')` кидає SyntaxError, і невалідне тіло
-  // запиту поверталося б як 500 замість 400.
+  // Zod 4 runs every check even when a previous one has already failed, so the
+  // shape has to be verified again: `BigInt('1.5')` throws a SyntaxError, and
+  // an invalid request body would come back as 500 instead of 400.
   .refine(
     (value) => DECIMAL_U64.test(value) && BigInt(value) <= U64_MAX,
     'value does not fit in u64',
   )
 
 /**
- * Слот мережі. У БД це `bigint`, але поточні слоти Solana на дев'ять порядків
- * менші за `Number.MAX_SAFE_INTEGER`, тож числом він їде без ризику.
+ * Network slot. In the DB it is a `bigint`, but current Solana slots are nine
+ * orders of magnitude below `Number.MAX_SAFE_INTEGER`, so it travels as a
+ * number without risk.
  */
 export const slotSchema = z.number().int().nonnegative()
 
 /**
- * Час блоку — unix-секунди, як їх віддає RPC, а не ISO-рядок.
+ * Block time — unix seconds as the RPC returns them, not an ISO string.
  *
- * Журнал звіряється з мережею без доступу до систем емітента (FR-018, SC-006):
- * верифікатор порівнює поле запису з тим, що повернув `getTransaction`. Будь-яке
- * перетворення на цьому шляху — це місце, де звірка може розійтися на форматі,
- * а не на змісті. Форматує UI.
+ * The journal is reconciled against the network without access to the
+ * issuer's systems (FR-018, SC-006): the verifier compares the record's field
+ * with what `getTransaction` returned. Any conversion on that path is a place
+ * where the reconciliation can diverge on format rather than on substance.
+ * Formatting is the UI's job.
  *
- * `null` — не помилка індексації: RPC не має `blockTime` для блоків, підрізаних
- * із леджера, і подія від цього не перестає бути дійсною.
+ * `null` is not an indexing error: the RPC has no `blockTime` for blocks
+ * pruned from the ledger, and the event does not stop being valid because
+ * of it.
  */
 export const blockTimeSchema = z.number().int().nullable()
 
-/** Секунди unix. Ончейн це `i64`, але від'ємний час у цій системі не існує. */
+/** Unix seconds. On-chain it is `i64`, but negative time does not exist in this system. */
 export const unixSecondsSchema = z.number().int().nonnegative()
 
 export type Address = z.infer<typeof addressSchema>
 export type Signature = z.infer<typeof signatureSchema>
 export type U64String = z.infer<typeof u64Schema>
 
-/** Перетворення суми з транспортного рядка в число для арифметики. */
+/** Converts an amount from its transport string into a number for arithmetic. */
 export function toU64(value: U64String): bigint {
   return BigInt(value)
 }
 
-/** Зворотне перетворення. Кидає на від'ємному значенні або на переповненні. */
+/** The reverse conversion. Throws on a negative value or on overflow. */
 export function fromU64(value: bigint): U64String {
   if (value < 0n) throw new RangeError(`u64 cannot be negative: ${value}`)
   if (value > U64_MAX) throw new RangeError(`value does not fit in u64: ${value}`)

@@ -39,8 +39,8 @@ const problems = (value: unknown): string[] => {
 }
 
 describe('the rule kinds', () => {
-  // Нуль — порожній слот у масиві фіксованої довжини. Вид правила з кодом 0
-  // перетворив би хвіст нулів на шістнадцять мовчазних правил.
+  // Zero is an empty slot in a fixed-length array. A rule kind with code 0
+  // would turn the tail of zeros into sixteen silent rules.
   it('never uses zero, which belongs to the empty slot', () => {
     expect(Object.values(RULE_KIND).every((kind) => kind > 0)).toBe(true)
   })
@@ -54,9 +54,10 @@ describe('the rule kinds', () => {
     expect(RULE_KIND_NAMES.length).toBeLessThanOrEqual(MAX_RULE_SLOTS)
   })
 
-  // Пауза виконується розширенням Pausable, а не хуком, тож вона й не має бути
-  // видом правила. Тест закріплює саме це рішення: `TRANSFERS_PAUSED` існує
-  // серед кодів відмови, і спокуса завести під нього правило цілком реальна.
+  // A pause is executed by the Pausable extension, not by the hook, so it must
+  // not be a rule kind either. The test pins down exactly this decision:
+  // `TRANSFERS_PAUSED` exists among the refusal codes, and the temptation to
+  // add a rule for it is quite real.
   it('has no kind for pausing, which the mint extension does', () => {
     expect(REFUSAL_CODES).toContain('TRANSFERS_PAUSED')
     expect(RULE_KIND_NAMES).not.toContain('PAUSE')
@@ -74,9 +75,9 @@ describe('status sources', () => {
     expect(statusSourceMask(['register'])).toBe(STATUS_SOURCE.register)
   })
 
-  // Множина не має порядку, а `rules_hash` (T012) мусить бути той самий для
-  // того самого змісту — інакше майстер каже «політика змінилась» на
-  // перестановці двох галочок.
+  // A set has no order, and `rules_hash` (T012) must be the same for the same
+  // content — otherwise the wizard says "policy changed" on swapping two
+  // checkboxes.
   it('normalises the order of sources', () => {
     const reversed = statusRuleSchema.parse({ ...status, sources: ['register', 'provider'] })
     expect(reversed.sources).toEqual(['provider', 'register'])
@@ -94,8 +95,8 @@ describe('status sources', () => {
 })
 
 describe('the status rule', () => {
-  // FR-008a2: атестація без строку придатності — це верифікація, зроблена
-  // колись і чинна назавжди.
+  // FR-008a2: an attestation without a validity period is a verification done
+  // once and valid forever.
   it('demands an expiry whenever it accepts provider attestations', () => {
     const missing = statusRuleSchema.safeParse({ sources: ['provider'], minTier: 0 })
     expect(missing.success).toBe(false)
@@ -135,8 +136,8 @@ describe('the policy body', () => {
     })
   })
 
-  // Політика без відповіді на «хто може тримати» неможлива за типом: FR-008b1
-  // вимагає постійної перевірки статусу, а не разового розморожування.
+  // A policy without an answer to "who may hold" is impossible by type:
+  // FR-008b1 requires a continuous status check, not a one-off thaw.
   it('refuses a policy with no status rule', () => {
     expect(problems({ transferLimit: '1' })).toEqual([
       'status: Invalid input: expected object, received undefined',
@@ -165,7 +166,7 @@ describe('the policy body', () => {
     )
   })
 
-  // Стеля не вибрана, а порахована з бюджету слота: два байти ASCII на код.
+  // The ceiling is not chosen but computed from the slot budget: two ASCII bytes per code.
   it('derives that ceiling from the slot budget, not from taste', () => {
     expect(MAX_JURISDICTIONS * 2).toBe(RULE_PARAMS_BYTES)
   })
@@ -186,7 +187,7 @@ describe('the policy body', () => {
 })
 
 describe('limits', () => {
-  // Нуль і відсутність сказали б протилежні речі однаково непомітно.
+  // Zero and absence would say opposite things equally inconspicuously.
   it('refuses a zero limit, which is a stopped token and not a limit', () => {
     expect(policyRulesSchema.safeParse({ status, transferLimit: '0' }).success).toBe(false)
     expect(
@@ -235,7 +236,7 @@ describe('slot budget', () => {
 })
 
 describe('OPEN_POLICY', () => {
-  // Опорна точка мусить бути дійсним значенням, а не гіпотезою в коментарі.
+  // The reference point must be a valid value, not a hypothesis in a comment.
   it('parses as a real policy', () => {
     expect(policyRulesSchema.parse(OPEN_POLICY)).toEqual(OPEN_POLICY)
   })

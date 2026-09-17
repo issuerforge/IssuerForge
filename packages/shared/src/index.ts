@@ -1,7 +1,7 @@
-// Спільні контракти: примітиви транспорту, коди помилок API, коди відмови в
-// переказі й типи індексованих подій. Схеми Zod звідси валідують і запит на
-// сервері, і відповідь у браузері — розбіжність між двома сторонами неможлива
-// за побудовою.
+// Shared contracts: transport primitives, API error codes, transfer refusal
+// codes and the types of indexed events. The Zod schemas here validate both
+// the request on the server and the response in the browser — a divergence
+// between the two sides is impossible by construction.
 export * from './api/index.ts'
 export * from './errors.ts'
 export * from './events/index.ts'

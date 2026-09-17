@@ -1,31 +1,35 @@
-// Оцінювач правил на TS: політика + контекст переказу → вердикт із кодом (FR-004).
+// The rule evaluator in TS: policy + transfer context → a verdict with a code
+// (FR-004).
 //
-// Це друга реалізація моделі, першу виконує хук на Rust (T015). Вона існує не
-// «для зручності UI»: майстер показує результат до підписання, і показувати він
-// має рівно те, що потім скаже ланцюг. Розходження двох реалізацій ловиться
-// диференційними тестами на спільних фікстурах (SC-008, T019).
+// This is the second implementation of the model; the first is executed by the
+// Rust hook (T015). It does not exist "for UI convenience": the wizard shows
+// the outcome before signing, and what it shows must be exactly what the chain
+// will say afterwards. A divergence between the two implementations is caught
+// by differential tests on shared fixtures (SC-008, T019).
 //
-// **Вхід — дзеркало того, що бачить хук, а не зведений результат.** Статус
-// кожної сторони приходить окремо з кожного джерела, у трьох станах
-// (`unavailable` / `absent` / `record`), а не одним готовим «денайд/рівень/країна».
-// Це навмисно дорожча форма: злиття двох джерел (FR-008a1) і протермінування
-// атестації (FR-008a2) — це і є те, що доручено T013, і подавати їх уже
-// зробленими означало б винести з-під диференційної звірки саме той крок, де дві
-// реалізації розійдуться найтихіше.
+// **The input mirrors what the hook sees, not a summarised result.** Each
+// party's status arrives separately from each source, in three states
+// (`unavailable` / `absent` / `record`), rather than as one ready-made
+// "denied/tier/country". This is a deliberately more expensive shape: merging
+// the two sources (FR-008a1) and attestation expiry (FR-008a2) are exactly
+// what T013 is charged with, and passing them in already done would take out
+// of the differential comparison the very step where two implementations
+// diverge most quietly.
 //
-// **Порядок перевірок сюди не переписується.** Він оголошений один раз у
-// `REFUSAL_CODES` (`@forge/shared/refusal`) і повторений у `docs/PLAN.md` →
-// «Порядок перевірок у хуку». Нижче код **іде** цим переліком, а не відтворює
-// його: `CHECKS` — таблиця «код → перевірка», а цикл перебирає `REFUSAL_CODES`.
-// Перевірка, дописана з новим кодом, стає на своє місце сама; переставити
-// перевірки тут неможливо, бо переліку тут немає.
+// **The order of checks is not rewritten here.** It is declared once in
+// `REFUSAL_CODES` (`@forge/shared/refusal`) and repeated in `docs/PLAN.md` →
+// "Order of checks in the hook". The code below **walks** that list rather
+// than reproducing it: `CHECKS` is a table "code → check", and the loop
+// iterates `REFUSAL_CODES`. A check added with a new code falls into place by
+// itself; reordering checks here is impossible, because there is no list here.
 //
-// **Пауза й заморозка сюди не входять.** `TRANSFERS_PAUSED` і `ACCOUNT_FROZEN`
-// повертає токен-програма **до** виклику хука (`source: 'token-program'`,
-// `hookIndex: null`), тож у `evaluateTransfer` немає ані таких полів, ані таких
-// відповідей: її вхід — рівно домен хука, і саме тому фікстура T019 не може
-// нести того, чого Rust-половина не бачить. Сценарій «при паузі» з FR-004
-// виражає `simulateTransfer` — тонкий шар зверху.
+// **Pause and freeze are not part of this.** `TRANSFERS_PAUSED` and
+// `ACCOUNT_FROZEN` are returned by the token program **before** the hook is
+// called (`source: 'token-program'`, `hookIndex: null`), so `evaluateTransfer`
+// has neither such fields nor such answers: its input is exactly the hook's
+// domain, which is why a T019 fixture cannot carry what the Rust half does not
+// see. The "while paused" scenario of FR-004 is expressed by
+// `simulateTransfer` — a thin layer on top.
 import { toU64, u64Schema, unixSecondsSchema } from '@forge/shared/primitives'
 import { REFUSAL_CODES, type RefusalCode, refusalCodeSchema } from '@forge/shared/refusal'
 import { z } from 'zod'
@@ -37,20 +41,20 @@ import {
   tierSchema,
 } from './model.ts'
 
-// ─── Запис статусу ───────────────────────────────────────────────────────────
+// ─── Status record ───────────────────────────────────────────────────────────
 
 /**
- * Спільні поля запису про адресу: обидва джерела кажуть про неї те саме коло
- * речей, різними акаунтами.
+ * Shared fields of a record about an address: both sources say the same
+ * circle of things about it, in different accounts.
  *
- * `denied` — заборона емітента або відкликана атестація. Вона діє з **будь-якого**
- * джерела, незалежно від того, чи приймає це джерело правило (FR-008a1): перелік
- * `sources` називає джерела, які можуть дозволити, і ніколи не звужує коло тих,
- * що можуть заборонити.
+ * `denied` — an issuer's denial or a revoked attestation. It applies from
+ * **any** source, regardless of whether the rule accepts that source
+ * (FR-008a1): the `sources` list names the sources that may allow, and never
+ * narrows the circle of those that may deny.
  *
- * `expiresAt` — власний строк запису (`HolderStatus.expires_at`, `Attestation.expiry`).
- * `null` означає «без строку», а не «протерміновано»: запис без строку — дійсний
- * стан обох джерел.
+ * `expiresAt` — the record's own expiry (`HolderStatus.expires_at`,
+ * `Attestation.expiry`). `null` means "no expiry", not "expired": a record
+ * without an expiry is a valid state of both sources.
  */
 const statusFields = {
   denied: z.boolean(),
@@ -59,16 +63,18 @@ const statusFields = {
   expiresAt: unixSecondsSchema.nullable(),
 }
 
-/** Запис із власного реєстру емітента — `HolderStatus` PDA. */
+/** A record from the issuer's own registry — the `HolderStatus` PDA. */
 export const registerStatusSchema = z.object(statusFields)
 
 /**
- * Атестація провайдера — акаунт SAS, який хук читає напряму (спайк T057).
+ * A provider attestation — the SAS account the hook reads directly (spike
+ * T057).
  *
- * `issuedAt` є тільки тут, і це не асиметрія заради асиметрії: `maxAttestationAgeSeconds`
- * із правила (FR-008a2) — це **вік** атестації, а віку без моменту видачі не
- * буває. У `HolderStatus` такого поля немає, тож нести його в спільній формі
- * означало б вигадувати у фікстурі значення, якого Rust-половина не читає.
+ * `issuedAt` exists only here, and that is not asymmetry for its own sake:
+ * `maxAttestationAgeSeconds` in the rule (FR-008a2) is the **age** of the
+ * attestation, and there is no age without a moment of issue. `HolderStatus`
+ * has no such field, so carrying it in the shared shape would mean inventing
+ * in the fixture a value the Rust half does not read.
  */
 export const providerStatusSchema = z.object({ ...statusFields, issuedAt: unixSecondsSchema })
 
@@ -76,13 +82,14 @@ export type RegisterStatus = z.infer<typeof registerStatusSchema>
 export type ProviderStatus = z.infer<typeof providerStatusSchema>
 
 /**
- * Стан одного джерела для однієї сторони. Станів три, а не два, і третій —
- * найважливіший.
+ * The state of one source for one party. There are three states, not two,
+ * and the third is the most important.
  *
- * `unavailable` — акаунт не переданий у переказ або переданий не той. Це **не**
- * «запису немає»: ми не знаємо, є він чи ні, а недоступність джерела не має
- * послаблювати політику (FR-013), тож у неї окремий стан і окремий код відмови.
- * `absent` — джерело доступне, і запису про адресу в ньому немає.
+ * `unavailable` — the account was not passed into the transfer, or the wrong
+ * one was. This is **not** "no record": we do not know whether one exists,
+ * and source unavailability must not weaken the policy (FR-013), so it gets a
+ * separate state and a separate refusal code. `absent` — the source is
+ * available and has no record about the address.
  */
 const unavailableSchema = z.object({ kind: z.literal('unavailable') })
 const absentSchema = z.object({ kind: z.literal('absent') })
@@ -99,7 +106,7 @@ export const registerStateSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('record'), record: registerStatusSchema }),
 ])
 
-/** Обидва джерела для однієї сторони переказу. */
+/** Both sources for one party to the transfer. */
 export const partyContextSchema = z.object({
   provider: providerStateSchema,
   register: registerStateSchema,
@@ -107,20 +114,20 @@ export const partyContextSchema = z.object({
 
 export type PartyContext = z.infer<typeof partyContextSchema>
 
-// ─── Контекст переказу ───────────────────────────────────────────────────────
+// ─── Transfer context ────────────────────────────────────────────────────────
 
-/** Версія `PolicyConfig` — `u32`, як і seed акаунта. */
+/** The `PolicyConfig` version — a `u32`, like the account seed. */
 const U32_MAX = 0xff_ff_ff_ff
 
 export const policyVersionSchema = z.number().int().min(0).max(U32_MAX)
 
 /**
- * `VelocityCounter` відправника: початок вікна й витрачене в ньому.
+ * The sender's `VelocityCounter`: the window start and what was spent in it.
  *
- * Лічильник належить саме відправнику — ліміт за період обмежує того, хто
- * відправляє. Він створюється при `thaw_holder`, і його відсутність є відмовою,
- * а не пропуском перевірки (FR-013), тому в контексті він опціональний, а не
- * «нульовий за замовчуванням».
+ * The counter belongs to the sender specifically — the period limit restricts
+ * whoever sends. It is created at `thaw_holder`, and its absence is a
+ * refusal, not a skipped check (FR-013), which is why it is optional in the
+ * context rather than "zero by default".
  */
 export const velocityCounterSchema = z.object({
   windowStart: unixSecondsSchema,
@@ -128,16 +135,18 @@ export const velocityCounterSchema = z.object({
 })
 
 /**
- * Усе, що хук має в руках у момент переказу.
+ * Everything the hook has in hand at the moment of transfer.
  *
- * `mintPolicyVersion` — версія, на яку налаштований mint (`TokenConfig.policy_version`);
- * `policyVersion` — версія переданого `PolicyConfig`. Це дві різні речі, і саме
- * їх порівнює перша перевірка: політика, підсунута замість чинної, інакше
- * виконалася б замість неї.
+ * `mintPolicyVersion` — the version the mint is configured with
+ * (`TokenConfig.policy_version`); `policyVersion` — the version of the
+ * `PolicyConfig` passed in. These are two different things, and they are what
+ * the first check compares: a policy slipped in instead of the current one
+ * would otherwise be executed in its place.
  *
- * `now` — час блоку в unix-секундах (`Clock`), а не час клієнта. У симуляції це
- * робить результат відтворюваним: та сама фікстура дає ту саму відповідь і через
- * рік, тож диференційний тест не залежить від годинника машини.
+ * `now` — the block time in unix seconds (`Clock`), not the client's time. In
+ * the simulation this makes the result reproducible: the same fixture gives
+ * the same answer a year later, so the differential test does not depend on
+ * the machine's clock.
  */
 export const transferContextSchema = z.object({
   sender: partyContextSchema,
@@ -151,15 +160,16 @@ export const transferContextSchema = z.object({
 
 export type TransferContext = z.infer<typeof transferContextSchema>
 
-// ─── Вердикт ─────────────────────────────────────────────────────────────────
+// ─── Verdict ─────────────────────────────────────────────────────────────────
 
 /**
- * Відповідь оцінювача.
+ * The evaluator's answer.
  *
- * Несе **тільки** код — рівно те, що повертає хук і що видно холдеру (FR-011).
- * Пояснень людською мовою тут немає навмисно: текст у вердикті став би другою
- * поверхнею, яку диференційний тест мусив би або звіряти (а Rust її не має), або
- * мовчки ігнорувати. Копію для екрана складає консоль (T023) за кодом.
+ * Carries **only** the code — exactly what the hook returns and what the
+ * holder sees (FR-011). There are deliberately no human-language explanations
+ * here: text in the verdict would become a second surface the differential
+ * test would have to either compare (and Rust does not have it) or silently
+ * ignore. The screen copy is composed by the console (T023) from the code.
  */
 export type TransferVerdict =
   | { readonly allowed: true }
@@ -174,9 +184,9 @@ const ALLOWED: TransferVerdict = { allowed: true }
 
 const refuse = (code: RefusalCode): TransferVerdict => ({ allowed: false, code })
 
-// ─── Злиття двох джерел ──────────────────────────────────────────────────────
+// ─── Merging the two sources ─────────────────────────────────────────────────
 
-/** Чинний запис, зведений до того, що з нього читають перевірки. */
+/** A current record, reduced to what the checks read from it. */
 type StatusFact = {
   readonly source: StatusSource
   readonly denied: boolean
@@ -185,16 +195,17 @@ type StatusFact = {
 }
 
 /**
- * Сторона переказу очима правил.
+ * A party to the transfer through the eyes of the rules.
  *
- * `fresh` — чинні записи з усіх джерел (з них діє заборона); `accepted` — ті з
- * них, які правило приймає (тільки вони можуть дозволити); `unavailable` — чи
- * було хоч одне джерело недоступне.
+ * `fresh` — current records from all sources (a denial applies from these);
+ * `accepted` — those of them the rule accepts (only these can allow);
+ * `unavailable` — whether at least one source was unavailable.
  *
- * `unavailable` рахується по **обох** джерелах, а не лише по прийнятих: якщо
- * заборона діє з будь-якого джерела, то й недоступність будь-якого джерела може
- * ховати заборону. Пропустити переказ, не подивившись у джерело, яке могло
- * сказати «ні», — це рівно те послаблення політики, яке забороняє FR-013.
+ * `unavailable` is counted over **both** sources, not only the accepted
+ * ones: if a denial applies from any source, then the unavailability of any
+ * source may be hiding a denial. Letting a transfer through without looking
+ * into a source that could have said "no" is exactly the weakening of policy
+ * that FR-013 forbids.
  */
 type PartyView = {
   readonly fresh: readonly StatusFact[]
@@ -203,27 +214,30 @@ type PartyView = {
 }
 
 /**
- * Запис чинний, поки не настав його власний строк.
+ * A record is current until its own expiry arrives.
  *
- * Порівняння суворе: у секунду `expiresAt` запис уже протермінований. Межу треба
- * було обрати, і обрана та, за якої «діє до» читається як «діє до, не включно».
- * Важливо лише, щоб Rust-половина обрала ту саму (T015).
+ * The comparison is strict: at the second of `expiresAt` the record is
+ * already expired. A boundary had to be chosen, and the one chosen is where
+ * "valid until" reads as "valid until, exclusive". All that matters is that
+ * the Rust half chose the same one (T015).
  */
 const isCurrent = (expiresAt: number | null, now: number): boolean =>
   expiresAt === null || now < expiresAt
 
 /**
- * Атестація провайдера чинна, поки не настав її строк **і** поки її вік не
- * перевищив дозволений політикою (FR-008a2).
+ * A provider attestation is current until its expiry arrives **and** until
+ * its age exceeds what the policy allows (FR-008a2).
  *
- * Протермінована атестація прирівнюється до відсутньої, а не до заборони: далі
- * рішення ухвалює те саме правило статусу, тож на виході буде `*_STATUS_MISSING`
- * або дозвіл із другого джерела. Окремого коду відмови «протерміновано» немає, і
- * це не пропуск — його поява зробила б протермінування самостійною причиною
- * відмови, тобто іншою поведінкою, ніж написана у вимозі.
+ * An expired attestation is treated as absent, not as a denial: the same
+ * status rule then makes the decision, so the outcome is `*_STATUS_MISSING`
+ * or an allow from the second source. There is no separate "expired" refusal
+ * code, and that is not an omission — its appearance would make expiry a
+ * refusal reason of its own, i.e. different behaviour from what the
+ * requirement says.
  *
- * Наслідок, який варто сказати вголос: протермінована атестація і **не**
- * забороняє. Із чинних записів вона вибуває цілком, разом зі своїм `denied`.
+ * A consequence worth saying out loud: an expired attestation does **not**
+ * deny either. It drops out of the current records entirely, together with
+ * its `denied`.
  */
 function isProviderCurrent(
   record: ProviderStatus,
@@ -265,20 +279,21 @@ function viewParty(party: PartyContext, policy: PolicyRules, now: number): Party
   return { fresh, accepted: fresh.filter((fact) => accepts.has(fact.source)), unavailable }
 }
 
-/** Про сторону не відомо нічого: обидва джерела доступні й обидва мовчать. */
+/** Nothing is known about the party: both sources are available and both are silent. */
 const nothingKnown = (party: PartyView): boolean => !party.unavailable && party.fresh.length === 0
 
-/** Статус є, але жодне з джерел, що його дали, правило не приймає. */
+/** A status exists, but the rule accepts none of the sources that gave it. */
 const onlyUnaccepted = (party: PartyView): boolean =>
   party.fresh.length > 0 && party.accepted.length === 0
 
 /**
- * Рівень сторони — **найнижчий** серед прийнятих джерел: при розбіжності діє
- * суворіше (FR-008a1). Друге джерело може тільки звузити коло, дозволене першим.
+ * The party's tier is the **lowest** among the accepted sources: on a
+ * disagreement the stricter one applies (FR-008a1). The second source can
+ * only narrow the circle allowed by the first.
  *
- * Нуль на порожньому переліку недосяжний — до цієї перевірки доходять лише
- * сторони з прийнятим записом, — але він і безпечний: сторона без статусу не
- * пройде `minTier`, більший за нуль.
+ * Zero on an empty list is unreachable — only parties with an accepted record
+ * get as far as this check — but it is also safe: a party without a status
+ * will not pass a `minTier` greater than zero.
  */
 function mergedTier(party: PartyView): number {
   const tiers = party.accepted.map((fact) => fact.tier)
@@ -286,20 +301,21 @@ function mergedTier(party: PartyView): number {
 }
 
 /**
- * Юрисдикція не підходить, якщо **хоч одне** прийняте джерело називає країну
- * поза переліком. Та сама суворість: збіг одного джерела не перекриває
- * розбіжність другого.
+ * The jurisdiction does not fit if **at least one** accepted source names a
+ * country outside the list. The same strictness: a match from one source does
+ * not override a mismatch from the other.
  */
 const jurisdictionRefused = (party: PartyView, allowed: readonly string[] | undefined): boolean =>
   allowed !== undefined && party.accepted.some((fact) => !allowed.includes(fact.jurisdiction))
 
 /**
- * Витрачене у вікні плюс сума переказу перевищує ліміт за період.
+ * What was spent in the window plus the transfer amount exceeds the period
+ * limit.
  *
- * Вікно, яке вже закінчилось, дає нуль витраченого: `VelocityCounter` скидається
- * на межі вікна, і хук робить це в тій самій інструкції. Читати `spentInWindow`
- * без порівняння з `windowStart` означало б рахувати позаминулий тиждень у
- * поточному ліміті.
+ * A window that has already ended yields zero spent: `VelocityCounter` resets
+ * at the window boundary, and the hook does that in the same instruction.
+ * Reading `spentInWindow` without comparing against `windowStart` would mean
+ * counting the week before last into the current limit.
  */
 function periodExceeded(policy: PolicyRules, ctx: TransferContext): boolean {
   const limit = policy.periodLimit
@@ -309,9 +325,9 @@ function periodExceeded(policy: PolicyRules, ctx: TransferContext): boolean {
   return spent + toU64(ctx.amount) > toU64(limit.amount)
 }
 
-// ─── Перевірки ───────────────────────────────────────────────────────────────
+// ─── Checks ──────────────────────────────────────────────────────────────────
 
-/** Усе, на що дивляться перевірки. Збирається один раз на виклик. */
+/** Everything the checks look at. Assembled once per call. */
 type Subject = {
   readonly policy: PolicyRules
   readonly ctx: TransferContext
@@ -322,29 +338,32 @@ type Subject = {
 type Check = (subject: Subject) => boolean
 
 /**
- * Чому коду немає серед перевірок. Не `null`: причини різні, і різниця між ними
- * — це різниця між «це не наш шар» і «наша модель цього не виражає».
+ * Why a code is not among the checks. Not `null`: the reasons differ, and
+ * the difference between them is the difference between "this is not our
+ * layer" and "our model cannot express this".
  *
- * `token-program` — пауза й заморозка спрацьовують до виклику хука; їх виражає
- * `simulateTransfer`.
+ * `token-program` — pause and freeze fire before the hook is called; they are
+ * expressed by `simulateTransfer`.
  *
- * `policy-decoding` — код, який хук **повертає**, але цей оцінювач повернути не
- * може: він бере вже розібрану `PolicyRules`, а невідомий вид правила такою
- * моделлю не виражається взагалі. Еквівалент на боці TS — `decodeRules`, який на
- * таких байтах кидає. Фікстура з невідомим видом правила існує тільки на боці
- * Rust, і це властивість моделі, а не прогалина в звірці.
+ * `policy-decoding` — a code the hook **returns** but this evaluator cannot:
+ * it takes an already parsed `PolicyRules`, and an unknown rule kind cannot be
+ * expressed by that model at all. The TS-side equivalent is `decodeRules`,
+ * which throws on such bytes. A fixture with an unknown rule kind exists only
+ * on the Rust side, and that is a property of the model, not a gap in the
+ * comparison.
  */
 type CheckedElsewhere = 'token-program' | 'policy-decoding'
 
 /**
- * Таблиця «код відмови → перевірка». Порядок задає не вона, а `REFUSAL_CODES`,
- * яким іде цикл нижче.
+ * The table "refusal code → check". The order is set not by it but by
+ * `REFUSAL_CODES`, which the loop below walks.
  *
- * Тип `Record<RefusalCode, …>` робить таблицю вичерпною: новий код відмови не
- * скомпілюється, доки про нього не сказано — перевірка це чи, якщо ні, **чому**.
+ * The type `Record<RefusalCode, …>` makes the table exhaustive: a new refusal
+ * code will not compile until it is stated — whether it is a check or, if
+ * not, **why**.
  */
 const CHECKS: Record<RefusalCode, Check | CheckedElsewhere> = {
-  /** Політика, підсунута замість тієї, на яку налаштований mint. */
+  /** A policy slipped in instead of the one the mint is configured with. */
   POLICY_VERSION_MISMATCH: ({ ctx }) => ctx.policyVersion !== ctx.mintPolicyVersion,
   SENDER_STATUS_MISSING: ({ sender }) => nothingKnown(sender),
   RECIPIENT_STATUS_MISSING: ({ recipient }) => nothingKnown(recipient),
@@ -362,24 +381,25 @@ const CHECKS: Record<RefusalCode, Check | CheckedElsewhere> = {
     policy.periodLimit !== undefined && ctx.velocity === undefined,
   PERIOD_LIMIT_EXCEEDED: ({ policy, ctx }) => periodExceeded(policy, ctx),
   UNKNOWN_RULE_KIND: 'policy-decoding',
-  /** `Pausable` на mint — переказ падає до виклику хука (FR-016). */
+  /** `Pausable` on the mint — the transfer fails before the hook is called (FR-016). */
   TRANSFERS_PAUSED: 'token-program',
-  /** `DefaultAccountState = Frozen` або `freeze_account` — так само (FR-014). */
+  /** `DefaultAccountState = Frozen` or `freeze_account` — likewise (FR-014). */
   ACCOUNT_FROZEN: 'token-program',
 }
 
-// ─── Оцінювач ────────────────────────────────────────────────────────────────
+// ─── Evaluator ───────────────────────────────────────────────────────────────
 
 /**
- * Політика + контекст → вердикт.
+ * Policy + context → verdict.
  *
- * Домен рівно один: перевірки хука. Пауза й заморозка сюди не входять — для них
- * є `simulateTransfer`.
+ * Exactly one domain: the hook's checks. Pause and freeze are not part of it —
+ * `simulateTransfer` exists for those.
  *
- * Обидва входи проганяються через схему. Оцінювати неперевірену політику
- * означає відповідати про політику, якої не могло існувати в акаунті, а
- * неперевірений контекст — про переказ, якого не могло статися в мережі; в обох
- * випадках майстер показав би відповідь, якої ланцюг не дасть.
+ * Both inputs are run through the schema. Evaluating an unchecked policy means
+ * answering about a policy that could not have existed in the account, and an
+ * unchecked context — about a transfer that could not have happened on the
+ * network; in both cases the wizard would show an answer the chain will not
+ * give.
  */
 export function evaluateTransfer(rules: PolicyRules, context: TransferContext): TransferVerdict {
   const policy = policyRulesSchema.parse(rules)
@@ -391,30 +411,31 @@ export function evaluateTransfer(rules: PolicyRules, context: TransferContext): 
     recipient: viewParty(ctx.recipient, policy, ctx.now),
   }
 
-  // Відмова — це **перша** перевірка, що не пройшла, а не набір усіх, що не
-  // пройшли. Дві реалізації, які відхилили той самий переказ із різних причин,
-  // розійшлися — навіть якщо обидві сказали «ні» (SC-008).
+  // A refusal is the **first** check that failed, not the set of all that
+  // failed. Two implementations that rejected the same transfer for different
+  // reasons have diverged — even if both said "no" (SC-008).
   for (const code of REFUSAL_CODES) {
     const check = CHECKS[code]
-    // Рядок-причина пропускається: код без перевірки тут — це не забута
-    // перевірка, а названа межа.
+    // A reason string is skipped: a code without a check here is not a
+    // forgotten check but a named boundary.
     if (typeof check === 'function' && check(subject)) return refuse(code)
   }
   return ALLOWED
 }
 
 /**
- * Коди, які цей модуль справді перевіряє, у порядку перевірки.
+ * The codes this module really checks, in check order.
  *
- * Виведені з таблиці, а не перелічені вдруге: розбіжність між «які перевірки
- * реалізовані» і «які коди оголошені хуковими» стає видимою тестом, а не
- * читанням двох файлів поруч.
+ * Derived from the table rather than listed a second time: a divergence
+ * between "which checks are implemented" and "which codes are declared as the
+ * hook's" becomes visible through a test, not by reading two files side by
+ * side.
  */
 export function implementedRefusalCodes(): RefusalCode[] {
   return REFUSAL_CODES.filter((code) => typeof CHECKS[code] === 'function')
 }
 
-/** Коди, які цей модуль не перевіряє, — кожен із названою причиною. */
+/** The codes this module does not check — each with a named reason. */
 export function refusalCodesCheckedElsewhere(): {
   code: RefusalCode
   checkedBy: CheckedElsewhere
@@ -425,13 +446,14 @@ export function refusalCodesCheckedElsewhere(): {
   })
 }
 
-// ─── Шар токен-програми ──────────────────────────────────────────────────────
+// ─── Token program layer ─────────────────────────────────────────────────────
 
 /**
- * Стан, який до хука не доходить: пауза на mint і заморозка рахунків сторін.
+ * State that never reaches the hook: a pause on the mint and the freezing of
+ * the parties' accounts.
  *
- * Живе окремо від `TransferContext` навмисно — щоб фікстура диференційного тесту
- * не могла нести полів, яких Rust-половина не бачить.
+ * Lives apart from `TransferContext` on purpose — so that a differential test
+ * fixture cannot carry fields the Rust half does not see.
  */
 export const tokenProgramStateSchema = z.object({
   paused: z.boolean(),
@@ -441,7 +463,7 @@ export const tokenProgramStateSchema = z.object({
 
 export type TokenProgramState = z.infer<typeof tokenProgramStateSchema>
 
-/** Нічого не заважає: токен не на паузі, обидва рахунки розморожені. */
+/** Nothing in the way: the token is not paused, both accounts are thawed. */
 export const OPEN_TOKEN_STATE: TokenProgramState = {
   paused: false,
   senderFrozen: false,
@@ -449,14 +471,17 @@ export const OPEN_TOKEN_STATE: TokenProgramState = {
 }
 
 /**
- * Повний шлях переказу, як його бачить холдер: спершу токен-програма, потім хук.
+ * The full path of a transfer as the holder sees it: first the token
+ * program, then the hook.
  *
- * Порядок тут зворотний до `REFUSAL_CODES`, і це не суперечність: у переліку
- * `TRANSFERS_PAUSED` і `ACCOUNT_FROZEN` стоять у кінці як коди, яких хук не
- * повертає, а в житті вони спрацьовують першими — токен-програма відхиляє
- * переказ **до** того, як покличе хук. Саме тому їх немає в `evaluateTransfer`.
+ * The order here is the reverse of `REFUSAL_CODES`, and that is not a
+ * contradiction: in the list `TRANSFERS_PAUSED` and `ACCOUNT_FROZEN` come
+ * last as codes the hook does not return, while in practice they fire first —
+ * the token program rejects the transfer **before** it calls the hook. That
+ * is exactly why they are absent from `evaluateTransfer`.
  *
- * Це та форма, якою майстер показує сценарій «при паузі» з FR-004.
+ * This is the form in which the wizard shows the "while paused" scenario of
+ * FR-004.
  */
 export function simulateTransfer(
   rules: PolicyRules,
