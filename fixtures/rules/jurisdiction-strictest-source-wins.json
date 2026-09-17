@@ -1,6 +1,6 @@
 {
   "name": "jurisdiction-strictest-source-wins",
-  "why": "Одне прийняте джерело каже NG, друге — KE. Достатньо, щоб хоч одне назвало країну поза переліком.",
+  "why": "One accepted source says NG, the other KE. It is enough that any one of them names a country outside the list.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

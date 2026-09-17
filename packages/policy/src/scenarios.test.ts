@@ -20,21 +20,21 @@ const verdicts = (rules: PolicyRules) =>
     ]),
   ) as Record<ScenarioName, string>
 
-describe('набір сценаріїв', () => {
-  it('перелік і порядок — ті самі, що у FR-004', () => {
+describe('the scenario set', () => {
+  it('the list and its order are those of FR-004', () => {
     expect(SCENARIO_NAMES).toEqual(['verified', 'unverified', 'over-limit', 'denied', 'paused'])
     expect(simulateScenarios(OPEN_POLICY, { now: NOW }).map((s) => s.name)).toEqual([
       ...SCENARIO_NAMES,
     ])
   })
 
-  it('названа частина набору повертається в тому порядку, у якому її просили', () => {
+  it('a named part of the set comes back in the order it was asked for', () => {
     const picked = simulateScenarios(OPEN_POLICY, { now: NOW, names: ['paused', 'verified'] })
 
     expect(picked.map((s) => s.name)).toEqual(['paused', 'verified'])
   })
 
-  it('на найслабшій політиці кожен сценарій дає ту відмову, заради якої існує', () => {
+  it('on the weakest policy each scenario yields the refusal it exists for', () => {
     expect(verdicts(OPEN_POLICY)).toEqual({
       verified: 'allowed',
       unverified: 'RECIPIENT_STATUS_MISSING',
@@ -46,8 +46,8 @@ describe('набір сценаріїв', () => {
   })
 })
 
-describe('ліміти', () => {
-  it('верифікований переказ іде рівно на ліміт і проходить, ліміт+1 — ні', () => {
+describe('limits', () => {
+  it('the verified transfer goes for exactly the limit and passes; limit+1 does not', () => {
     const rules = withLimits({ transferLimit: '1000' })
     const [verified, , overLimit] = simulateScenarios(rules, { now: NOW })
 
@@ -57,7 +57,7 @@ describe('ліміти', () => {
     expect(overLimit?.verdict).toEqual({ allowed: false, code: 'TRANSFER_LIMIT_EXCEEDED' })
   })
 
-  it('за двох лімітів береться менший — той, що спрацює першим', () => {
+  it('with two limits the smaller one is taken — the one that fires first', () => {
     const rules = withLimits({
       transferLimit: '5000',
       periodLimit: { amount: '900', windowSeconds: 86_400 },
@@ -71,20 +71,20 @@ describe('ліміти', () => {
     })
   })
 
-  it('політика без лімітів дає найменшу суму й незастосовний сценарій', () => {
+  it('a policy without limits yields the smallest amount and an inapplicable scenario', () => {
     const overLimit = buildScenario(OPEN_POLICY, 'over-limit', NOW)
 
     expect(overLimit.applicable).toBe(false)
     expect(overLimit.amount).toBe('1')
   })
 
-  it('ліміт у стелю u64 перевищити нічим — сценарій незастосовний', () => {
+  it('a limit at the u64 ceiling cannot be exceeded — the scenario is inapplicable', () => {
     const rules = withLimits({ transferLimit: '18446744073709551615' })
 
     expect(buildScenario(rules, 'over-limit', NOW).applicable).toBe(false)
   })
 
-  it('ліміт за період дає лічильник відправника, без нього — не дає', () => {
+  it('a period limit yields a sender counter; without it there is none', () => {
     const withPeriod = buildScenario(
       withLimits({ periodLimit: { amount: '900', windowSeconds: 86_400 } }),
       'verified',
@@ -96,8 +96,8 @@ describe('ліміти', () => {
   })
 })
 
-describe('сторони переказу', () => {
-  it('запис кладеться тільки в джерела, які приймає правило', () => {
+describe('the parties to the transfer', () => {
+  it('a record is placed only into the sources the rule accepts', () => {
     const rules = withLimits({ status: { sources: ['register'], minTier: 2 } })
     const { context } = buildScenario(rules, 'verified', NOW)
 
@@ -108,7 +108,7 @@ describe('сторони переказу', () => {
     })
   })
 
-  it('атестація провайдера видана щойно — вік не робить її протермінованою', () => {
+  it('a provider attestation issued just now — its age does not make it expired', () => {
     const rules = withLimits({
       status: { sources: ['provider'], minTier: 0, maxAttestationAgeSeconds: 3600 },
     })
@@ -120,13 +120,13 @@ describe('сторони переказу', () => {
     })
   })
 
-  it('рівень отримувача дорівнює мінімальному з політики, а не вигаданому числу', () => {
+  it("the recipient's tier equals the policy minimum, not an invented number", () => {
     const rules = withLimits({ status: { sources: ['register'], minTier: 7 } })
 
     expect(verdicts(rules).verified).toBe('allowed')
   })
 
-  it('юрисдикція береться з дозволених, коли правило країн є', () => {
+  it('the jurisdiction is taken from the allowed ones when the country rule exists', () => {
     const rules = withLimits({ jurisdictions: ['NG', 'KE'] })
     const { context } = buildScenario(rules, 'verified', NOW)
 
@@ -136,26 +136,26 @@ describe('сторони переказу', () => {
     expect(verdicts(rules).verified).toBe('allowed')
   })
 
-  it('відправник верифікований у кожному сценарії — відмова стосується отримувача', () => {
+  it('the sender is verified in every scenario — the refusal concerns the recipient', () => {
     for (const name of SCENARIO_NAMES) {
       const { context } = buildScenario(OPEN_POLICY, name, NOW)
       expect(context.sender.register).toMatchObject({ kind: 'record', record: { denied: false } })
     }
   })
 
-  it('версії політики збігаються — розбіжність версій не є сценарієм правил', () => {
+  it('policy versions match — a version mismatch is not a rules scenario', () => {
     const { context } = buildScenario(OPEN_POLICY, 'verified', NOW)
 
     expect(context.policyVersion).toBe(context.mintPolicyVersion)
   })
 })
 
-describe('вхід', () => {
-  it('битий час відкидається схемою', () => {
+describe('input', () => {
+  it('a broken time is rejected by the schema', () => {
     expect(() => buildScenario(OPEN_POLICY, 'verified', -1)).toThrow()
   })
 
-  it('бита політика відкидається схемою', () => {
+  it('a broken policy is rejected by the schema', () => {
     const broken = { status: { sources: [], minTier: 0 } } as unknown as PolicyRules
 
     expect(() => buildScenario(broken, 'verified', NOW)).toThrow()

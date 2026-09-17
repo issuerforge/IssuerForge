@@ -1,6 +1,6 @@
 {
   "name": "allowed-at-the-attestation-age-limit",
-  "why": "Вік атестації рівно 30 діб при межі 30 діб. Тут межа включна — «не старша за», — на відміну від expiresAt нижче.",
+  "why": "Attestation age is exactly 30 days against a 30-day limit. This bound is inclusive — \"no older than\" — unlike expiresAt below.",
   "policy": {
     "status": {
       "sources": ["provider"],

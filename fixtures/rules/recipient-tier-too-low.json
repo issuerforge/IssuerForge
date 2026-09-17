@@ -1,6 +1,6 @@
 {
   "name": "recipient-tier-too-low",
-  "why": "Політика вимагає рівня 2, отримувач має 1 з обох джерел.",
+  "why": "The policy requires tier 2; the recipient has 1 from both sources.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

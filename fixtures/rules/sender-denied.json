@@ -1,6 +1,6 @@
 {
   "name": "sender-denied",
-  "why": "Заборона емітента у власному реєстрі відправника.",
+  "why": "The issuer's own register denies the sender.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

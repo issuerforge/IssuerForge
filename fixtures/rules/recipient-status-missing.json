@@ -1,6 +1,6 @@
 {
   "name": "recipient-status-missing",
-  "why": "Відправник відомий, отримувач мовчить обома джерелами. Відправник перевіряється раніше — тут він проходить.",
+  "why": "The sender is known; the recipient is silent from both sources. The sender is checked first — here it passes.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

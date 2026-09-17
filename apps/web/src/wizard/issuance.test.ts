@@ -37,24 +37,24 @@ const transactions: UnsignedTransactionView[] = [
   },
 ]
 
-describe('план підписів', () => {
+describe('the signing plan', () => {
   // Головне число цього екрана: підписів три транзакції й чотири підписи, а не
   // одна кнопка «підписати» (борг T020).
-  it('рахує підписи по транзакціях, а не по кнопках', () => {
+  it('counts signatures per transaction, not per button', () => {
     const plans = planSignatures(transactions, [FOUNDER, ATTESTOR])
 
     expect(plans).toHaveLength(3)
     expect(signatureCount(plans)).toBe(4)
   })
 
-  it('зберігає порядок підписантів, який назвав api', () => {
+  it('keeps the signer order the api named', () => {
     const [first] = planSignatures(transactions, [FOUNDER, ATTESTOR])
 
     // Платник перший — саме в цьому порядку консоль питає підписи.
     expect(first?.signers.map((s) => s.address)).toEqual([FOUNDER, ATTESTOR])
   })
 
-  it('позначає, чиї гаманці є в цій сесії', () => {
+  it('marks whose wallets are in this session', () => {
     const plans = planSignatures(transactions, [FOUNDER])
 
     expect(plans[0]?.signers).toEqual([
@@ -65,24 +65,24 @@ describe('план підписів', () => {
 
   // Найчастіший випадок не помилка, а робота: атестатор стоїть у складі
   // окремим гаманцем і в консоль не входить (FR-024).
-  it('називає відсутнього підписанта один раз', () => {
+  it('names a missing signer once', () => {
     const plans = planSignatures(transactions, [FOUNDER])
 
     expect(absentSigners(plans)).toEqual([ATTESTOR])
   })
 
-  it('коли всі гаманці під рукою, відсутніх немає', () => {
+  it('when every wallet is at hand, nobody is missing', () => {
     expect(absentSigners(planSignatures(transactions, [FOUNDER, ATTESTOR]))).toEqual([])
   })
 
-  it('несе заборону надсилати пачкою', () => {
+  it('carries the ban on sending as a batch', () => {
     const plans = planSignatures(transactions, [FOUNDER, ATTESTOR])
 
     expect(plans.map((plan) => plan.dependsOnPrevious)).toEqual([false, true, true])
   })
 })
 
-describe('очікування підтвердження', () => {
+describe('awaiting confirmation', () => {
   const reader = (statuses: readonly (object | null)[]): SignatureReader => {
     let call = 0
     return {
@@ -96,7 +96,7 @@ describe('очікування підтвердження', () => {
 
   const noSleep = async () => {}
 
-  it('повертається, коли транзакція підтверджена', async () => {
+  it('returns when the transaction is confirmed', async () => {
     const source = reader([
       null,
       { confirmationStatus: 'processed', err: null },
@@ -108,7 +108,7 @@ describe('очікування підтвердження', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('фіналізована теж підтверджена', async () => {
+  it('finalized counts as confirmed too', async () => {
     const source = reader([{ confirmationStatus: 'finalized', err: null }])
 
     await expect(
@@ -116,7 +116,7 @@ describe('очікування підтвердження', () => {
     ).resolves.toBeUndefined()
   })
 
-  it('відмова мережі — це відмова, а не очікування', async () => {
+  it('a network refusal is a refusal, not a wait', async () => {
     const source = reader([{ confirmationStatus: 'confirmed', err: { InstructionError: [0] } }])
 
     await expect(waitForConfirmation(source, SIGNATURE, { sleep: noSleep })).rejects.toBeInstanceOf(
@@ -129,7 +129,7 @@ describe('очікування підтвердження', () => {
    * важлива, бо повторна відправка тієї самої випускної транзакції отримає
    * «акаунт уже існує», і сказати людині треба саме це.
    */
-  it('вичерпаний строк каже, що транзакція ще може дійти', async () => {
+  it('a timeout says the transaction may still land', async () => {
     const source = reader([null])
 
     await expect(

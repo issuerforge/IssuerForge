@@ -1,6 +1,6 @@
 {
   "name": "allowed-register-only-source",
-  "why": "Провайдера немає, реєстр приймається й дозволяє: одного джерела досить (FR-008a).",
+  "why": "No provider; the register is accepted and allows. One source is enough (FR-008a).",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

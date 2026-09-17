@@ -1,6 +1,6 @@
 {
   "name": "status-source-not-accepted",
-  "why": "Статус є, але тільки з реєстру, а політика приймає лише провайдера. Джерело, яке не дозволяє, не робить сторону невідомою.",
+  "why": "A status exists, but only from the register, and the policy accepts the provider only. A source that does not allow does not make the party unknown.",
   "policy": {
     "status": {
       "sources": ["provider"],

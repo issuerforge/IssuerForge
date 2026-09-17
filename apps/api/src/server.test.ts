@@ -105,8 +105,8 @@ async function bodyOf(response: Response) {
   return (await response.json()) as Record<string, unknown>
 }
 
-describe('проба живості', () => {
-  it('відповідає без автентифікації', async () => {
+describe('liveness probe', () => {
+  it('answers without authentication', async () => {
     const response = await app([]).request('/health')
 
     expect(response.status).toBe(200)
@@ -114,8 +114,8 @@ describe('проба живості', () => {
   })
 })
 
-describe('вхід', () => {
-  it('без заголовка — 401 у спільному форматі помилки', async () => {
+describe('login', () => {
+  it('no header — 401 in the shared error format', async () => {
     const response = await app([membership(ALPHA)]).request('/api/session')
 
     expect(response.status).toBe(401)
@@ -136,7 +136,7 @@ describe('вхід', () => {
     expect(response.status).toBe(401)
   })
 
-  it('приймає схему в будь-якому регістрі', async () => {
+  it('accepts the scheme in any case', async () => {
     const response = await app([membership(ALPHA)]).request('/api/session', {
       headers: { authorization: 'bearer token' },
     })
@@ -144,7 +144,7 @@ describe('вхід', () => {
     expect(response.status).toBe(200)
   })
 
-  it('токен дійсний, але адреса не у складі жодного емітента — 401', async () => {
+  it("a valid token whose address is in no issuer's roster — 401", async () => {
     const response = await app([]).request('/api/session', authorized())
 
     expect(response.status).toBe(401)
@@ -153,7 +153,7 @@ describe('вхід', () => {
     )
   })
 
-  it('відмову Privy віддає як є', async () => {
+  it('passes a Privy refusal through as is', async () => {
     const server = app([membership(ALPHA)], {
       privy: {
         authenticate: async () => {
@@ -167,8 +167,8 @@ describe('вхід', () => {
   })
 })
 
-describe('сесія', () => {
-  it('єдине членство виводиться без заголовка', async () => {
+describe('session', () => {
+  it('a single membership is derived without the header', async () => {
     const response = await app([membership(ALPHA, ROLE.ADMIN | ROLE.COMPLIANCE)]).request(
       '/api/session',
       authorized(),
@@ -183,7 +183,7 @@ describe('сесія', () => {
     expect(session.memberships).toHaveLength(1)
   })
 
-  it('кілька членств без заголовка — 400 із переліком, а не мовчазний вибір', async () => {
+  it('several memberships without the header — 400 with the list, not a silent choice', async () => {
     const response = await app([membership(ALPHA), membership(BETA)]).request(
       '/api/session',
       authorized(),
@@ -196,7 +196,7 @@ describe('сесія', () => {
     expect(error.details.issuerIds).toEqual([ALPHA, BETA])
   })
 
-  it('заголовок обирає серед доведених членств', async () => {
+  it('the header chooses among proven memberships', async () => {
     const response = await app([membership(ALPHA), membership(BETA, ROLE.OBSERVER)]).request(
       '/api/session',
       authorized({ [ISSUER_HEADER]: BETA }),
@@ -210,7 +210,7 @@ describe('сесія', () => {
   })
 
   // Заголовок звужує вибір серед уже доведених членств і не надає доступу.
-  it('заголовок із чужим емітентом не пускає', async () => {
+  it('a header naming a foreign issuer does not get in', async () => {
     const response = await app([membership(ALPHA)]).request(
       '/api/session',
       authorized({ [ISSUER_HEADER]: BETA }),
@@ -223,7 +223,7 @@ describe('сесія', () => {
   })
 
   // FR-036: жоден параметр запиту не перекриває issuer_id сесії.
-  it('параметр запиту не змінює орендаря', async () => {
+  it('a query parameter does not change the tenant', async () => {
     const response = await app([membership(ALPHA)]).request(
       `/api/session?issuerId=${BETA}&issuer_id=${BETA}`,
       authorized(),
@@ -232,7 +232,7 @@ describe('сесія', () => {
     expect(sessionSchema.parse(await response.json()).issuerId).toBe(ALPHA)
   })
 
-  it('склад питається саме за підтвердженими адресами входу', async () => {
+  it('the roster is queried for the verified login addresses specifically', async () => {
     const membershipsFor = vi.fn(async () => [membership(ALPHA)])
     const server = app([], {
       user: { userId: DID, wallets: [WALLET, BETA] },
@@ -245,15 +245,15 @@ describe('сесія', () => {
   })
 })
 
-describe('помилки', () => {
-  it('невідомий маршрут — 404 у спільному форматі', async () => {
+describe('errors', () => {
+  it('an unknown route — 404 in the shared format', async () => {
     const response = await app([membership(ALPHA)]).request('/api/nope', authorized())
 
     expect(response.status).toBe(404)
     expect(((await bodyOf(response)).error as { code: string }).code).toBe('NOT_FOUND')
   })
 
-  it('несподівана помилка не витікає назовні', async () => {
+  it('an unexpected error does not leak outside', async () => {
     const server = app([], {
       directory: {
         membershipsFor: async () => {
@@ -274,14 +274,14 @@ describe('помилки', () => {
   })
 })
 
-describe('наскрізний ідентифікатор запиту', () => {
-  it('повертається в заголовку відповіді', async () => {
+describe('end-to-end request id', () => {
+  it('comes back in the response header', async () => {
     const response = await app([membership(ALPHA)]).request('/health')
 
     expect(response.headers.get(REQUEST_ID_HEADER)).toBe('req-fixed')
   })
 
-  it('свій ідентифікатор клієнта поважається', async () => {
+  it("the client's own id is respected", async () => {
     const response = await app([membership(ALPHA)]).request('/health', {
       headers: { [REQUEST_ID_HEADER]: 'from-console' },
     })
@@ -291,7 +291,7 @@ describe('наскрізний ідентифікатор запиту', () => {
 })
 
 describe('CORS', () => {
-  it('дозволене походження отримує свій же origin, а не зірку', async () => {
+  it('an allowed origin gets its own origin back, not a star', async () => {
     const response = await app([membership(ALPHA)]).request('/api/session', {
       headers: { origin: 'https://console.example', ...authorized().headers },
     })
@@ -301,7 +301,7 @@ describe('CORS', () => {
     expect(response.headers.get('access-control-allow-credentials')).toBe('true')
   })
 
-  it('чуже походження дозволу не отримує', async () => {
+  it('a foreign origin gets no allowance', async () => {
     const response = await app([membership(ALPHA)]).request('/api/session', {
       headers: { origin: 'https://evil.example', ...authorized().headers },
     })
@@ -309,7 +309,7 @@ describe('CORS', () => {
     expect(response.headers.get('access-control-allow-origin')).toBeNull()
   })
 
-  it('передпольотний запит проходить без токена', async () => {
+  it('a preflight request passes without a token', async () => {
     const response = await app([membership(ALPHA)]).request('/api/session', {
       method: 'OPTIONS',
       headers: {

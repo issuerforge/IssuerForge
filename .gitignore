@@ -11,7 +11,7 @@ target/
 .anchor/
 test-ledger/
 
-# Ключі. Програмний keypair теж: він дає право задеплоїти під той самий адрес.
+# Keys. The program keypair too: it grants the right to deploy to the same address.
 id.json
 *-keypair.json
 *.keypair.json

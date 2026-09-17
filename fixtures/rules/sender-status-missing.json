@@ -1,6 +1,6 @@
 {
   "name": "sender-status-missing",
-  "why": "Обидва джерела відправника доступні й мовчать. Відсутність запису — відмова, не пропуск (FR-013).",
+  "why": "Both of the sender's sources are available and silent. A missing record is a refusal, not a pass (FR-013).",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

@@ -87,8 +87,8 @@ const issuanceArgs = (over: Partial<IssuanceArgs> = {}): IssuanceArgs => ({
   ...over,
 })
 
-describe('випуск токена', () => {
-  it('складається з тих самих акаунтів, що оголошує програма', async () => {
+describe('token issuance', () => {
+  it('is made of the same accounts the program declares', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const { mint, issuerConfig, tokenConfig, policyConfig, attestation } = issuanceAddresses(
       ISSUER_ID,
@@ -109,7 +109,7 @@ describe('випуск токена', () => {
     expect(keys).toContain(TOKEN_2022_PROGRAM_ID.toBase58())
   })
 
-  it('підписантів двоє, і вони виведені з інструкції', async () => {
+  it('there are two signers, and they are derived from the instruction', async () => {
     const plan = await buildCreateToken(program, createArgs())
     expect(plan.signers.map((key) => key.toBase58())).toEqual([
       FOUNDER.toBase58(),
@@ -124,7 +124,7 @@ describe('випуск токена', () => {
    * нарешті міряється, а не оцінюється. Політика взята найкоротша (`OPEN_POLICY`),
    * але вона все одно займає всі 384 байти: масив слотів фіксованої довжини.
    */
-  it('уміщається в транзакцію — той самий бюджет, що рахував T018', async () => {
+  it('fits in a transaction — the same budget T018 computed', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const size = transactionBytes(compileTransaction(plan, BLOCKHASH))
 
@@ -134,7 +134,7 @@ describe('випуск токена', () => {
     expect(MAX_TRANSACTION_BYTES - size).toBeGreaterThan(20)
   })
 
-  it('транзакція версійна, з порожнім переліком таблиць адрес', async () => {
+  it('the transaction is versioned, with an empty address-table list', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const transaction = compileTransaction(plan, BLOCKHASH)
 
@@ -147,7 +147,7 @@ describe('випуск токена', () => {
    * між ними рядком. Круг мусить давати ті самі байти: підпис стосується
    * конкретних байтів, і транзакція, зібрана вдруге, була б іншою.
    */
-  it('переживає круг через транспортну форму без змін', async () => {
+  it('survives a round trip through the transport form unchanged', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const transaction = compileTransaction(plan, BLOCKHASH)
     const base64 = Buffer.from(transaction.serialize()).toString('base64')
@@ -157,7 +157,7 @@ describe('випуск токена', () => {
     )
   })
 
-  it('політика їде канонічними байтами, а не структурою', async () => {
+  it('the policy travels as canonical bytes, not as a structure', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const data = only(plan).data
     const encoded = Buffer.from(encodeRules(OPEN_POLICY))
@@ -166,7 +166,7 @@ describe('випуск токена', () => {
     expect(data.includes(encoded)).toBe(true)
   })
 
-  it('номер токена входить в адресу mint, тож два випуски не збігаються', async () => {
+  it('the token number is part of the mint address, so two issuances never coincide', async () => {
     const first = await buildCreateToken(program, createArgs({ tokenIndex: 0 }))
     const second = await buildCreateToken(program, createArgs({ tokenIndex: 1 }))
 
@@ -175,8 +175,8 @@ describe('випуск токена', () => {
   })
 })
 
-describe('випуск — це три транзакції', () => {
-  it('вони йдуть у порядку відправки, і порядок несе сам результат', async () => {
+describe('an issuance is three transactions', () => {
+  it('they come in send order, and the order is carried by the result itself', async () => {
     const plans = await buildTokenIssuance(program, issuanceArgs())
 
     expect(plans.map((plan) => plan.step)).toEqual([
@@ -189,7 +189,7 @@ describe('випуск — це три транзакції', () => {
     expect(plans.map((plan) => plan.dependsOnPrevious)).toEqual([false, true, true])
   })
 
-  it('усі три адресують той самий токен, відомий до першої з них', async () => {
+  it('all three address the same token, known before the first of them', async () => {
     const plans = await buildTokenIssuance(program, issuanceArgs())
     const mint = mintPda(ISSUER_ID, 0)
 
@@ -202,13 +202,13 @@ describe('випуск — це три транзакції', () => {
     expect(holds(hook, extraAccountMetaListPda(mint))).toBe(true)
   })
 
-  it('метадані й перелік акаунтів хука підписує один засновник', async () => {
+  it('metadata and the hook account list are signed by the founder alone', async () => {
     const [, metadata, hook] = await buildTokenIssuance(program, issuanceArgs())
     expect(metadata?.signers).toHaveLength(1)
     expect(hook?.signers).toHaveLength(1)
   })
 
-  it('кожна з трьох уміщається в транзакцію', async () => {
+  it('each of the three fits in a transaction', async () => {
     const plans = await buildTokenIssuance(program, issuanceArgs())
     for (const plan of plans) {
       expect(transactionBytes(compileTransaction(plan, BLOCKHASH))).toBeLessThanOrEqual(
@@ -217,7 +217,7 @@ describe('випуск — це три транзакції', () => {
     }
   })
 
-  it('найдовші допустимі метадані теж уміщаються', async () => {
+  it('the longest allowed metadata fits too', async () => {
     // Стелі задає програма (32/12/200); транзакція мусить тримати їх усі.
     const plan = await buildSetTokenMetadata(program, {
       issuerId: ISSUER_ID,
@@ -237,17 +237,17 @@ describe('випуск — це три транзакції', () => {
     expect(plan.signers).toHaveLength(2)
   })
 
-  it('перелік акаунтів хука адресується під програмою хука', async () => {
+  it('the hook account list is addressed under the hook program', async () => {
     const mint = mintPda(ISSUER_ID, 0)
     const plan = await buildInitializeExtraAccountMetaList(program, { mint, payer: FOUNDER })
     expect(keyAt(plan, 1).equals(extraAccountMetaListPda(mint))).toBe(true)
   })
 })
 
-describe('онбординг холдера', () => {
+describe('holder onboarding', () => {
   const mint = mintPda(ISSUER_ID, 0)
 
-  it('розморожування підписують платник і той, хто санкціонує', async () => {
+  it('a thaw is signed by the payer and the one who authorises', async () => {
     const plan = await buildThawHolder(program, {
       issuerId: ISSUER_ID,
       mint,
@@ -264,7 +264,7 @@ describe('онбординг холдера', () => {
     ])
   })
 
-  it('повторне розморожування йде без статусу', async () => {
+  it('a repeated thaw goes without a status', async () => {
     const plan = await buildThawHolder(program, {
       issuerId: ISSUER_ID,
       mint,
@@ -282,7 +282,7 @@ describe('онбординг холдера', () => {
     )
   })
 
-  it('зміна статусу не чіпає токен-акаунта — заморозка є окремою дією', async () => {
+  it('a status change does not touch the token account — freezing is a separate action', async () => {
     const plan = await buildSetHolderStatus(program, {
       issuerId: ISSUER_ID,
       mint,
@@ -295,7 +295,7 @@ describe('онбординг холдера', () => {
     expect(plan.signers.map((key) => key.toBase58())).toEqual([ATTESTOR.toBase58()])
   })
 
-  it('юрисдикція не того розміру відхиляється при збірці, а не в мережі', async () => {
+  it('a jurisdiction of the wrong size is rejected at assembly, not on chain', async () => {
     await expect(
       buildSetHolderStatus(program, {
         issuerId: ISSUER_ID,
@@ -308,13 +308,13 @@ describe('онбординг холдера', () => {
   })
 })
 
-describe('валюта резерву', () => {
-  it('добивається нулями до восьми байтів', async () => {
+describe('reserve currency', () => {
+  it('is padded with zeros to eight bytes', async () => {
     const plan = await buildCreateToken(program, createArgs({ reserveCurrency: 'NGN' }))
     expect(only(plan).data.includes(Buffer.from([0x4e, 0x47, 0x4e, 0, 0, 0, 0, 0]))).toBe(true)
   })
 
-  it('довша за вісім байтів відхиляється при збірці', async () => {
+  it('longer than eight bytes is rejected at assembly', async () => {
     await expect(
       buildCreateToken(program, createArgs({ reserveCurrency: 'TOOLONGXX' })),
     ).rejects.toThrow(RangeError)

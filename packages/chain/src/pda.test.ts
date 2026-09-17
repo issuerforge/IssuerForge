@@ -24,21 +24,21 @@ const MINT = new PublicKey('So11111111111111111111111111111111111111112')
 const WALLET = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const OTHER_PROGRAM = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
 
-describe('числові seeds', () => {
+describe('numeric seeds', () => {
   // Байти, а не адреса: помилка в порядку або в ширині дає валідну адресу, якої
   // програма просто не виводить, і виявляється вона відмовою на девнеті.
-  it('u32 — little-endian, рівно чотири байти', () => {
+  it('u32 — little-endian, exactly four bytes', () => {
     expect(u32Seed(1)).toEqual(new Uint8Array([1, 0, 0, 0]))
     expect(u32Seed(0x0a_0b_0c_0d)).toEqual(new Uint8Array([0x0d, 0x0c, 0x0b, 0x0a]))
     expect(u32Seed(0xff_ff_ff_ff)).toEqual(new Uint8Array([255, 255, 255, 255]))
   })
 
-  it('u64 — little-endian, рівно вісім байтів', () => {
+  it('u64 — little-endian, exactly eight bytes', () => {
     expect(u64Seed(1n)).toEqual(new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0]))
     expect(u64Seed(0x01_02_03_04_05_06_07_08n)).toEqual(new Uint8Array([8, 7, 6, 5, 4, 3, 2, 1]))
   })
 
-  it('значення поза типом відхиляється, а не обрізається', () => {
+  it('a value outside the type is rejected, not truncated', () => {
     expect(() => u32Seed(-1)).toThrow(RangeError)
     expect(() => u32Seed(0x1_00_00_00_00)).toThrow(RangeError)
     expect(() => u32Seed(1.5)).toThrow(RangeError)
@@ -47,14 +47,14 @@ describe('числові seeds', () => {
   })
 })
 
-describe('мітки seeds', () => {
+describe('seed labels', () => {
   // Єдина мітка, яку сьогодні можна звірити з програмою, а не з власною
   // константою: `initialize_issuer` оголошує свій PDA прямо в IDL.
   //
   // Інструкція шукається **за іменем**, а не за індексом: Anchor упорядковує
   // перелік сам, і нова інструкція зсуває його — так цей тест уже раз падав на
   // `execute`, у якої першим акаунтом стоїть токен-акаунт без PDA.
-  it('`issuer` збігається з тим, що оголошує IDL', () => {
+  it('`issuer` matches what the IDL declares', () => {
     const instruction = IDL.instructions.find((ix) => ix.name === 'initializeIssuer')
     const account = instruction?.accounts.find((a) => a.name === 'issuerConfig')
     const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
@@ -63,7 +63,7 @@ describe('мітки seeds', () => {
     )
   })
 
-  it('решта міток — рівно те, що каже таблиця PLAN.md', () => {
+  it('the other labels are exactly what the PLAN.md table says', () => {
     const decoder = new TextDecoder()
     expect(
       Object.fromEntries(Object.entries(SEED).map(([k, v]) => [k, decoder.decode(v)])),
@@ -81,7 +81,7 @@ describe('мітки seeds', () => {
   })
 })
 
-describe('адреси PDA', () => {
+describe('PDA addresses', () => {
   // Пін-значення: будь-яка зміна seeds або кодування ловиться тут, а не в
   // транзакції на девнеті.
   //
@@ -118,7 +118,7 @@ describe('адреси PDA', () => {
   // Ця мітка звіряється з програмою, а не з власною константою: `create_token`
   // оголошує seeds mint прямо в IDL, і розбіжність означала б, що клієнт шукає
   // токен не там, де його створює програма.
-  it('`mint` збігається з тим, що оголошує IDL', () => {
+  it('`mint` matches what the IDL declares', () => {
     const instruction = IDL.instructions.find((ix) => ix.name === 'createToken')
     const account = instruction?.accounts.find((a) => a.name === 'mint')
     const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
@@ -127,25 +127,25 @@ describe('адреси PDA', () => {
     )
   })
 
-  it('номер токена входить в адресу mint', () => {
+  it('the token number is part of the mint address', () => {
     expect(mintPda(ISSUER_ID, 0).equals(mintPda(ISSUER_ID, 1))).toBe(false)
   })
 
-  it('версія політики входить в адресу', () => {
+  it('the policy version is part of the address', () => {
     expect(policyConfigPda(MINT, 1).equals(policyConfigPda(MINT, 2))).toBe(false)
   })
 
-  it('індекс атестації входить в адресу', () => {
+  it('the attestation index is part of the address', () => {
     expect(reserveAttestationPda(MINT, 0n).equals(reserveAttestationPda(MINT, 1n))).toBe(false)
   })
 
-  it('адреса залежить від програми, а не тільки від seeds', () => {
+  it('the address depends on the program, not only on the seeds', () => {
     expect(tokenConfigPda(MINT, OTHER_PROGRAM).equals(tokenConfigPda(MINT))).toBe(false)
   })
 
   // Формулу задає spl-tlv-account-resolution, і токен-програма шукає акаунт саме
   // за нею. Тест тримає її на видноті: розбіжність робить переказ неможливим.
-  it('ExtraAccountMetaList — `["extra-account-metas", mint]` під програмою хука', () => {
+  it('ExtraAccountMetaList is `["extra-account-metas", mint]` under the hook program', () => {
     const [expected] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode('extra-account-metas'), MINT.toBytes()],
       PROGRAM_ID,
@@ -154,15 +154,15 @@ describe('адреси PDA', () => {
   })
 })
 
-describe('клієнт програми', () => {
+describe('the program client', () => {
   const program = createForgeProgram(new Connection('http://127.0.0.1:8899'))
 
-  it('адреса програми — з IDL, одна на пакет', () => {
+  it('the program address comes from the IDL, one per package', () => {
     expect(PROGRAM_ID.toBase58()).toBe(IDL.address)
     expect(program.programId.equals(PROGRAM_ID)).toBe(true)
   })
 
-  it('IDL дає типізовані інструкції й акаунти', () => {
+  it('the IDL yields typed instructions and accounts', () => {
     expect(typeof program.methods.initializeIssuer).toBe('function')
     expect(program.account.issuerConfig).toBeDefined()
   })
@@ -173,7 +173,7 @@ describe('клієнт програми', () => {
    * означає, що копія IDL і pda.ts описують ту саму адресу; розбіжність тут —
    * єдине місце, де її видно без мережі.
    */
-  it('резолюція за IDL збігається з issuerConfigPda', async () => {
+  it('IDL-driven resolution matches issuerConfigPda', async () => {
     const instruction = await program.methods
       .initializeIssuer({
         issuerId: ISSUER_ID,

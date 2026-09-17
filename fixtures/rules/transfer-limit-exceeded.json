@@ -1,6 +1,6 @@
 {
   "name": "transfer-limit-exceeded",
-  "why": "Ліміт на переказ 1000, сума 1001.",
+  "why": "Transfer limit 1000, amount 1001.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

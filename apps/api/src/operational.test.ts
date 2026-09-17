@@ -67,12 +67,12 @@ const failure = async (promise: Promise<unknown>): Promise<SubmitError> => {
   return error as SubmitError
 }
 
-describe('операційний ключ', () => {
-  it('віддає адресу, яку емітент вносить у IssuerConfig', () => {
+describe('the operational key', () => {
+  it('exposes the address the issuer writes into IssuerConfig', () => {
     expect(signer().signer.publicKey.toBase58()).toBe(OPERATIONAL.publicKey.toBase58())
   })
 
-  it('підписує рутинний план і повертає підпис', async () => {
+  it('signs a routine plan and returns the signature', async () => {
     const { signer: operational, sent } = signer()
 
     expect(await operational.submit(routine())).toBe(SIGNATURE)
@@ -90,7 +90,7 @@ describe('операційний ключ', () => {
    * потребує ще чийогось підпису (FR-035a, SC-012). Програма перевіряє це сама,
    * але дія з коштами не має доходити до мережі навіть заради відмови.
    */
-  it('відмовляється підписувати план із чужим підписантом', async () => {
+  it('refuses to sign a plan with a foreign signer', async () => {
     const { signer: operational, sent } = signer()
 
     const error = await failure(operational.submit(foreign()))
@@ -100,7 +100,7 @@ describe('операційний ключ', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('перетворює відмову програми на розібрану помилку', async () => {
+  it('turns a program refusal into a parsed error', async () => {
     const send = vi.fn(async () => {
       throw Object.assign(new Error('Simulation failed'), {
         logs: ['Program log: AnchorError occurred. Error Number: 6033. Error Message: no.'],
@@ -114,7 +114,7 @@ describe('операційний ключ', () => {
 
   // Preflight може пропустити транзакцію, яка відмовиться в блоці: тоді номер
   // приходить із підтвердження, а не з логів.
-  it('розбирає відмову, яка прийшла з підтвердження', async () => {
+  it('parses a refusal that arrived from confirmation', async () => {
     const confirm = vi.fn(async () => ({
       value: { err: { InstructionError: [0, { Custom: 6037 }] } },
     }))
@@ -124,7 +124,7 @@ describe('операційний ключ', () => {
     expect(error.program?.name).toBe('holderStatusRequired')
   })
 
-  it('лишає мережеву невдачу без коду програми', async () => {
+  it('leaves a network failure without a program code', async () => {
     const send = vi.fn(async () => {
       throw new Error('fetch failed')
     })

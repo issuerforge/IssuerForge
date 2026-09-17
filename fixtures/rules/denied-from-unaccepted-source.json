@@ -1,6 +1,6 @@
 {
   "name": "denied-from-unaccepted-source",
-  "why": "Політика приймає лише провайдера, denied стоїть у реєстрі. Заборона діє з будь-якого джерела незалежно від переліку sources (FR-008a1).",
+  "why": "The policy accepts the provider only, and denied is set in the register. A denial applies from any source regardless of the sources list (FR-008a1).",
   "policy": {
     "status": {
       "sources": ["provider"],

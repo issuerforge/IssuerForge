@@ -155,7 +155,7 @@ const issuanceBody = (overrides: Record<string, unknown> = {}) => ({
 })
 
 describe('POST /api/policy/simulate', () => {
-  it("повертає п'ятірку сценаріїв FR-004 із вердиктами", async () => {
+  it('returns the five FR-004 scenarios with verdicts', async () => {
     const response = await post('/api/policy/simulate', { policy: OPEN_POLICY })
 
     expect(response.status).toBe(200)
@@ -185,7 +185,7 @@ describe('POST /api/policy/simulate', () => {
     ])
   })
 
-  it('звужений набір повертається в тому порядку, у якому названий', async () => {
+  it('a narrowed set comes back in the order it was named', async () => {
     const response = await post('/api/policy/simulate', {
       policy: { ...OPEN_POLICY, transferLimit: '500' } satisfies PolicyRules,
       scenarios: ['over-limit', 'verified'],
@@ -196,7 +196,7 @@ describe('POST /api/policy/simulate', () => {
     expect(scenarios.map((s) => s.amount)).toEqual(['501', '500'])
   })
 
-  it('бита політика — 400 у спільному форматі, а не 500', async () => {
+  it('a broken policy is a 400 in the shared format, not a 500', async () => {
     const response = await post('/api/policy/simulate', {
       policy: { status: { sources: [], minTier: 0 } },
     })
@@ -205,7 +205,7 @@ describe('POST /api/policy/simulate', () => {
     expect((await errorOf(response)).code).toBe('INVALID_INPUT')
   })
 
-  it("невідоме ім'я сценарію — 400", async () => {
+  it('an unknown scenario name is a 400', async () => {
     const response = await post('/api/policy/simulate', {
       policy: OPEN_POLICY,
       scenarios: ['whatever'],
@@ -214,7 +214,7 @@ describe('POST /api/policy/simulate', () => {
     expect(response.status).toBe(400)
   })
 
-  it('без сесії не відповідає', async () => {
+  it('does not answer without a session', async () => {
     const response = await app().request('/api/policy/simulate', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -225,8 +225,8 @@ describe('POST /api/policy/simulate', () => {
   })
 })
 
-describe('межі запиту', () => {
-  it('сценаріїв не можна попросити більше, ніж їх є', async () => {
+describe('request bounds', () => {
+  it('you cannot ask for more scenarios than there are', async () => {
     const response = await post('/api/policy/simulate', {
       policy: OPEN_POLICY,
       scenarios: new Array(50_000).fill('verified'),
@@ -235,7 +235,7 @@ describe('межі запиту', () => {
     expect(response.status).toBe(400)
   })
 
-  it('та сама назва двічі — помилка клієнта, а не замовлення двох сценаріїв', async () => {
+  it('the same name twice is a client error, not an order for two scenarios', async () => {
     const response = await post('/api/policy/simulate', {
       policy: OPEN_POLICY,
       scenarios: ['verified', 'verified'],
@@ -253,7 +253,7 @@ describe('межі запиту', () => {
     expect(response.status).toBe(400)
   })
 
-  it('тіло понад стелю відхиляється у спільному форматі, а не розбирається цілком', async () => {
+  it('a body over the ceiling is rejected in the shared format, not parsed in full', async () => {
     const response = await post('/api/policy/simulate', {
       policy: OPEN_POLICY,
       junk: 'x'.repeat(MAX_BODY_BYTES),
@@ -264,8 +264,8 @@ describe('межі запиту', () => {
   })
 })
 
-describe('POST /api/tokens — збірка', () => {
-  it('віддає три транзакції в порядку відправки, з одним blockhash', async () => {
+describe('POST /api/tokens — assembly', () => {
+  it('returns three transactions in send order, with one blockhash', async () => {
     const response = await post('/api/tokens', issuanceBody())
 
     expect(response.status).toBe(200)
@@ -294,7 +294,7 @@ describe('POST /api/tokens — збірка', () => {
     }
   })
 
-  it('адреси відповідають номеру, узятому з ланцюга', async () => {
+  it('the addresses match the number taken from the chain', async () => {
     const body = await bodyOf(await post('/api/tokens', issuanceBody()))
     const expected = issuanceAddresses(new PublicKey(ISSUER), TOKEN_INDEX)
 
@@ -306,7 +306,7 @@ describe('POST /api/tokens — збірка', () => {
     expect(body.extraAccountMetaList).toBe(expected.extraAccountMetaList.toBase58())
   })
 
-  it('емітента немає в мережі — 404, а не нульовий номер', async () => {
+  it('no issuer on chain — 404, not token number zero', async () => {
     const response = await postWith({ tokenCount: undefined }, '/api/tokens', issuanceBody())
 
     expect(response.status).toBe(404)
@@ -314,8 +314,8 @@ describe('POST /api/tokens — збірка', () => {
   })
 })
 
-describe('нефункціональне', () => {
-  it('випуск коштує рівно два звертання до RPC (SC-010)', async () => {
+describe('non-functional', () => {
+  it('an issuance costs exactly two RPC calls (SC-010)', async () => {
     const tokenCount = vi.fn(async () => TOKEN_INDEX)
     const latestBlockhash = vi.fn(async () => BLOCKHASH)
     const server = app({ chain: { tokenCount, latestBlockhash } })
@@ -333,7 +333,7 @@ describe('нефункціональне', () => {
     expect(latestBlockhash).toHaveBeenCalledTimes(1)
   })
 
-  it('жодна з трьох транзакцій не має підпису (FR-035a, SC-012)', async () => {
+  it('none of the three transactions carries a signature (FR-035a, SC-012)', async () => {
     const body = await bodyOf(await post('/api/tokens', issuanceBody()))
     const transactions = body.transactions as { base64: string }[]
 
@@ -348,7 +348,7 @@ describe('нефункціональне', () => {
     expect(JSON.stringify(body)).not.toContain('secret')
   })
 
-  it('чужий орендар не доходить ані до складу, ані до мережі (SC-011)', async () => {
+  it('a foreign tenant reaches neither the roster nor the network (SC-011)', async () => {
     const rosterFor = vi.fn(async () => roster())
     const tokenCount = vi.fn(async () => TOKEN_INDEX)
     const server = app({ directory: { rosterFor }, chain: { tokenCount } })
@@ -372,15 +372,15 @@ describe('нефункціональне', () => {
   })
 })
 
-describe('POST /api/tokens — підписанти', () => {
-  it('засновник — адреса сесії з роллю адміністратора, атестатор — зі складу', async () => {
+describe('POST /api/tokens — signers', () => {
+  it("the founder is the session's admin address; the attestor comes from the roster", async () => {
     const body = await bodyOf(await post('/api/tokens', issuanceBody()))
 
     expect(body.founder).toBe(ADMIN)
     expect(body.attestor).toBe(ATTESTOR)
   })
 
-  it('адреса сесії без ролі адміністратора — 401', async () => {
+  it('a session address without the admin role — 401', async () => {
     const response = await postWith(
       { wallets: [ATTESTOR], roles: ROLE.ATTESTOR },
       '/api/tokens',
@@ -391,7 +391,7 @@ describe('POST /api/tokens — підписанти', () => {
     expect((await errorOf(response)).message).toContain('admin wallet')
   })
 
-  it('у складі немає атестатора — 400 із поясненням', async () => {
+  it('no attestor in the roster — 400 with an explanation', async () => {
     const response = await postWith(
       { entries: [[ADMIN, ROLE.ADMIN]] },
       '/api/tokens',
@@ -402,7 +402,7 @@ describe('POST /api/tokens — підписанти', () => {
     expect((await errorOf(response)).message).toContain('no attestor')
   })
 
-  it('кілька адміністраторів у сесії — 400 з переліком, доки один не названий', async () => {
+  it('several admins in the session — 400 with the list until one is named', async () => {
     const fakes: Fakes = {
       wallets: [ADMIN, ADMIN_TWO],
       entries: [
@@ -420,7 +420,7 @@ describe('POST /api/tokens — підписанти', () => {
     expect((await bodyOf(picked)).founder).toBe(ADMIN_TWO)
   })
 
-  it('названий засновником не той, хто має роль, — 400', async () => {
+  it('the one named as founder does not hold the role — 400', async () => {
     const response = await postWith(
       { wallets: [ADMIN] },
       '/api/tokens',
@@ -432,8 +432,8 @@ describe('POST /api/tokens — підписанти', () => {
   })
 })
 
-describe('POST /api/tokens — резервація номера', () => {
-  it('номер резервується під той самий випуск, що поїхав у транзакції', async () => {
+describe('POST /api/tokens — number reservation', () => {
+  it('the number is reserved for the same issuance that went into the transaction', async () => {
     const reserve = vi.fn<IssuanceStore['reserve']>(async () => ({ kind: 'reserved' }))
     await postWith({ reserve }, '/api/tokens', issuanceBody())
 
@@ -447,7 +447,7 @@ describe('POST /api/tokens — резервація номера', () => {
     })
   })
 
-  it('номер тримає інший випуск — 400 із тим, хто його тримає', async () => {
+  it('another issuance holds the number — 400 naming who holds it', async () => {
     const since = new Date('2026-08-21T11:59:00.000Z')
     const response = await postWith(
       {
@@ -473,7 +473,7 @@ describe('POST /api/tokens — резервація номера', () => {
   })
 })
 
-describe('POST /api/tokens — межі значень', () => {
+describe('POST /api/tokens — value bounds', () => {
   it.each([
     ['назва довша за 32 байти', { name: 'x'.repeat(33) }],
     ['символ довший за 12 байтів', { symbol: 'x'.repeat(13) }],
@@ -499,21 +499,21 @@ describe('POST /api/tokens — межі значень', () => {
     expect((await errorOf(response)).code).toBe('INVALID_INPUT')
   })
 
-  it('тіло без резерву — 400, а не 500 на перевірці, яка читає відсутнє поле', async () => {
+  it('a body without a reserve — 400, not a 500 in a check that reads the missing field', async () => {
     const { reserve: _dropped, ...withoutReserve } = issuanceBody()
     const response = await post('/api/tokens', withoutReserve)
 
     expect(response.status).toBe(400)
   })
 
-  it('назва рахується байтами, а не символами', async () => {
+  it('the name is counted in bytes, not characters', async () => {
     // 17 кириличних літер — 34 байти UTF-8 при 17 символах.
     const parsed = createTokenBodySchema.safeParse(issuanceBody({ name: 'абвгдеєжзиійклмно' }))
 
     expect(parsed.success).toBe(false)
   })
 
-  it('емісія рівно в атестований резерв проходить', async () => {
+  it('an issuance exactly equal to the attested reserve passes', async () => {
     const response = await post(
       '/api/tokens',
       issuanceBody({ initialSupply: '1000', reserve: { amount: '1000', currency: 'NGN' } }),
@@ -523,15 +523,15 @@ describe('POST /api/tokens — межі значень', () => {
   })
 })
 
-describe('POST /api/tokens — атестація резерву', () => {
-  it('без часу підтвердження береться час сервера', async () => {
+describe('POST /api/tokens — reserve attestation', () => {
+  it("without an attestation time the server's time is taken", async () => {
     const reserve = vi.fn<IssuanceStore['reserve']>(async () => ({ kind: 'reserved' }))
     const response = await postWith({ reserve }, '/api/tokens', issuanceBody())
 
     expect(response.status).toBe(200)
   })
 
-  it('час підтвердження з майбутнього — 400', async () => {
+  it('an attestation time in the future — 400', async () => {
     const response = await post(
       '/api/tokens',
       issuanceBody({
@@ -543,7 +543,7 @@ describe('POST /api/tokens — атестація резерву', () => {
     expect((await errorOf(response)).message).toContain('dated in the future')
   })
 
-  it('атестація, протермінована вже на випуску, — 400 до підписів', async () => {
+  it('an attestation already expired at issuance — 400 before any signatures', async () => {
     const response = await post(
       '/api/tokens',
       issuanceBody({
@@ -555,7 +555,7 @@ describe('POST /api/tokens — атестація резерву', () => {
     expect((await errorOf(response)).message).toContain('already be expired')
   })
 
-  it('атестація на межі строку ще проходить', async () => {
+  it('an attestation at the edge of its term still passes', async () => {
     const response = await post(
       '/api/tokens',
       issuanceBody({

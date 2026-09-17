@@ -28,8 +28,8 @@ const row = (overrides: Partial<ReservationRow> = {}): ReservationRow => ({
   ...overrides,
 })
 
-describe('той самий випуск', () => {
-  it('повтор із тими самими назвою, символом і точністю забирає номер собі', () => {
+describe('the same issuance', () => {
+  it('a repeat with the same name, symbol and decimals takes the number for itself', () => {
     expect(decideReservation(row(), request())).toEqual({ kind: 'takeover' })
   })
 
@@ -43,7 +43,7 @@ describe('той самий випуск', () => {
     expect(decision.kind).toBe('taken')
   })
 
-  it('відмова називає, хто тримає номер і відколи', () => {
+  it('the refusal names who holds the number and since when', () => {
     const createdAt = new Date(NOW.getTime() - 60_000)
     const decision = decideReservation(
       row({ symbol: 'USDX', name: 'Dollar Stable', decimals: 6, createdAt }),
@@ -58,15 +58,15 @@ describe('той самий випуск', () => {
   })
 })
 
-describe('строк резервації', () => {
-  it('покинута резервація віддає номер після TTL', () => {
+describe('reservation lifetime', () => {
+  it('an abandoned reservation releases the number after the TTL', () => {
     const createdAt = new Date(NOW.getTime() - RESERVATION_TTL_MS - 1)
     const decision = decideReservation(row({ symbol: 'USDX', createdAt }), request())
 
     expect(decision).toEqual({ kind: 'takeover' })
   })
 
-  it('рівно на межі TTL номер ще тримається', () => {
+  it('exactly at the TTL the number is still held', () => {
     const createdAt = new Date(NOW.getTime() - RESERVATION_TTL_MS)
     const decision = decideReservation(row({ symbol: 'USDX', createdAt }), request())
 
@@ -74,7 +74,7 @@ describe('строк резервації', () => {
   })
 })
 
-describe('підтверджений токен', () => {
+describe('a confirmed token', () => {
   it.each(['live', 'paused'] as const)(
     'стан %s не звільняє номер навіть протухлий і навіть під той самий випуск',
     (state) => {

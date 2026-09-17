@@ -1,6 +1,6 @@
 {
   "name": "expired-attestation-drops-out-entirely",
-  "why": "Атестація старша за 30 діб, а інших джерел політика не приймає. Протермінована прирівнюється до відсутньої, тож на виході *_STATUS_MISSING, а не окремий код (FR-008a2).",
+  "why": "The attestation is older than 30 days and the policy accepts no other source. Expired equals absent, so the outcome is *_STATUS_MISSING rather than a separate code (FR-008a2).",
   "policy": {
     "status": {
       "sources": ["provider"],

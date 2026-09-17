@@ -158,8 +158,8 @@ const thawPath = (wallet = HOLDER) => `/api/tokens/${MINT}/holders/${wallet}/tha
 
 // ─── Черга ───────────────────────────────────────────────────────────────────
 
-describe('черга розморожування', () => {
-  it('зараховує гаманець у чергу разом зі статусом, який йому присвоїли', async () => {
+describe('the thaw queue', () => {
+  it('enqueues a wallet together with the status assigned to it', async () => {
     const { server, holders } = app()
 
     const response = await server.request(`/api/tokens/${MINT}/holders`, {
@@ -183,7 +183,7 @@ describe('черга розморожування', () => {
 
   // Нуль у програмі означає «без строку» (T016), і рядок черги не має отримати
   // 1970 рік від клієнта, який просто повернув прочитане.
-  it('нульовий строк зараховується як «без строку»', async () => {
+  it('a zero expiry is enqueued as "no expiry"', async () => {
     const { server, holders } = app()
 
     await server.request(`/api/tokens/${MINT}/holders`, {
@@ -195,7 +195,7 @@ describe('черга розморожування', () => {
     expect(holders.enqueue).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: null }))
   })
 
-  it('впущений рахунок у чергу не повертається', async () => {
+  it('an admitted account does not go back into the queue', async () => {
     const enqueue = vi.fn(
       async (): Promise<Enqueued> => ({ kind: 'settled', row: row({ state: 'thawed' }) }),
     )
@@ -210,7 +210,7 @@ describe('черга розморожування', () => {
     expect((await errorOf(response)).message).toContain('already onboarded')
   })
 
-  it('віддає чергу за станом', async () => {
+  it('returns the queue by state', async () => {
     const rows = [row(), row({ wallet: HOLDER_TWO, state: 'thawed', thawedAt: NOW })]
     const { server, holders } = app({ rows })
 
@@ -220,7 +220,7 @@ describe('черга розморожування', () => {
     expect(holders.list).toHaveBeenCalledWith(ISSUER, MINT, 'pending')
   })
 
-  it('читає чергу без фільтра', async () => {
+  it('reads the queue without a filter', async () => {
     const { server, holders } = app({ rows: [row(), row({ wallet: HOLDER_TWO })] })
 
     const response = await server.request(`/api/tokens/${MINT}/holders`, { headers })
@@ -229,14 +229,14 @@ describe('черга розморожування', () => {
     expect(holders.list).toHaveBeenCalledWith(ISSUER, MINT, undefined)
   })
 
-  it('невідомий стан у фільтрі — це помилка запиту, а не порожня черга', async () => {
+  it('an unknown state in the filter is a request error, not an empty queue', async () => {
     const response = await call({}, `/api/tokens/${MINT}/holders?state=melted`)
 
     expect(response.status).toBe(400)
   })
 
   // Спостерігач має бачити чергу (FR-033) і не має її розгрібати.
-  it('спостерігач читає чергу', async () => {
+  it('an observer can read the queue', async () => {
     const response = await call(
       { roles: ROLE.OBSERVER, wallets: [WATCHER] },
       `/api/tokens/${MINT}/holders`,
@@ -245,13 +245,13 @@ describe('черга розморожування', () => {
     expect(response.status).toBe(200)
   })
 
-  it('чужий mint не існує для цієї сесії', async () => {
+  it('a foreign mint does not exist for this session', async () => {
     const response = await call({}, `/api/tokens/${ADMIN}/holders`)
 
     expect(response.status).toBe(404)
   })
 
-  it('одруківка в адресі — 400, а не 500', async () => {
+  it('a typo in the address is a 400, not a 500', async () => {
     const response = await call({}, '/api/tokens/not-an-address/holders')
 
     expect(response.status).toBe(400)
@@ -261,8 +261,8 @@ describe('черга розморожування', () => {
 
 // ─── Делегований шлях ────────────────────────────────────────────────────────
 
-describe('розморожування операційним ключем', () => {
-  it('підписує сам і віддає підпис', async () => {
+describe('thawing with the operational key', () => {
+  it('signs itself and returns the signature', async () => {
     const { server, holders, operational } = app()
 
     const response = await server.request(thawPath(), { method: 'POST', headers })
@@ -289,7 +289,7 @@ describe('розморожування операційним ключем', () 
    * Повторне розморожування (після заморозки офіцером) статусу не несе:
    * `thaw_holder` відхилив би `status: Some(..)` на заповненому записі.
    */
-  it('повторне розморожування не пише статусу вдруге', async () => {
+  it('a repeated thaw does not write the status a second time', async () => {
     const { server, holders } = app({ written: true })
 
     await server.request(thawPath(), { method: 'POST', headers })
@@ -297,7 +297,7 @@ describe('розморожування операційним ключем', () 
     expect(holders.markThawed).toHaveBeenCalledWith(expect.objectContaining({ status: undefined }))
   })
 
-  it('гаманця не з черги не розморожує', async () => {
+  it('does not thaw a wallet that is not in the queue', async () => {
     const { server, holders } = app({ rows: [] })
 
     const response = await server.request(thawPath(), { method: 'POST', headers })
@@ -307,7 +307,7 @@ describe('розморожування операційним ключем', () 
     expect(holders.markThawed).not.toHaveBeenCalled()
   })
 
-  it('спостерігач нікого не впускає', async () => {
+  it('an observer admits nobody', async () => {
     const response = await post({ roles: ROLE.OBSERVER, wallets: [WATCHER] }, thawPath())
 
     expect(response.status).toBe(401)
@@ -317,7 +317,7 @@ describe('розморожування операційним ключем', () 
    * Відмова програми — відповідь про стан ланцюга, а не збій API: людині треба
    * показати саме її текст, а не «щось не вдалося».
    */
-  it('відмову програми показує словами', async () => {
+  it('shows a program refusal in words', async () => {
     const submit = vi.fn(async () => {
       throw new SubmitError('thaw-holder was refused', {
         code: 6033,
@@ -335,7 +335,7 @@ describe('розморожування операційним ключем', () 
     })
   })
 
-  it('мережева невдача лишається збоєм API', async () => {
+  it('a network failure stays an API failure', async () => {
     const submit = vi.fn(async () => {
       throw new SubmitError('thaw-holder was refused', undefined)
     })
@@ -343,7 +343,7 @@ describe('розморожування операційним ключем', () 
     expect((await post({ submit }, thawPath())).status).toBe(500)
   })
 
-  it('дзеркало не оновлюється, якщо транзакція не пройшла', async () => {
+  it('the mirror is not updated if the transaction did not go through', async () => {
     const submit = vi.fn(async () => {
       throw new SubmitError('thaw-holder was refused', undefined)
     })
@@ -357,7 +357,7 @@ describe('розморожування операційним ключем', () 
 
 // ─── Шлях учасника складу ────────────────────────────────────────────────────
 
-describe('розморожування гаманцем складу', () => {
+describe('thawing with a roster wallet', () => {
   const revoked: IssuerConfigView = { ...delegated, delegationMask: 0 }
   const foreign: IssuerConfigView = {
     ...delegated,
@@ -394,7 +394,7 @@ describe('розморожування гаманцем складу', () => {
    * Названий підписант вимикає делегацію: емітент сказав «підпишу сам». Читання
    * `IssuerConfig` при цьому зайве — і його не мусить бути.
    */
-  it('названий підписант вимикає делегацію й не читає IssuerConfig', async () => {
+  it('a named signer disables delegation and does not read IssuerConfig', async () => {
     const { server, chain, operational } = app({
       wallets: [ADMIN, OFFICER],
       roles: ROLE.ADMIN | ROLE.COMPLIANCE,
@@ -410,7 +410,7 @@ describe('розморожування гаманцем складу', () => {
     expect(operational.submit).not.toHaveBeenCalled()
   })
 
-  it('гаманець без права санкціонувати підписантом не стає', async () => {
+  it('a wallet without the authorising right does not become a signer', async () => {
     const response = await post(
       {
         config: revoked,
@@ -428,7 +428,7 @@ describe('розморожування гаманцем складу', () => {
 
   // Делегації немає, і жоден гаманець сесії не стоїть у складі: сказати треба
   // обидві дороги — делегувати повноваження або ввійти адресою зі складу.
-  it('без делегації і без адреси у складі — 401 із поясненням', async () => {
+  it('no delegation and no roster address — 401 with an explanation', async () => {
     const response = await post(
       { config: revoked, entries: [[OFFICER, ROLE.COMPLIANCE]] },
       thawPath(),
@@ -441,7 +441,7 @@ describe('розморожування гаманцем складу', () => {
     })
   })
 
-  it('кілька уповноважених гаманців без вибору — 400 із переліком', async () => {
+  it('several authorising wallets and no choice — 400 with the list', async () => {
     const response = await post(
       {
         config: revoked,
@@ -455,7 +455,7 @@ describe('розморожування гаманцем складу', () => {
     expect((await errorOf(response)).details).toEqual({ signer: [ADMIN, OFFICER] })
   })
 
-  it('емітента без IssuerConfig у мережі не вигадує', async () => {
+  it('does not invent an issuer with no IssuerConfig on chain', async () => {
     const response = await post({ config: undefined }, thawPath())
 
     expect(response.status).toBe(404)
@@ -464,10 +464,10 @@ describe('розморожування гаманцем складу', () => {
 
 // ─── Пачка ───────────────────────────────────────────────────────────────────
 
-describe('пачка розморожувань', () => {
+describe('a batch of thaws', () => {
   const batchPath = `/api/tokens/${MINT}/holders/thaw`
 
-  it('звітує по кожному гаманцю окремо', async () => {
+  it('reports on each wallet separately', async () => {
     const { server, operational } = app({ rows: [row()] })
 
     const response = await server.request(batchPath, {
@@ -489,7 +489,7 @@ describe('пачка розморожувань', () => {
     expect(operational.submit).toHaveBeenCalledTimes(1)
   })
 
-  it('непідписаний шлях віддає всім однаковий blockhash', async () => {
+  it('the unsigned path gives everyone the same blockhash', async () => {
     const { server } = app({
       config: { ...delegated, delegationMask: 0 },
       rows: [row(), row({ wallet: HOLDER_TWO })],
@@ -509,13 +509,13 @@ describe('пачка розморожувань', () => {
     }
   })
 
-  it('повтор у списку — помилка запиту, а не два рядки звіту', async () => {
+  it('a duplicate in the list is a request error, not two report rows', async () => {
     const response = await post({}, batchPath, { wallets: [HOLDER, HOLDER] })
 
     expect(response.status).toBe(400)
   })
 
-  it('список довший за межу не приймається', async () => {
+  it('a list longer than the limit is not accepted', async () => {
     const wallets = Array.from({ length: MAX_BATCH_WALLETS + 1 }, () =>
       Keypair.generate().publicKey.toBase58(),
     )
@@ -523,18 +523,18 @@ describe('пачка розморожувань', () => {
     expect((await post({}, batchPath, { wallets })).status).toBe(400)
   })
 
-  it('порожній список не приймається', async () => {
+  it('an empty list is not accepted', async () => {
     expect((await post({}, batchPath, { wallets: [] })).status).toBe(400)
   })
 })
 
 // ─── Реєстр статусів ─────────────────────────────────────────────────────────
 
-describe('оновлення реєстру статусів', () => {
+describe('updating the status register', () => {
   const statusPath = `/api/tokens/${MINT}/holders/${HOLDER}/status`
   const status = { tier: 1, jurisdiction: 'PL', denied: true, expiresAt: null }
 
-  it('пише статус делегацією й дзеркалить його після підтвердження', async () => {
+  it('writes the status by delegation and mirrors it after confirmation', async () => {
     const { server, holders } = app({ written: true })
 
     const response = await server.request(statusPath, {
@@ -558,7 +558,7 @@ describe('оновлення реєстру статусів', () => {
    * `set_holder_status` акаунта не заводить (T016): без розморожування писати
    * нікуди, і сказати це треба реченням, а не кодом `AccountNotInitialized`.
    */
-  it('рахунок без ончейн-запису статусу не оновлює', async () => {
+  it('does not update an account with no on-chain status record', async () => {
     const { server, holders } = app({ written: false })
 
     const response = await server.request(statusPath, {
@@ -572,7 +572,7 @@ describe('оновлення реєстру статусів', () => {
     expect(holders.saveStatus).not.toHaveBeenCalled()
   })
 
-  it('без делегації віддає непідписану транзакцію й дзеркала не чіпає', async () => {
+  it('without delegation returns an unsigned transaction and leaves the mirror alone', async () => {
     const { server, holders } = app({
       written: true,
       config: { ...delegated, delegationMask: DELEGATION.THAW_HOLDER },
@@ -590,7 +590,7 @@ describe('оновлення реєстру статусів', () => {
 
   // Заборона — найсуворіше, що вміє реєстр (FR-008a1): пропущене поле не має
   // читатися як «зняти».
-  it('вимагає явної заборони, а не мовчазного «ні»', async () => {
+  it('requires an explicit denial, not a silent "no"', async () => {
     const response = await post({ written: true }, statusPath, {
       tier: 1,
       jurisdiction: 'PL',

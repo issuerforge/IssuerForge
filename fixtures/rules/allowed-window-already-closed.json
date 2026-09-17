@@ -1,6 +1,6 @@
 {
   "name": "allowed-window-already-closed",
-  "why": "Вікно закінчилось вісім днів тому: витрачене в ньому не рахується в поточний ліміт, лічильник скидається на межі вікна.",
+  "why": "The window closed eight days ago: what was spent in it does not count toward the current limit — the counter resets at the window boundary.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

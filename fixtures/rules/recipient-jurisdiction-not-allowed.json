@@ -1,6 +1,6 @@
 {
   "name": "recipient-jurisdiction-not-allowed",
-  "why": "Політика дозволяє тільки NG, отримувач із KE.",
+  "why": "The policy allows NG only; the recipient is from KE.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

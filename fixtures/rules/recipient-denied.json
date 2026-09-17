@@ -1,6 +1,6 @@
 {
   "name": "recipient-denied",
-  "why": "Заборона на боці отримувача. Відправник чистий — тобто перевірка відправника пройшла раніше.",
+  "why": "Denial on the recipient's side. The sender is clean — meaning the sender check passed earlier.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

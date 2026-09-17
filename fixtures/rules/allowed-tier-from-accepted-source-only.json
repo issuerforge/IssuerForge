@@ -1,6 +1,6 @@
 {
   "name": "allowed-tier-from-accepted-source-only",
-  "why": "Реєстр каже 1, але політика його не приймає; прийнятий провайдер каже 3. Рівень зливається тільки з прийнятих джерел.",
+  "why": "The register says 1 but the policy does not accept it; the accepted provider says 3. Tier merges from accepted sources only.",
   "policy": {
     "status": {
       "sources": ["provider"],

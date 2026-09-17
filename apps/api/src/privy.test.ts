@@ -69,8 +69,8 @@ async function problem(promise: Promise<unknown>): Promise<ApiProblem> {
   throw new Error('expected the call to reject')
 }
 
-describe('перевірка токена', () => {
-  it('віддає DID і підтверджені Solana-адреси', async () => {
+describe('token verification', () => {
+  it('returns the DID and the verified Solana addresses', async () => {
     const fetchImpl = vi.fn(async () => userResponse(solanaWallets))
     const user = await client(fetchImpl as unknown as typeof fetch).authenticate(await token())
 
@@ -78,7 +78,7 @@ describe('перевірка токена', () => {
     expect(user.wallets).toEqual([EMBEDDED, EXTERNAL])
   })
 
-  it('надсилає Basic-авторизацію застосунку й privy-app-id', async () => {
+  it("sends the app's Basic authorization and privy-app-id", async () => {
     const fetchImpl = vi.fn(async () => userResponse(solanaWallets))
     await client(fetchImpl as unknown as typeof fetch).authenticate(await token())
 
@@ -108,7 +108,7 @@ describe('перевірка токена', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
-  it('не називає причину відмови', async () => {
+  it('does not name the reason for the refusal', async () => {
     const error = await problem(
       client(vi.fn() as unknown as typeof fetch).authenticate(await token({}, { expires: '-1h' })),
     )
@@ -118,8 +118,8 @@ describe('перевірка токена', () => {
   })
 })
 
-describe('склад гаманців', () => {
-  it('бере тільки Solana-адреси й тільки гаманці', async () => {
+describe('wallet set', () => {
+  it('takes Solana addresses only, and wallets only', async () => {
     const fetchImpl = vi.fn(async () =>
       userResponse([
         { type: 'email', address: 'officer@example.com' },
@@ -137,7 +137,7 @@ describe('склад гаманців', () => {
     expect(user.wallets).toEqual([EMBEDDED, EXTERNAL])
   })
 
-  it('приймає акаунт без жодного Solana-гаманця', async () => {
+  it('accepts an account with no Solana wallet at all', async () => {
     const fetchImpl = vi.fn(async () => userResponse([{ type: 'email', address: 'a@b.c' }]))
     const user = await client(fetchImpl as unknown as typeof fetch).authenticate(await token())
 
@@ -145,7 +145,7 @@ describe('склад гаманців', () => {
     expect(user.wallets).toEqual([])
   })
 
-  it('не падає на невідомих полях у відповіді', async () => {
+  it('does not break on unknown fields in the response', async () => {
     const fetchImpl = vi.fn(
       async () =>
         new Response(
@@ -163,7 +163,7 @@ describe('склад гаманців', () => {
     expect(user.wallets).toEqual([EMBEDDED])
   })
 
-  it('404 від Privy — це відмова входу, а не збій', async () => {
+  it('a 404 from Privy is a login refusal, not a failure', async () => {
     const fetchImpl = vi.fn(async () => new Response('', { status: 404 }))
     const error = await problem(
       client(fetchImpl as unknown as typeof fetch).authenticate(await token()),
@@ -182,7 +182,7 @@ describe('склад гаманців', () => {
     expect(error.code).toBe('INTERNAL')
   })
 
-  it('недоступна мережа — теж збій', async () => {
+  it('an unreachable network is a failure too', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('ECONNREFUSED')
     })
@@ -194,8 +194,8 @@ describe('склад гаманців', () => {
   })
 })
 
-describe('кеш складу', () => {
-  it('не питає Privy повторно в межах TTL', async () => {
+describe('wallet cache', () => {
+  it('does not ask Privy again within the TTL', async () => {
     const fetchImpl = vi.fn(async () => userResponse(solanaWallets))
     let clock = 1_000
     const privy = client(fetchImpl as unknown as typeof fetch, {
@@ -210,7 +210,7 @@ describe('кеш складу', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
-  it('питає знову після TTL', async () => {
+  it('asks again after the TTL', async () => {
     const fetchImpl = vi.fn(async () => userResponse(solanaWallets))
     let clock = 1_000
     const privy = client(fetchImpl as unknown as typeof fetch, {
@@ -225,7 +225,7 @@ describe('кеш складу', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
-  it('не змішує акаунти', async () => {
+  it('does not mix accounts', async () => {
     const other = 'did:privy:other'
     const fetchImpl = vi.fn(async (input: string | URL | Request) =>
       String(input).includes(encodeURIComponent(other))

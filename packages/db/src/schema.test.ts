@@ -13,8 +13,8 @@ const migrationSql = readdirSync(migrationsDir)
   .map((file) => readFileSync(`${migrationsDir}/${file}`, 'utf8'))
   .join('\n')
 
-describe('ізоляція орендарів', () => {
-  it('таблиці взагалі є', () => {
+describe('tenant isolation', () => {
+  it('the tables exist at all', () => {
     expect(tables.length).toBeGreaterThan(0)
   })
 
@@ -47,18 +47,18 @@ describe('ізоляція орендарів', () => {
   )
 })
 
-describe('межі, зняті з програми', () => {
+describe('bounds taken from the program', () => {
   // Числа продубльовані в базі свідомо: рядок, якого програма не прийме, не має
   // існувати й у дзеркалі. Тест тримає обидві копії на видноті.
-  it('кворум менший за MIN_QUORUM не зберігається', () => {
+  it('a quorum below MIN_QUORUM is not stored', () => {
     expect(migrationSql).toContain('"issuers"."quorum_n" >= 2')
   })
 
-  it('слот складу не виходить за MAX_MEMBERS', () => {
+  it('a roster slot does not exceed MAX_MEMBERS', () => {
     expect(migrationSql).toContain('"role_assignments"."member_index" between 0 and 7')
   })
 
-  it('маска ролей не буває порожньою', () => {
+  it('a role mask is never empty', () => {
     expect(migrationSql).toContain('"role_assignments"."roles" between 1 and 15')
   })
 })

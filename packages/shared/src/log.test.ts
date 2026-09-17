@@ -14,8 +14,8 @@ function capture(level: LogLevel) {
   return { logger: createLogger({ level, service: 'api' }, {}, destination), lines }
 }
 
-describe('логер', () => {
-  it("редагує токен входу й рядок з'єднання з базою", () => {
+describe('the logger', () => {
+  it('redacts the login token and the database connection string', () => {
     const { logger, lines } = capture('info')
 
     logger.info(
@@ -40,7 +40,7 @@ describe('логер', () => {
     expect(line?.service).toBe('api')
   })
 
-  it('поважає рівень', () => {
+  it('respects the level', () => {
     const { logger, lines } = capture('warn')
 
     logger.info('quiet')

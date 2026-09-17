@@ -1,6 +1,6 @@
 {
   "name": "tier-merges-to-the-lower",
-  "why": "Провайдер каже 3, реєстр каже 1, обидва прийняті. Рівень — мінімум серед прийнятих: при розбіжності діє суворіше (FR-008a1).",
+  "why": "The provider says 3, the register says 1, both accepted. Tier is the minimum across accepted sources: on disagreement the stricter one applies (FR-008a1).",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

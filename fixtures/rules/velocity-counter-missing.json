@@ -1,6 +1,6 @@
 {
   "name": "velocity-counter-missing",
-  "why": "Політика має ліміт за період, а лічильника відправника немає. Хук акаунтів не створює, тож це відмова (FR-013).",
+  "why": "The policy has a period limit and the sender has no counter. The hook creates no accounts, so this is a refusal (FR-013).",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

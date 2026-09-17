@@ -37,8 +37,8 @@ function issuesOf(overrides: Record<string, string | undefined>): string[] {
   throw new Error('expected loadConfig to throw')
 }
 
-describe('конфіг', () => {
-  it('дає значення за замовчуванням для необов’язкового', () => {
+describe('config', () => {
+  it('fills in the default for an optional value', () => {
     const config = loadConfig(env())
 
     expect(config.port).toBe(8787)
@@ -50,7 +50,7 @@ describe('конфіг', () => {
   // `.env.example` роздає це значення всім секретам. Процес, що піднявся з ним,
   // падає на першому вході — і причина виглядає як помилка Privy, а не як
   // незаповнене оточення.
-  it('відхиляє плейсхолдер із .env.example', () => {
+  it('rejects the .env.example placeholder', () => {
     expect(issuesOf({ PRIVY_APP_SECRET: 'REPLACE_ME' })).toEqual([
       'PRIVY_APP_SECRET: PRIVY_APP_SECRET is still the .env.example placeholder',
     ])
@@ -68,7 +68,7 @@ describe('конфіг', () => {
     expect(issuesOf({ [name]: value })[0]).toContain('placeholder')
   })
 
-  it('перелічує всі проблеми одразу, а не першу', () => {
+  it('lists every problem at once, not the first', () => {
     const issues = issuesOf({ DATABASE_URL: undefined, PRIVY_APP_ID: undefined, PORT: '0' })
 
     expect(issues).toHaveLength(3)
@@ -77,13 +77,13 @@ describe('конфіг', () => {
     expect(issues.join('\n')).toContain('PORT')
   })
 
-  it('вимагає саме postgres-рядок', () => {
+  it('requires a postgres connection string specifically', () => {
     expect(issuesOf({ DATABASE_URL: 'mysql://user:pass@host/db' })[0]).toContain(
       'postgres:// connection string',
     )
   })
 
-  it('розбирає перелік походжень і викидає порожні', () => {
+  it('parses the origin list and drops empties', () => {
     const config = loadConfig(
       env({ WEB_ORIGIN: 'https://console.example, ,https://public.example ' }),
     )
@@ -91,12 +91,12 @@ describe('конфіг', () => {
     expect(config.webOrigins).toEqual(['https://console.example', 'https://public.example'])
   })
 
-  it('відхиляє походження, яке не є URL', () => {
+  it('rejects an origin that is not a URL', () => {
     expect(issuesOf({ WEB_ORIGIN: 'console.example' })[0]).toContain('WEB_ORIGIN')
   })
 
   // Багаторядковий PEM у Railway, Vercel і docker --env їде з екранованими \n.
-  it('відновлює переноси в PEM-ключі', () => {
+  it('restores line breaks in the PEM key', () => {
     const escaped = publicKeyPem.trimEnd().replaceAll('\n', '\\n')
     const config = loadConfig(env({ PRIVY_VERIFICATION_KEY: escaped }))
 
@@ -104,7 +104,7 @@ describe('конфіг', () => {
     expect(config.privy.verificationKey.startsWith('-----BEGIN PUBLIC KEY-----')).toBe(true)
   })
 
-  it('відхиляє приватний ключ на місці публічного', () => {
+  it('rejects a private key in place of the public one', () => {
     // Заголовок склеєний, а не написаний цілим рядком: гард комітів шукає в
     // диффі саме такий маркер, і фікстура негативного тесту блокувала б коміт
     // нарівні зі справжнім ключем.
@@ -116,7 +116,7 @@ describe('конфіг', () => {
     ).toContain('PEM public key')
   })
 
-  it('зрізає хвостовий слеш адреси Privy, щоб шлях не подвоївся', () => {
+  it('trims the trailing slash of the Privy URL so the path does not double', () => {
     expect(loadConfig(env({ PRIVY_API_URL: 'https://auth.privy.io/' })).privy.apiUrl).toBe(
       'https://auth.privy.io',
     )
@@ -130,33 +130,33 @@ describe('конфіг', () => {
     },
   )
 
-  it('власний RPC по http — дійсна адреса', () => {
+  it('a self-hosted RPC over http is a valid URL', () => {
     expect(loadConfig(env({ DEVNET_RPC_URL: 'http://127.0.0.1:8899' })).rpcUrl).toBe(
       'http://127.0.0.1:8899',
     )
   })
 
-  it('приймає операційний ключ і не змінює його по дорозі', () => {
+  it('accepts the operational key and does not alter it on the way', () => {
     expect(loadConfig(env()).operationalSecretKey).toBe(OPERATIONAL_SECRET)
   })
 
   // Найімовірніша помилка в панелі хостингу — вставити **адресу** ключа замість
   // самого ключа: рядок теж base58, теж «схожий на ключ», і без перевірки
   // довжини процес піднявся б, а впав би на першому розморожуванні.
-  it('відхиляє публічну адресу на місці секретного ключа', () => {
+  it('rejects a public address in place of the secret key', () => {
     expect(issuesOf({ OPERATIONAL_SECRET_KEY: OPERATIONAL.publicKey.toBase58() })).toEqual([
       'OPERATIONAL_SECRET_KEY: expected a base58 ed25519 secret key of 64 bytes',
     ])
   })
 
-  it('відхиляє рядок, який узагалі не base58', () => {
+  it('rejects a string that is not base58 at all', () => {
     expect(issuesOf({ OPERATIONAL_SECRET_KEY: 'not base58 at all: 0OIl' })[0]).toContain(
       'base58 ed25519 secret key',
     )
   })
 
   // джерело дало б стан «IDL з одного деплою, адреса з іншого».
-  it('не читає PROGRAM_ID', () => {
+  it('does not read PROGRAM_ID', () => {
     const config = loadConfig(env({ PROGRAM_ID: 'REPLACE_ME' }))
 
     expect(JSON.stringify(config)).not.toContain('REPLACE_ME')

@@ -477,8 +477,8 @@ const fromHex = (hex: string): Uint8Array =>
 
 const FIXTURES = loadFixtures()
 
-describe('диференційні фікстури', () => {
-  it('їх достатньо, і кожна названа один раз', () => {
+describe('differential fixtures', () => {
+  it('there are enough of them, and each is named once', () => {
     // SC-008 просить ≥15 сценаріїв. Число тут — не стеля, а підлога.
     expect(FIXTURES.length).toBeGreaterThanOrEqual(15)
     expect(new Set(FIXTURES.map((f) => f.name)).size).toBe(FIXTURES.length)
@@ -489,7 +489,7 @@ describe('диференційні фікстури', () => {
    * має свій сценарій. Перелік береться з таблиці перевірок, а не з другого
    * списку тут: код, дописаний у модель без фікстури, падає цим тестом.
    */
-  it('покривають кожен код відмови, який оцінювач уміє повернути', () => {
+  it('cover every refusal code the evaluator can return', () => {
     const covered = new Set(FIXTURES.map((f) => f.expect))
     expect(implementedRefusalCodes().filter((code) => !covered.has(code))).toEqual([])
     // Дозвіл — теж вердикт, і без нього набір складався б із самих відмов.

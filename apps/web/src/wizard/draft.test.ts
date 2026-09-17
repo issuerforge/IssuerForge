@@ -37,23 +37,23 @@ const complete = (overrides: Partial<Draft> = {}): Draft => ({
   ...overrides,
 })
 
-describe('суми', () => {
+describe('amounts', () => {
   // Найдорожча помилка цього файла була б тихою: `25000000.07 * 100` дає
   // 2500000006.9999995, і копійка зникає без жодного повідомлення.
-  it('рахує рядками, а не числами з рухомою комою', () => {
+  it('counts in strings, not floating-point numbers', () => {
     expect(toSmallestUnit('25000000.07', 2)).toBe('2500000007')
     expect(toSmallestUnit('0.07', 2)).toBe('7')
     expect(toSmallestUnit('1', 9)).toBe('1000000000')
   })
 
-  it('дозволяє коми й пробіли як роздільники розрядів', () => {
+  it('allows commas and spaces as digit separators', () => {
     expect(toSmallestUnit('25,000,000.00', 2)).toBe('2500000000')
     expect(toSmallestUnit('25 000 000', 2)).toBe('2500000000')
   })
 
   // Зайва точність — це або одруківка, або людина думає, що знаків більше.
   // Обрізати хвіст мовчки означало б підписати не те число.
-  it('відхиляє точність, якої в токена немає', () => {
+  it('rejects more decimals than the token has', () => {
     expect(toSmallestUnit('1.234', 2)).toBeUndefined()
     expect(toSmallestUnit('1.5', 0)).toBeUndefined()
   })
@@ -62,44 +62,44 @@ describe('суми', () => {
     expect(toSmallestUnit(input, 2)).toBeUndefined()
   })
 
-  it('нуль лишається нулем, а не порожнім рядком', () => {
+  it('zero stays zero, not an empty string', () => {
     expect(toSmallestUnit('0', 2)).toBe('0')
     expect(toSmallestUnit('0.00', 2)).toBe('0')
   })
 
-  it('ціле число з поля — це не «нуль за замовчуванням»', () => {
+  it('an integer from the field is not "zero by default"', () => {
     expect(toInteger('24')).toBe(24)
     expect(toInteger('')).toBeUndefined()
     expect(toInteger('2.5')).toBeUndefined()
   })
 })
 
-describe('юрисдикції', () => {
-  it('розбираються з рядка через кому й підводяться до верхнього регістру', () => {
+describe('jurisdictions', () => {
+  it('are parsed from a comma-separated string and upper-cased', () => {
     expect(parseJurisdictions(' ng, GH ,ke ')).toEqual(['NG', 'GH', 'KE'])
   })
 
-  it('порожній рядок означає «правила немає», а не порожній перелік', () => {
+  it('an empty string means "no rule", not an empty list', () => {
     expect(parseJurisdictions('')).toEqual([])
     expect(parsedPolicy(complete({ jurisdictions: '' }))?.jurisdictions).toBeUndefined()
   })
 
-  it('дублікат відхиляється, а не мовчки зникає', () => {
+  it('a duplicate is rejected, not silently dropped', () => {
     expect(problemsAt(2, complete({ jurisdictions: 'NG, NG' }))).toContain(
       'a jurisdiction is named twice',
     )
   })
 })
 
-describe('чернетка → політика', () => {
-  it('порожній ліміт — це відсутнє правило, а не нуль', () => {
+describe('draft → policy', () => {
+  it('an empty limit is an absent rule, not zero', () => {
     const policy = parsedPolicy(complete())
 
     expect(policy?.transferLimit).toBeUndefined()
     expect(policy?.periodLimit).toBeUndefined()
   })
 
-  it('заповнений ліміт переводиться в найменші одиниці', () => {
+  it('a filled limit is converted to the smallest units', () => {
     const policy = parsedPolicy(complete({ transferLimit: '500,000.00', periodLimit: '2,000,000' }))
 
     expect(policy?.transferLimit).toBe('50000000')
@@ -109,20 +109,20 @@ describe('чернетка → політика', () => {
   // Політика, яка приймає атестації провайдера й не називає їх строку, — це
   // верифікація, чинна назавжди (FR-008a2). Модель це відхиляє; майстер не має
   // навіть дати такий стан зібрати.
-  it('строк атестації зникає разом із джерелом, а не лишається нулем', () => {
+  it('the attestation term disappears with its source rather than staying zero', () => {
     const policy = parsedPolicy(complete({ sources: ['register'] }))
 
     expect(policy?.status.maxAttestationAgeSeconds).toBeUndefined()
     expect(policy?.status.sources).toEqual(['register'])
   })
 
-  it('чернетка без жодного джерела статусу політикою не стає', () => {
+  it('a draft with no status source at all does not become a policy', () => {
     expect(parsedPolicy(complete({ sources: [] }))).toBeUndefined()
   })
 })
 
-describe('готовність кроків', () => {
-  it('повна чернетка не має проблем на жодному кроці', () => {
+describe('step readiness', () => {
+  it('a complete draft has no problems on any step', () => {
     for (const step of [1, 2, 3, 4, 5]) {
       expect(problemsAt(step, complete())).toEqual([])
     }
@@ -130,31 +130,31 @@ describe('готовність кроків', () => {
 
   // FR-005: три незмінні параметри підтверджуються явно, і без цього крок 1 не
   // закінчується. Це не оздоблення — це те, чого не можна змінити потім.
-  it('без трьох підтверджень крок 1 не закінчується', () => {
+  it('step 1 does not finish without the three confirmations', () => {
     expect(problemsAt(1, complete({ ackDecimals: false }))).toContain(
       'all three fixed parameters must be acknowledged',
     )
   })
 
-  it('крок 1 не питає про резерв, якого на ньому ще немає', () => {
+  it('step 1 does not ask about the reserve it does not have yet', () => {
     expect(problemsAt(1, complete({ reserveAmount: '' }))).toEqual([])
   })
 
-  it('нульовий ліміт — це не ліміт, і так і сказано', () => {
+  it('a zero limit is not a limit, and says so', () => {
     expect(problemsAt(3, complete({ transferLimit: '0' }))[0]).toContain('stops every transfer')
   })
 
   // Наскрізне правило: обіг нульовий, тож уся емісія мусить уміститись у
   // резерв. Перевіряє його схема тіла — та сама, що на сервері.
-  it('емісія понад резерв ловиться до підпису', () => {
+  it('issuance above the reserve is caught before signing', () => {
     const problems = problemsAt(5, complete({ reserveAmount: '1.00' }))
 
     expect(problems.join(' ')).toContain('exceeds the attested reserve')
   })
 })
 
-describe('чернетка → тіло запиту', () => {
-  it('збирається тією самою схемою, що валідує сервер', () => {
+describe('draft → request body', () => {
+  it('is assembled with the same schema the server validates with', () => {
     const built = toCreateTokenBody(complete(), NOW)
 
     expect(built.ok).toBe(true)
@@ -168,7 +168,7 @@ describe('чернетка → тіло запиту', () => {
     })
   })
 
-  it('називає поле, у якому проблема, а не просто «невірно»', () => {
+  it('names the field with the problem, not just "invalid"', () => {
     const built = toCreateTokenBody(complete({ symbol: '' }), NOW)
 
     expect(built.ok).toBe(false)
@@ -176,22 +176,22 @@ describe('чернетка → тіло запиту', () => {
   })
 })
 
-describe('попередження про засновника', () => {
+describe('founder warnings', () => {
   // Програма цього не перевіряє й не має: політика стосується переказів, а не
   // того, кому дістався початковий випуск. Наслідок при цьому реальний — токен,
   // який нікуди не рухається.
-  it('юрисдикція засновника поза дозволеними — попередження, а не відмова', () => {
+  it('a founder jurisdiction outside the allowed ones is a warning, not a refusal', () => {
     const draft = complete({ founderJurisdiction: 'PL' })
 
     expect(warningsFor(draft)[0]).toContain('cannot send')
     expect(problemsAt(5, draft)).toEqual([])
   })
 
-  it('рівень засновника нижчий за мінімальний — теж попередження', () => {
+  it('a founder tier below the minimum is a warning too', () => {
     expect(warningsFor(complete({ founderTier: 0, minTier: 2 }))[0]).toContain('below the minimum')
   })
 
-  it('узгоджена чернетка попереджень не має', () => {
+  it('a consistent draft has no warnings', () => {
     expect(warningsFor(complete())).toEqual([])
   })
 })

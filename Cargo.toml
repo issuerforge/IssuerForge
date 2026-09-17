@@ -3,9 +3,9 @@ members = ["programs/*"]
 resolver = "2"
 
 [profile.release]
-# Програма рахує ліміти переказів, резерв і комісію. Тихе переповнення тут — це
-# або пропущений переказ понад ліміт, або емісія понад резерв, тому перевірки
-# лишаються увімкненими і в релізі.
+# The program computes transfer limits, the reserve and the fee. A silent
+# overflow here is either a transfer let through above the limit or an issuance
+# above the reserve, so the checks stay on in release too.
 overflow-checks = true
 lto = "fat"
 codegen-units = 1

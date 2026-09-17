@@ -1,6 +1,6 @@
 {
   "name": "allowed-exactly-at-the-period-limit",
-  "why": "Витрачене плюс сума дорівнюють лімітові рівно. Та сама включна межа, що й на переказі.",
+  "why": "Spent plus amount equals the limit exactly. The same inclusive bound as on a single transfer.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

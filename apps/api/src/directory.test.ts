@@ -19,14 +19,14 @@ function row(overrides: Partial<MembershipRow> = {}): MembershipRow {
   }
 }
 
-describe('зведення рядків складу в членства', () => {
-  it('порожній вхід — порожній вихід', () => {
+describe('folding roster rows into memberships', () => {
+  it('empty in, empty out', () => {
     expect(groupMemberships([])).toEqual([])
   })
 
   // Офіцер, що зайшов соцвходом, а підписує зовнішнім гаманцем, має ті самі
   // повноваження, що й з однією адресою (FR-034a).
-  it("об'єднує ролі кількох адрес однієї людини в одного емітента", () => {
+  it('merges the roles of several addresses of one person in one issuer', () => {
     const [membership] = groupMemberships([
       row({ wallet: EMBEDDED, roles: ROLE.OBSERVER }),
       row({ wallet: EXTERNAL, roles: ROLE.COMPLIANCE }),
@@ -36,7 +36,7 @@ describe('зведення рядків складу в членства', () =>
     expect(membership?.wallets).toEqual([EMBEDDED, EXTERNAL].toSorted())
   })
 
-  it('розділяє емітентів', () => {
+  it('keeps issuers apart', () => {
     const memberships = groupMemberships([
       row({ issuerId: ALPHA, roles: ROLE.ADMIN }),
       row({ issuerId: BETA, roles: ROLE.COMPLIANCE }),
@@ -50,7 +50,7 @@ describe('зведення рядків складу в членства', () =>
 
   // Вік дзеркала — це вік найгіршого з того, що показує екран. Найновіший
   // `synced_at` запевняв би, що склад свіжий, поруч із вчорашнім рядком.
-  it('бере найстаріший synced_at членства', () => {
+  it('takes the oldest synced_at of the membership', () => {
     const [membership] = groupMemberships([
       row({ wallet: EMBEDDED, syncedAt: at('2026-08-21T10:00:00.000Z') }),
       row({ wallet: EXTERNAL, syncedAt: at('2026-08-18T08:30:00.000Z') }),
@@ -59,7 +59,7 @@ describe('зведення рядків складу в членства', () =>
     expect(membership?.syncedAt).toBe('2026-08-18T08:30:00.000Z')
   })
 
-  it('порядок стабільний і не залежить від порядку рядків', () => {
+  it('the order is stable and independent of row order', () => {
     const rows = [row({ issuerId: BETA }), row({ issuerId: ALPHA, wallet: EXTERNAL })]
 
     expect(groupMemberships(rows).map((m) => m.issuerId)).toEqual(

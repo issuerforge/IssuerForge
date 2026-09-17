@@ -1,6 +1,6 @@
 {
   "name": "allowed-baseline",
-  "why": "Обидві сторони мають чинний статус з обох джерел, обмежень немає (FR-004).",
+  "why": "Both parties hold a valid status from both sources and no limits apply (FR-004).",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

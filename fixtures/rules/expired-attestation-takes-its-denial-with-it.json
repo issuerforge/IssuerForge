@@ -1,6 +1,6 @@
 {
   "name": "expired-attestation-takes-its-denial-with-it",
-  "why": "Протермінована атестація каже denied, реєстр чинний і дозволяє. Вибуваючи з чинних записів, атестація забирає й свій denied — інакше протермінування було б суворішим за свіжість.",
+  "why": "The expired attestation says denied; the register is valid and allows. Dropping out of the valid records, the attestation takes its denial with it — otherwise expiry would be stricter than freshness.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

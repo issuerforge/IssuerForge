@@ -1,6 +1,6 @@
 {
   "name": "record-expires-at-its-own-second",
-  "why": "expiresAt дорівнює now. Тут межа виключна — запис діє до, не включно, — і Rust-половина тримає ту саму.",
+  "why": "expiresAt equals now. This bound is exclusive — the record is valid until, not through — and the Rust half holds the same.",
   "policy": {
     "status": {
       "sources": ["register"],

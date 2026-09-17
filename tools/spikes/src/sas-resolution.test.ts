@@ -40,7 +40,7 @@ function meta(pubkey: PublicKey) {
   return { pubkey, isSigner: false, isWritable: false }
 }
 
-describe('резолюція акаунта SAS-атестації через seeds ExtraAccountMetaList', () => {
+describe('resolving the SAS attestation account through ExtraAccountMetaList seeds', () => {
   const mint = Keypair.generate().publicKey
   const holder = Keypair.generate().publicKey
   const credential = Keypair.generate().publicKey
@@ -74,7 +74,7 @@ describe('резолюція акаунта SAS-атестації через se
     meta(tokenConfig), // 6
   ]
 
-  it('віддає ту саму адресу, що й пряме виведення PDA атестації', async () => {
+  it('yields the same address as direct derivation of the attestation PDA', async () => {
     const extraMeta = attestationExtraAccountMeta({
       sasProgramIndex: SAS_PROGRAM_INDEX,
       tokenConfigIndex: TOKEN_CONFIG_INDEX,
@@ -97,7 +97,7 @@ describe('резолюція акаунта SAS-атестації через se
     )
   })
 
-  it('розвʼязує TokenConfig як PDA самого хука за адресою mint', async () => {
+  it("resolves TokenConfig as the hook's own PDA by mint address", async () => {
     const extraMeta = tokenConfigExtraAccountMeta({ mintIndex: 1 })
 
     const resolved = await resolveExtraAccountMeta(
@@ -116,7 +116,7 @@ describe('резолюція акаунта SAS-атестації через se
     expect(resolved.pubkey.toBase58()).toBe(expected.toBase58())
   })
 
-  it('конфігурація адреси вкладається у 32 байти з запасом', () => {
+  it('the address config fits in 32 bytes with room to spare', () => {
     const packed = packAddressConfig([
       seedLiteral(Buffer.from('attestation')),
       seedAccountData(TOKEN_CONFIG_INDEX, CREDENTIAL_OFFSET, 32),
@@ -129,7 +129,7 @@ describe('резолюція акаунта SAS-атестації через se
     expect(packed.subarray(25).every((byte) => byte === 0)).toBe(true)
   })
 
-  it('наївний шлях — credential і schema літералами — у 32 байти не вкладається', () => {
+  it('the naive path — credential and schema as literals — does not fit in 32 bytes', () => {
     expect(() => naiveAttestationAddressConfig(credential, schema)).toThrow(
       /34 байт|не вкладається/,
     )

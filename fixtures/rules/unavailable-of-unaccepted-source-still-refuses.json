@@ -1,6 +1,6 @@
 {
   "name": "unavailable-of-unaccepted-source-still-refuses",
-  "why": "Політика приймає лише реєстр, недоступний — провайдер. Усе одно відмова: заборона діє з будь-якого джерела, тож недоступне джерело могло ховати «ні» (FR-008a1).",
+  "why": "The policy accepts the register only; the unavailable source is the provider. Still a refusal: a denial applies from any source, so the unavailable one could have been hiding a \"no\" (FR-008a1).",
   "policy": {
     "status": {
       "sources": ["register"],

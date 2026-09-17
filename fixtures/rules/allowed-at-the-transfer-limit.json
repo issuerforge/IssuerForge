@@ -1,6 +1,6 @@
 {
   "name": "allowed-at-the-transfer-limit",
-  "why": "Сума рівно дорівнює лімітові. Межа включна: «перевищує» — це строго більше.",
+  "why": "The amount equals the limit exactly. The bound is inclusive: \"exceeds\" means strictly greater.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

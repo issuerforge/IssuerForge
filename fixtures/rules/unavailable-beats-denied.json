@@ -1,6 +1,6 @@
 {
   "name": "unavailable-beats-denied",
-  "why": "Одне джерело недоступне, друге каже denied. Відмова — перша перевірка за порядком, а недоступність стоїть раніше за заборону.",
+  "why": "One source is unavailable, the other says denied. The refusal is the first check in order, and unavailability comes before denial.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

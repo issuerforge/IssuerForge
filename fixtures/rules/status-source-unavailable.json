@@ -1,6 +1,6 @@
 {
   "name": "status-source-unavailable",
-  "why": "Акаунт джерела не переданий. Недоступність не має послаблювати політику (FR-013), і в неї власний код.",
+  "why": "The source account was not passed in. Unavailability must not weaken the policy (FR-013), and it has a code of its own.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

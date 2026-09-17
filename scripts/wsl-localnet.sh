@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Локальний валідатор із уже завантаженими програмами.
+# A local validator with both programs already loaded.
 #
-# `--bpf-program` кладе програму в генезис: деплою немає, SOL не витрачається,
-# і адреса та сама, що в `declare_id!`. Саме тому цикл T024 налагоджується тут,
-# а на devnet іде вже готовим — один раз і за гроші.
+# `--bpf-program` puts the program into genesis: no deploy, no SOL spent, and
+# the address is the one in `declare_id!`. That is why the measurement loop is
+# debugged here and goes to devnet only once it works — once, and for money.
 #
-# Кликати з PowerShell:
+# Invoke from PowerShell:
 #   wsl.exe -e bash /mnt/<path>/scripts/wsl-localnet.sh
 set -euo pipefail
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
@@ -15,8 +15,8 @@ cd "$(dirname "$0")/.."
 FORGE=$(solana address -k target/deploy/issuer_forge-keypair.json)
 ATTACKER=$(solana address -k target/deploy/attacker-keypair.json)
 
-# Реєстр лежить у файловій системі WSL, а не в /mnt: на 9p-монтуванні валідатор
-# пише реєстр у рази повільніше й іноді ламає його на зупинці.
+# The ledger lives on the WSL filesystem, not under /mnt: on a 9p mount the
+# validator writes it several times slower and sometimes corrupts it on stop.
 LEDGER="$HOME/.cache/issuerforge-ledger"
 rm -rf "$LEDGER"
 

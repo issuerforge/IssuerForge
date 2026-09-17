@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Збірка ончейн-програм у WSL. Кликати з PowerShell, не з Git Bash:
+# Builds the on-chain programs in WSL. Invoke from PowerShell, not Git Bash:
 #   wsl.exe -e bash /mnt/<path-to-repo>/scripts/wsl-build.sh
-# Git Bash псує /mnt/-шлях, а bash -c ковтає лапки — тому команда лежить файлом.
+# Git Bash mangles the /mnt/ path and bash -c swallows quotes — hence a file.
 set -euo pipefail
 
 export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"

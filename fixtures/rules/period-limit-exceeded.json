@@ -1,6 +1,6 @@
 {
   "name": "period-limit-exceeded",
-  "why": "У відкритому вікні витрачено 4500, переказ на 501 — разом 5001 при ліміті 5000.",
+  "why": "4500 spent in the open window, a transfer of 501 — 5001 in total against a limit of 5000.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

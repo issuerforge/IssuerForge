@@ -1,6 +1,6 @@
 {
   "name": "policy-version-mismatch",
-  "why": "Переданий PolicyConfig не тієї версії, на яку налаштований mint — перша перевірка хука.",
+  "why": "The PolicyConfig passed in is not the version the mint is configured for — the hook's first check.",
   "policy": {
     "status": {
       "sources": ["provider", "register"],

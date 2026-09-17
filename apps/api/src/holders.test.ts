@@ -16,15 +16,15 @@ const row = (overrides: Partial<HolderRow> = {}): HolderRow => ({
   ...overrides,
 })
 
-describe('рішення розморожування', () => {
-  it('перше розморожування несе статус із рядка черги', () => {
+describe('the thaw decision', () => {
+  it('the first thaw carries the status from the queue row', () => {
     expect(decideThaw(row({ expiresAt: EXPIRES_AT }), false)).toEqual({
       kind: 'first',
       status: { tier: 2, jurisdiction: 'UA', denied: false, expiresAt: toUnixSeconds(EXPIRES_AT) },
     })
   })
 
-  it('без строку — саме `null`, а не нуль і не «зараз»', () => {
+  it('no expiry is exactly `null` — not zero and not "now"', () => {
     const intent = decideThaw(row(), false)
 
     expect(intent).toEqual({ kind: 'first', status: expect.objectContaining({ expiresAt: null }) })
@@ -34,17 +34,17 @@ describe('рішення розморожування', () => {
    * Повторне розморожування статусу не пише: `thaw_holder` відхилив би
    * `status: Some(..)` на заповненому записі як `HolderStatusAlreadySet` (T016).
    */
-  it('повторне розморожування статусу не несе', () => {
+  it('a repeated thaw carries no status', () => {
     expect(decideThaw(row(), true)).toEqual({ kind: 'repeat' })
   })
 
   // Рахунок, розморожений учора й заморожений офіцером сьогодні, у черзі не
   // стоїть — а розморозити його треба. Ончейн-запис уже є, і цього досить.
-  it('повторне не потребує рядка черги взагалі', () => {
+  it('a repeated thaw needs no queue row at all', () => {
     expect(decideThaw(undefined, true)).toEqual({ kind: 'repeat' })
   })
 
-  it('без рядка черги перше розморожування неможливе', () => {
+  it('without a queue row the first thaw is impossible', () => {
     expect(decideThaw(undefined, false)).toEqual({ kind: 'refuse', reason: 'not-queued' })
   })
 
@@ -57,14 +57,14 @@ describe('рішення розморожування', () => {
     expect(decideThaw(row(overrides), false)).toEqual({ kind: 'refuse', reason: 'no-status' })
   })
 
-  it('заборона з рядка черги їде в статус як є', () => {
+  it('a denial from the queue row goes into the status as is', () => {
     const intent = decideThaw(row({ denied: true }), false)
 
     expect(intent).toEqual({ kind: 'first', status: expect.objectContaining({ denied: true }) })
   })
 })
 
-describe('строк придатності', () => {
+describe('expiry', () => {
   // Нуль у програмі означає «без строку» (T016), тож клієнт, який прочитав
   // ончейн-запис і надіслав його назад, не має завести рядок із 1970 роком.
   it.each([
@@ -75,7 +75,7 @@ describe('строк придатності', () => {
     expect(toExpiryDate(value)).toBeNull()
   })
 
-  it('секунди стають датою й повертаються тим самим числом', () => {
+  it('seconds become a date and come back as the same number', () => {
     const seconds = toUnixSeconds(EXPIRES_AT)
 
     expect(toExpiryDate(seconds)).toEqual(EXPIRES_AT)
