@@ -1,21 +1,23 @@
-// Онбординг холдерів: черга, розморожування, власний реєстр статусів
+// Holder onboarding: the queue, thawing, the issuer's own status registry
 // (FR-008a, FR-008b2).
 //
-// **Це перша делегована операція проєкту (FR-035b), і вона має два шляхи —
-// рівно ті самі два, що має програма.** `authority::require_routine` (T016)
-// приймає або операційний ключ платформи в межах `delegation_mask`, або
-// уповноваженого учасника складу. Маршрут дзеркалить це: є делегація — API
-// підписує сам і віддає підпис; немає — віддає **непідписану** транзакцію на
-// гаманець учасника, і підписує консоль.
+// **This is the project's first delegated operation (FR-035b), and it has two
+// paths — exactly the two the program has.** `authority::require_routine`
+// (T016) accepts either the platform's operational key within
+// `delegation_mask`, or an authorised member of the membership. The route
+// mirrors that: with a delegation the API signs itself and returns the
+// signature; without one it returns an **unsigned** transaction for the
+// member's wallet, and the console signs.
 //
-// Другий шлях існує не для симетрії. Делегація відкликається однією дією, і
-// якби операційний ключ був єдиним, хто вміє розморожувати, відкликання
-// заморозило б онбординг назавжди: емітент утратив би здатність діяти власними
-// руками рівно тоді, коли вирішив, що платформі більше не довіряє.
+// The second path does not exist for symmetry. A delegation is revoked with
+// one action, and if the operational key were the only one able to thaw, a
+// revocation would freeze onboarding forever: the issuer would lose the
+// ability to act with its own hands exactly when it decided it no longer
+// trusts the platform.
 //
-// **Ончейн-половина закрита в T016, білдери — у T020.** Тут немає жодного
-// правила й жодної інструкції: маршрут читає стан, обирає шлях підпису й
-// віддає результат.
+// **The on-chain half is closed in T016, the builders in T020.** There is
+// not a single rule and not a single instruction here: the route reads state,
+// picks the signing path and returns the result.
 import {
   buildSetHolderStatus,
   buildThawHolder,
@@ -56,23 +58,25 @@ export interface HolderRouteDeps {
 }
 
 /**
- * Скільки гаманців приймає пачка.
+ * How many wallets a batch accepts.
  *
- * Пачка — це N окремих транзакцій, а не одна велика (`thaw_holder` має дев'ять
- * акаунтів, і в 1232 байти їх влізло б три-чотири). Тож межа тут не байтова, а
- * часова: двадцять п'ять підтверджень поспіль — це десятки секунд, і довшу
- * чергу клієнт мусить розбити сам, поки видно, де вона зупинилась.
+ * A batch is N separate transactions, not one big one (`thaw_holder` has nine
+ * accounts, and three or four of them would fit in 1232 bytes). So the bound
+ * here is not in bytes but in time: twenty-five confirmations in a row is
+ * tens of seconds, and a longer queue the client must split itself, while it
+ * is visible where it stopped.
  */
 export const MAX_BATCH_WALLETS = 25
 
-// ─── Тіла й параметри ────────────────────────────────────────────────────────
+// ─── Bodies and parameters ───────────────────────────────────────────────────
 
 /**
- * `expiresAt` — unix-секунди; `null`, нуль або відсутнє означають «без строку».
+ * `expiresAt` is unix seconds; `null`, zero or absent mean "no expiry".
  *
- * Нуль приймається як синонім відсутності саме тому, що так це записано в
- * акаунті (`HolderStatus.expires_at`, T016): клієнт, який прочитав ончейн-запис
- * і надіслав його назад, не має отримати відмову за те, що прочитав правильно.
+ * Zero is accepted as a synonym for absence precisely because that is how it
+ * is written in the account (`HolderStatus.expires_at`, T016): a client that
+ * read the on-chain record and sent it back must not be refused for reading
+ * it correctly.
  */
 const expirySchema = unixSecondsSchema.nullish()
 
@@ -86,8 +90,9 @@ export const queueHolderBodySchema = z.strictObject({
 export const holderStatusBodySchema = z.strictObject({
   tier: tierSchema,
   jurisdiction: jurisdictionSchema,
-  // Явне поле, а не «відсутнє означає ні»: заборона — найсуворіше, що вміє
-  // реєстр (FR-008a1), і знімати її пропуском поля не можна.
+  // An explicit field, not "absent means no": a denial is the strictest thing
+  // the registry can do (FR-008a1), and it must not be liftable by omitting a
+  // field.
   denied: z.boolean(),
   expiresAt: expirySchema,
 })
@@ -97,36 +102,38 @@ export const thawBatchBodySchema = z.strictObject({
     .array(addressSchema)
     .min(1)
     .max(MAX_BATCH_WALLETS)
-    // Повтор у списку для ланцюга нешкідливий (друге розморожування нічого не
-    // робить), але у звіті він дав би два рядки на один рахунок — і офіцер
-    // порахував би чергу неправильно.
+    // A repeat in the list is harmless for the chain (a second thaw does
+    // nothing), but in the report it would give two lines for one account —
+    // and the officer would count the queue wrong.
     .refine((wallets) => new Set(wallets).size === wallets.length, 'wallets must be unique'),
 })
 
 /**
- * Підписант приходить параметром запиту, а не полем тіла, і це не косметика.
+ * The signer comes as a query parameter, not a body field, and that is not
+ * cosmetics.
  *
- * Він не є частиною дії: дія — «розморозити цей рахунок», і вона однакова
- * незалежно від того, чиїм підписом виконана. Параметр лише **звужує** вибір
- * серед адрес, які склад уже назвав уповноваженими, і заразом дає єдину форму
- * трьом ручкам, одна з яких тіла не має взагалі.
+ * It is not part of the action: the action is "thaw this account", and it is
+ * the same regardless of whose signature performs it. The parameter only
+ * **narrows** the choice among the addresses the membership has already named
+ * as authorised, and at the same time gives one shape to three handlers, one
+ * of which has no body at all.
  *
- * Названий підписант **вимикає делегацію** для цього запиту: емітент, який
- * назвав свій гаманець, сказав «підпишу сам», а не «підпиши за мене».
+ * A named signer **turns delegation off** for this request: an issuer that
+ * named its own wallet said "I will sign myself", not "sign for me".
  */
 export const signerQuerySchema = z.object({ signer: addressSchema.optional() })
 
 export const holderQuerySchema = z.object({ state: z.enum(HOLDER_STATES).optional() })
 
-// ─── Шлях підпису ────────────────────────────────────────────────────────────
+// ─── Signing path ────────────────────────────────────────────────────────────
 
 /**
- * Хто підписує цей запит — і все, що для цього потрібно.
+ * Who signs this request — and everything needed for that.
  *
- * Блокхеш лежить у самому шляху, а не поруч: непідписані транзакції пачки їдуть
- * до консолі однією відповіддю, і різні строки життя означали б, що останні
- * протухають, поки людина підписує перші (те саме рішення, що для трьох
- * транзакцій випуску, T021).
+ * The blockhash sits in the path itself, not beside it: the batch's unsigned
+ * transactions travel to the console in one response, and different lifetimes
+ * would mean the last ones go stale while the person signs the first (the
+ * same decision as for the three issuance transactions, T021).
  */
 type SigningPath =
   | { readonly mode: 'delegated' }
@@ -153,10 +160,11 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     })
 
   /**
-   * Токен, якого немає в цього емітента, не існує **для цієї сесії**.
+   * A token this issuer does not have does not exist **for this session**.
    *
-   * `NOT_FOUND`, а не `UNAUTHORIZED`: різниця між «чужий mint» і «неіснуючий»
-   * розповідала б про чужі дані тому, хто перебирає адреси (FR-036, SC-011).
+   * `NOT_FOUND`, not `UNAUTHORIZED`: the difference between "someone else's
+   * mint" and "non-existent" would tell whoever is enumerating addresses
+   * about other people's data (FR-036, SC-011).
    */
   const requireToken = async (issuerId: string, mint: string) => {
     if (!(await deps.holders.ownsToken(issuerId, mint))) {
@@ -164,7 +172,7 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     }
   }
 
-  /** Розморожування й статуси — дія, а не читання: спостерігач їх не робить. */
+  /** Thawing and statuses are an action, not a read: an observer does not do them. */
   const requireAuthorising = (roles: number) => {
     if (!hasRole(roles, ROLE_AUTHORISING)) {
       throw unauthorized('this role cannot onboard holders')
@@ -172,10 +180,10 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
   }
 
   /**
-   * Хто підпише — вирішується **один раз на запит**, а не на кожен гаманець:
-   * `IssuerConfig` один на емітента, і пачка, у якої половина рахунків пішла
-   * делегацією, а половина повернулась транзакціями, була б відповіддю, яку
-   * нема як показати.
+   * Who signs is decided **once per request**, not per wallet: there is one
+   * `IssuerConfig` per issuer, and a batch where half the accounts went by
+   * delegation and half came back as transactions would be a response with no
+   * way to display it.
    */
   const signingPath = async (
     issuerId: string,
@@ -187,9 +195,9 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
       const config = await deps.chain.issuerConfig(new PublicKey(issuerId))
       if (config === undefined) throw notFound('this issuer has no IssuerConfig on chain yet')
 
-      // Обидві умови обов'язкові: маска без збігу адрес означає, що емітент
-      // делегував повноваження **іншому** ключу, і підписувати за нього нашим
-      // було б рівно тим, чого FR-035a не дозволяє.
+      // Both conditions are mandatory: a mask without a matching address means
+      // the issuer delegated the power to **another** key, and signing for it
+      // with ours would be exactly what FR-035a does not allow.
       if (
         config.operationalKey === deps.operational.publicKey.toBase58() &&
         hasPower(config.delegationMask, power)
@@ -204,10 +212,11 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     )
     const signer = chooseSigner(candidates, requested, 'signer')
     if (signer === undefined) {
-      // Роль у сесії є — її вже перевірив `requireAuthorising`, — а адреси в
-      // складі немає: або дзеркало складу відстало, або людина ввійшла іншим
-      // гаманцем. Обидва випадки лікуються однаково: делегувати повноваження
-      // або ввійти адресою, яка стоїть у складі.
+      // The session has the role — `requireAuthorising` already checked it —
+      // but the address is not in the membership: either the membership mirror
+      // lagged, or the person logged in with another wallet. Both cases are
+      // cured the same way: delegate the power, or log in with an address
+      // that is in the membership.
       throw unauthorized(
         'the operational key cannot sign for this issuer, and no wallet of this session is in its roster',
         { power: powerLabel(power) },
@@ -217,9 +226,9 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     return { mode: 'member', signer, blockhash: await deps.chain.latestBlockhash() }
   }
 
-  // ─── Черга ─────────────────────────────────────────────────────────────────
+  // ─── Queue ─────────────────────────────────────────────────────────────────
 
-  /** Зарахування в чергу. Ланцюга не торкається: заявка — ще не дія. */
+  /** Joining the queue. Does not touch the chain: an application is not yet an action. */
   app.post('/tokens/:mint/holders', body(queueHolderBodySchema), async (c) => {
     const session = c.get('session')
     const mint = addressParam(c.req.param('mint'), 'mint')
@@ -247,7 +256,7 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     return c.json({ holder: view(queued.row) })
   })
 
-  /** Черга офіцера. Читання, тож ролі не питаємо — досить членства. */
+  /** The officer's queue. A read, so no role is asked for — membership is enough. */
   app.get('/tokens/:mint/holders', query(holderQuerySchema), async (c) => {
     const session = c.get('session')
     const mint = addressParam(c.req.param('mint'), 'mint')
@@ -257,12 +266,12 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     return c.json({ holders: rows.map(view) })
   })
 
-  // ─── Розморожування ────────────────────────────────────────────────────────
+  // ─── Thawing ───────────────────────────────────────────────────────────────
 
   /**
-   * Одне розморожування. Помилка тут — відмова запиту, а не рядок звіту:
-   * гаманець названий у шляху, і «нуль із одного» замість причини означало б
-   * 200 на дію, якої не сталося.
+   * A single thaw. An error here is a request refusal, not a report line: the
+   * wallet is named in the path, and "zero of one" instead of a reason would
+   * mean a 200 for an action that did not happen.
    */
   app.post('/tokens/:mint/holders/:wallet/thaw', query(signerQuerySchema), async (c) => {
     const session = c.get('session')
@@ -282,7 +291,7 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     return c.json({ ...describe(path), ...result })
   })
 
-  /** Пачка: N транзакцій, звіт по кожній. Часткова відмова видима поіменно. */
+  /** A batch: N transactions, a report on each. A partial refusal is visible by name. */
   app.post(
     '/tokens/:mint/holders/thaw',
     query(signerQuerySchema),
@@ -303,9 +312,10 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
       const results: Outcome[] = []
       for (const wallet of c.req.valid('json').wallets) {
         try {
-          // Послідовно, а не `Promise.all`: делегований шлях підписує одним
-          // ключем, і паралельні транзакції одного платника з тим самим
-          // блокхешем — це гонка за один слот, у якій частина зникає як дублі.
+          // Sequentially, not `Promise.all`: the delegated path signs with one
+          // key, and parallel transactions of one payer with the same
+          // blockhash are a race for one slot in which some vanish as
+          // duplicates.
           results.push(await thawOne(deps, session.issuerId, mint, wallet, path))
         } catch (error) {
           results.push(failure(wallet, error))
@@ -317,14 +327,14 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
     },
   )
 
-  // ─── Реєстр статусів ───────────────────────────────────────────────────────
+  // ─── Status registry ───────────────────────────────────────────────────────
 
   /**
-   * Оновлення власного реєстру (FR-008a, FR-008b1).
+   * An update of the issuer's own registry (FR-008a, FR-008b1).
    *
-   * Рахунок лишається таким, як був: ця дія нічого не морозить і нічого не
-   * впускає — вона змінює те, що читає **кожен** переказ. Саме тому вона окрема
-   * від розморожування й має власне повноваження в масці делегації.
+   * The account stays as it was: this action freezes nothing and admits
+   * nothing — it changes what **every** transfer reads. That is exactly why it
+   * is separate from thawing and has its own power in the delegation mask.
    */
   app.post(
     '/tokens/:mint/holders/:wallet/status',
@@ -345,9 +355,10 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
         expiresAt: input.expiresAt ?? null,
       }
 
-      // `set_holder_status` акаунта не заводить (T016): запис створюється разом
-      // із розморожуванням, бо статус без розмороженого рахунку нічого не
-      // означає. Без цієї перевірки людина отримала б `AccountNotInitialized`.
+      // `set_holder_status` does not create the account (T016): the record is
+      // created together with the thaw, because a status without a thawed
+      // account means nothing. Without this check the person would get
+      // `AccountNotInitialized`.
       if (!(await deps.chain.holderStatusWritten(new PublicKey(mint), new PublicKey(wallet)))) {
         throw invalidInput('this account has no on-chain status yet; thaw it first', { wallet })
       }
@@ -369,8 +380,8 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
 
       const dispatched = await dispatch(deps, plan, path)
       if (path.mode === 'delegated') {
-        // Дзеркало пишеться **після** підтвердження: рядок, оновлений наперед,
-        // розійшовся б із ланцюгом рівно там, де транзакція не пройшла.
+        // The mirror is written **after** confirmation: a row updated in advance
+        // would diverge from the chain exactly where the transaction failed.
         await deps.holders.saveStatus({
           issuerId: session.issuerId,
           mint,
@@ -392,7 +403,7 @@ export function createHolderRoutes(deps: HolderRouteDeps) {
   return app
 }
 
-// ─── Одне розморожування ─────────────────────────────────────────────────────
+// ─── A single thaw ───────────────────────────────────────────────────────────
 
 async function thawOne(
   deps: HolderRouteDeps,
@@ -404,8 +415,9 @@ async function thawOne(
   const mintKey = new PublicKey(mint)
   const walletKey = new PublicKey(wallet)
 
-  // Порядок значущий: «чи писали запис» питається в ланцюга, і саме ця
-  // відповідь вирішує, чи несе транзакція статус. База лише постачає значення.
+  // The order matters: "was the record written" is asked of the chain, and
+  // that answer decides whether the transaction carries a status. The
+  // database only supplies the values.
   const written = await deps.chain.holderStatusWritten(mintKey, walletKey)
   const intent = decideThaw(await deps.holders.get(issuerId, mint, wallet), written)
 
@@ -420,9 +432,10 @@ async function thawOne(
     issuerId: new PublicKey(issuerId),
     mint: mintKey,
     wallet: walletKey,
-    // Платник і санкціонувач — одна адреса: оренду двох акаунтів (`HolderStatus`
-    // і `VelocityCounter`) платить той, хто підписує. У делегованому шляху це
-    // платформа, і це прямий наслідок делегації, а не окреме рішення.
+    // The payer and the authoriser are one address: the rent for the two
+    // accounts (`HolderStatus` and `VelocityCounter`) is paid by whoever
+    // signs. On the delegated path that is the platform, a direct consequence
+    // of the delegation rather than a separate decision.
     payer: authority,
     authority,
     status: intent.kind === 'first' ? toBuilderStatus(intent.status) : null,
@@ -434,8 +447,8 @@ async function thawOne(
       issuerId,
       mint,
       wallet,
-      // Дзеркало отримує статус лише тоді, коли його писала й транзакція:
-      // повторне розморожування ончейн-запису не чіпає (T016).
+      // The mirror gets the status only when the transaction wrote it too: a
+      // repeat thaw does not touch the on-chain record (T016).
       status: intent.kind === 'first' ? intent.status : undefined,
       at: deps.now(),
     })
@@ -445,19 +458,19 @@ async function thawOne(
   return { wallet, outcome, ...dispatched }
 }
 
-// ─── Дрібні перетворення ─────────────────────────────────────────────────────
+// ─── Small conversions ───────────────────────────────────────────────────────
 
 function authorityOf(deps: HolderRouteDeps, path: SigningPath): PublicKey {
   return path.mode === 'delegated' ? deps.operational.publicKey : new PublicKey(path.signer)
 }
 
-/** План → підпис (делеговано) або непідписана транзакція (гаманцем складу). */
+/** Plan → a signature (delegated) or an unsigned transaction (a membership wallet). */
 async function dispatch(deps: HolderRouteDeps, plan: TxPlan, path: SigningPath) {
   if (path.mode === 'member') {
     const unsigned = toUnsigned(plan, path.blockhash)
     const bytes = transactionBytes(unsigned.transaction)
-    // Та сама перевірка, що на випуску (T021): транзакція, яка переросла ліміт,
-    // мусить упасти тут, поки видно, яка саме.
+    // The same check as on issuance (T021): a transaction that outgrew the
+    // limit must fail here, while it is visible which one.
     if (bytes > MAX_TRANSACTION_BYTES) {
       throw internal(`${plan.step} does not fit in a transaction`, {
         bytes,
@@ -484,11 +497,12 @@ async function dispatch(deps: HolderRouteDeps, plan: TxPlan, path: SigningPath) 
 }
 
 /**
- * Відмова програми — це відповідь про стан ланцюга, а не збій API.
+ * A program refusal is an answer about the state of the chain, not an API
+ * failure.
  *
- * Тому вона стає `INVALID_INPUT` із власним текстом програми: «повноваження не
- * делеговане» треба показати людині дослівно. Усе, що не розібралося в код
- * програми, — мережа, і це вже `INTERNAL`.
+ * So it becomes `INVALID_INPUT` with the program's own text: "power not
+ * delegated" must be shown to the person verbatim. Everything that did not
+ * parse into a program code is the network, and that is `INTERNAL`.
  */
 function asProblem(error: unknown): unknown {
   if (!(error instanceof SubmitError)) return error
@@ -500,9 +514,10 @@ function asProblem(error: unknown): unknown {
 }
 
 function failure(wallet: string, error: unknown): Outcome & { error: Record<string, string> } {
-  // Не `ApiProblem` — це не відмова однієї заявки, а зламаний запит цілком
-  // (битий JSON, впала база). Ковтати таке в рядок звіту означало б 200 на
-  // пачку, з якої нічого не могло вийти.
+  // Not an `ApiProblem` — this is not the refusal of one application but a
+  // broken request as a whole (malformed JSON, a database down). Swallowing
+  // that into a report line would mean a 200 for a batch nothing could come
+  // out of.
   if (!(error instanceof ApiProblem)) throw error
 
   return { wallet, outcome: 'failed', error: { code: error.code, message: error.message } }
@@ -515,7 +530,7 @@ function tally(results: readonly Outcome[]) {
   }
 }
 
-/** Спільна «шапка» відповіді: як підписано і чим — для непідписаного шляху. */
+/** The shared response "header": how it was signed, and with what — for the unsigned path. */
 function describe(path: SigningPath) {
   return path.mode === 'delegated'
     ? { mode: 'delegated' as const }
@@ -535,7 +550,7 @@ function view(row: HolderRow) {
   }
 }
 
-/** Форма статусу, яку приймають білдери T020: `bigint`, нуль — «без строку». */
+/** The status shape the T020 builders accept: `bigint`, zero — "no expiry". */
 function toBuilderStatus(status: HolderStatusFields) {
   return {
     tier: status.tier,
@@ -550,10 +565,11 @@ function powerLabel(power: number): string {
 }
 
 /**
- * Адреса зі шляху перевіряється тією ж схемою, що й тіло.
+ * An address from the path is checked with the same schema as the body.
  *
- * Без цього `new PublicKey('..')` кидає з надр web3.js, і 400 перетворюється на
- * 500 на найдешевшій із можливих помилок — одруківці в адресі.
+ * Without this `new PublicKey('..')` throws from the depths of web3.js, and a
+ * 400 turns into a 500 on the cheapest possible mistake — a typo in the
+ * address.
  */
 function addressParam(value: string | undefined, label: string): string {
   const parsed = addressSchema.safeParse(value)

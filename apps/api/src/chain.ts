@@ -1,12 +1,14 @@
-// Читання з мережі — рівно те, чого не можна знати без неї.
+// Reading from the network — exactly what cannot be known without it.
 //
-// Форма та сама, що в `Directory`: інтерфейс плюс фабрика від готового
-// з'єднання. Сервер збирається із залежностей і сам нічого не відкриває (T009),
-// тож тест піднімає ті самі маршрути без ноди, підмінюючи лише цей об'єкт.
+// The same shape as `Directory`: an interface plus a factory from a ready
+// connection. The server is assembled from dependencies and opens nothing
+// itself (T009), so a test brings up the same routes without a node, swapping
+// only this object.
 //
-// **Підпису тут немає й не буде.** `@forge/chain` не тримає ключа, а провайдер
-// зроблений без гаманця навмисно (T020): усе, що змінює ончейн-стан, виходить
-// із API непідписаною транзакцією.
+// **There is no signing here, and there will be none.** `@forge/chain` holds
+// no key, and the provider is deliberately made without a wallet (T020):
+// everything that changes on-chain state leaves the API as an unsigned
+// transaction.
 import {
   createForgeProgram,
   type ForgeProgram,
@@ -16,13 +18,14 @@ import {
 import type { Connection, PublicKey } from '@solana/web3.js'
 
 /**
- * Те, що маршрутам треба знати про емітента з самого ланцюга.
+ * What the routes need to know about an issuer from the chain itself.
  *
- * Ролі й склад беруться з бази (дзеркало `IssuerConfig.members`), а ці три поля
- * — ні: `delegation_mask` вирішує, чи має право підписати наш ключ, і читати
- * його з дзеркала означало б дозволити операцію за станом, який емітент уже
- * відкликав (FR-035b). Відкликання діє з моменту підтвердження транзакції, а не
- * з моменту, коли про нього дізнався індексатор.
+ * Roles and membership come from the database (the mirror of
+ * `IssuerConfig.members`), but these three fields do not: `delegation_mask`
+ * decides whether our key may sign, and reading it from the mirror would mean
+ * allowing an operation on a state the issuer has already revoked (FR-035b).
+ * A revocation is in force from the moment the transaction is confirmed, not
+ * from the moment the indexer learns about it.
  */
 export interface IssuerConfigView {
   readonly tokenCount: number
@@ -31,47 +34,50 @@ export interface IssuerConfigView {
 }
 
 export interface ChainReader {
-  /** Клієнт програми: з нього збираються інструкції за IDL. */
+  /** The program client: instructions are assembled from it by the IDL. */
   readonly program: ForgeProgram
   /**
-   * Скільки токенів емітент уже випустив, тобто номер наступного.
+   * How many tokens the issuer has already issued, i.e. the number of the
+   * next one.
    *
-   * `undefined` — `IssuerConfig` у мережі немає: емітент існує в базі, але його
-   * транзакція створення не підтверджена. Це різні відповіді, і маршрут
-   * розрізняє їх, а не показує нуль замість «емітента ще немає».
+   * `undefined` — there is no `IssuerConfig` on the network: the issuer exists
+   * in the database, but its creation transaction is not confirmed. These are
+   * different answers, and the route tells them apart rather than showing
+   * zero instead of "the issuer does not exist yet".
    */
   tokenCount(issuerId: PublicKey): Promise<number | undefined>
-  /** Той самий акаунт цілком — для делегації (T022). `undefined` — те саме. */
+  /** The same account in full — for delegation (T022). `undefined` — the same. */
   issuerConfig(issuerId: PublicKey): Promise<IssuerConfigView | undefined>
   /**
-   * Чи **писали** вже ончейн-запис статусу цього холдера.
+   * Whether this holder's on-chain status record has already been **written**.
    *
-   * Питання не «чи існує акаунт»: `thaw_holder` створює його разом із
-   * лічильником, а вирішує, писати статус чи ні, поле `updated_at` (T016).
-   * Нуль означає «запису ще не було», і саме за цією межею проходить різниця
-   * між першим розморожуванням (статус приходить із ним) і повторним
-   * (`status: null`, інакше — `HolderStatusAlreadySet`).
+   * The question is not "does the account exist": `thaw_holder` creates it
+   * together with the counter, and whether to write the status is decided by
+   * the `updated_at` field (T016). Zero means "no record yet", and that is
+   * exactly the boundary between the first thaw (the status comes with it)
+   * and a repeat one (`status: null`, otherwise `HolderStatusAlreadySet`).
    */
   holderStatusWritten(mint: PublicKey, wallet: PublicKey): Promise<boolean>
-  /** Свіжий blockhash. Один на всі три транзакції випуску (рішення T021). */
+  /** A fresh blockhash. One for all three issuance transactions (decision T021). */
   latestBlockhash(): Promise<string>
 }
 
 /**
- * Скільки чекати на відповідь RPC.
+ * How long to wait for an RPC answer.
  *
- * `Connection` строку не має взагалі: завислий вузол тримав би запит консолі
- * доти, доки не здасться браузер, а процес — доти, доки не здасться сокет.
- * П'ять секунд — це два читання поспіль у бюджеті майстра (SC-001, ≤ 5 хв) з
- * величезним запасом, і водночас межа, після якої відповідь усе одно не
- * потрібна: blockhash, старший за неї, доживає до підпису вже коротшим.
+ * `Connection` has no timeout at all: a hung node would hold the console's
+ * request until the browser gives up, and the process until the socket does.
+ * Five seconds is two reads in a row within the wizard's budget (SC-001,
+ * ≤ 5 min) with enormous headroom, and at the same time the limit past which
+ * the answer is no longer needed anyway: a blockhash older than that reaches
+ * the signature with a shorter life already.
  */
 export const RPC_TIMEOUT_MS = 5_000
 
 /**
- * `fetch` зі строком. Віддається `Connection` при створенні — інакше строк
- * довелося б ставити на кожен виклик окремо, і перший забутий виклик повернув
- * би поведінку без строку.
+ * `fetch` with a timeout. Handed to `Connection` at creation — otherwise the
+ * timeout would have to be set on every call separately, and the first
+ * forgotten call would bring back the behaviour without one.
  */
 export function fetchWithTimeout(timeoutMs = RPC_TIMEOUT_MS): typeof globalThis.fetch {
   return (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) })
@@ -96,16 +102,17 @@ export function createChainReader(connection: Connection): ChainReader {
 
     issuerConfig: readIssuerConfig,
 
-    // Через те саме читання, а не власним запитом: два звертання до одного
-    // акаунта колись розійшлися б у тому, що вважати відсутністю емітента.
+    // Through the same read rather than its own request: two accesses to one
+    // account would one day disagree on what counts as the issuer's absence.
     async tokenCount(issuerId) {
       return (await readIssuerConfig(issuerId))?.tokenCount
     },
 
     async holderStatusWritten(mint, wallet) {
       const status = await program.account.holderStatus.fetchNullable(holderStatusPda(mint, wallet))
-      // `!isZero()`, а не `!== 0`: Anchor віддає i64 як `BN`, і порівняння з
-      // числом було б завжди істинним (T020, той самий капкан із іншого боку).
+      // `!isZero()`, not `!== 0`: Anchor returns i64 as a `BN`, and a comparison
+      // with a number would always be true (T020, the same trap from the other
+      // side).
       return status !== null && !status.updatedAt.isZero()
     },
 

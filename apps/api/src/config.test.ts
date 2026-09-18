@@ -4,7 +4,7 @@ import { exportSPKI, generateKeyPair } from 'jose'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { ConfigError, loadConfig } from './config.ts'
 
-/** Детермінований ключ: тест не має залежати від генератора випадкових чисел. */
+/** A deterministic key: the test must not depend on the random number generator. */
 const OPERATIONAL = Keypair.fromSeed(new Uint8Array(32).fill(7))
 const OPERATIONAL_SECRET = encodeBase58(OPERATIONAL.secretKey)
 
@@ -47,24 +47,24 @@ describe('config', () => {
     expect(config.privy.apiUrl).toBe('https://auth.privy.io')
   })
 
-  // `.env.example` роздає це значення всім секретам. Процес, що піднявся з ним,
-  // падає на першому вході — і причина виглядає як помилка Privy, а не як
-  // незаповнене оточення.
+  // `.env.example` gives this value to every secret. A process that came up
+  // with it fails on the first login — and the cause looks like a Privy error,
+  // not an unfilled environment.
   it('rejects the .env.example placeholder', () => {
     expect(issuesOf({ PRIVY_APP_SECRET: 'REPLACE_ME' })).toEqual([
       'PRIVY_APP_SECRET: PRIVY_APP_SECRET is still the .env.example placeholder',
     ])
   })
 
-  // У `.env.example` плейсхолдер стоїть і всередині значень — саме такий
-  // напівзаповнений рядок і доїжджає до розгортання непоміченим.
+  // In `.env.example` the placeholder also sits inside values — it is exactly
+  // such a half-filled line that reaches deployment unnoticed.
   it.each([
     ['DEVNET_RPC_URL', 'https://devnet.helius-rpc.com/?api-key=REPLACE_ME'],
     [
       'PRIVY_VERIFICATION_KEY',
       '-----BEGIN PUBLIC KEY-----\\nREPLACE_ME\\n-----END PUBLIC KEY-----',
     ],
-  ])('відхиляє плейсхолдер усередині %s', (name, value) => {
+  ])('rejects the placeholder inside %s', (name, value) => {
     expect(issuesOf({ [name]: value })[0]).toContain('placeholder')
   })
 
@@ -95,7 +95,7 @@ describe('config', () => {
     expect(issuesOf({ WEB_ORIGIN: 'console.example' })[0]).toContain('WEB_ORIGIN')
   })
 
-  // Багаторядковий PEM у Railway, Vercel і docker --env їде з екранованими \n.
+  // A multi-line PEM in hosting panels and docker --env travels with escaped \n.
   it('restores line breaks in the PEM key', () => {
     const escaped = publicKeyPem.trimEnd().replaceAll('\n', '\\n')
     const config = loadConfig(env({ PRIVY_VERIFICATION_KEY: escaped }))
@@ -105,9 +105,9 @@ describe('config', () => {
   })
 
   it('rejects a private key in place of the public one', () => {
-    // Заголовок склеєний, а не написаний цілим рядком: гард комітів шукає в
-    // диффі саме такий маркер, і фікстура негативного тесту блокувала б коміт
-    // нарівні зі справжнім ключем.
+    // The header is concatenated rather than written as one line: the commit
+    // guard looks for exactly that marker in the diff, and a negative-test
+    // fixture would block the commit just like a real key.
     const kind = 'PRIVATE'
     expect(
       issuesOf({
@@ -122,9 +122,9 @@ describe('config', () => {
     )
   })
 
-  // Адреса програми береться тільки з вендорованого IDL (рішення T007): друге
+  // The program address comes only from the vendored IDL (decision T007): a second
   it.each(['ftp://rpc.example', 'javascript:alert(1)', 'file:///etc/passwd'])(
-    '%s в DEVNET_RPC_URL відхиляється: «URL» без схеми — це не адреса ноди',
+    '%s in DEVNET_RPC_URL is rejected: a "URL" without a scheme is not a node address',
     (url) => {
       expect(issuesOf({ DEVNET_RPC_URL: url }).length).toBeGreaterThan(0)
     },
@@ -140,9 +140,10 @@ describe('config', () => {
     expect(loadConfig(env()).operationalSecretKey).toBe(OPERATIONAL_SECRET)
   })
 
-  // Найімовірніша помилка в панелі хостингу — вставити **адресу** ключа замість
-  // самого ключа: рядок теж base58, теж «схожий на ключ», і без перевірки
-  // довжини процес піднявся б, а впав би на першому розморожуванні.
+  // The likeliest mistake in a hosting panel is pasting the key's **address**
+  // instead of the key itself: the string is base58 too, "looks like a key"
+  // too, and without the length check the process would come up and fail on
+  // the first thaw.
   it('rejects a public address in place of the secret key', () => {
     expect(issuesOf({ OPERATIONAL_SECRET_KEY: OPERATIONAL.publicKey.toBase58() })).toEqual([
       'OPERATIONAL_SECRET_KEY: expected a base58 ed25519 secret key of 64 bytes',
@@ -155,7 +156,7 @@ describe('config', () => {
     )
   })
 
-  // джерело дало б стан «IDL з одного деплою, адреса з іншого».
+  // source would create the state "IDL from one deploy, address from another".
   it('does not read PROGRAM_ID', () => {
     const config = loadConfig(env({ PROGRAM_ID: 'REPLACE_ME' }))
 

@@ -52,7 +52,7 @@ type Fakes = {
   wallets?: string[]
   roles?: number
   entries?: readonly (readonly [string, number])[]
-  /** `undefined` — `IssuerConfig` у мережі немає. */
+  /** `undefined` — there is no `IssuerConfig` on the network. */
   config?: IssuerConfigView | undefined
   written?: boolean
   rows?: HolderRow[]
@@ -119,7 +119,7 @@ function app(fakes: Fakes = {}) {
 
   const issuance: IssuanceStore = {
     reserve: async () => {
-      throw new Error('випуск у цих тестах не потрібен')
+      throw new Error('issuance is not needed in these tests')
     },
   }
 
@@ -156,7 +156,7 @@ const errorOf = async (response: Response) =>
 
 const thawPath = (wallet = HOLDER) => `/api/tokens/${MINT}/holders/${wallet}/thaw`
 
-// ─── Черга ───────────────────────────────────────────────────────────────────
+// ─── Queue ───────────────────────────────────────────────────────────────────
 
 describe('the thaw queue', () => {
   it('enqueues a wallet together with the status assigned to it', async () => {
@@ -181,8 +181,8 @@ describe('the thaw queue', () => {
     expect(holders.enqueue).toHaveBeenCalledWith(expect.objectContaining({ issuerId: ISSUER }))
   })
 
-  // Нуль у програмі означає «без строку» (T016), і рядок черги не має отримати
-  // 1970 рік від клієнта, який просто повернув прочитане.
+  // Zero in the program means "no expiry" (T016), and a queue row must not
+  // get the year 1970 from a client that simply returned what it read.
   it('a zero expiry is enqueued as "no expiry"', async () => {
     const { server, holders } = app()
 
@@ -235,7 +235,7 @@ describe('the thaw queue', () => {
     expect(response.status).toBe(400)
   })
 
-  // Спостерігач має бачити чергу (FR-033) і не має її розгрібати.
+  // An observer must see the queue (FR-033) and must not work it.
   it('an observer can read the queue', async () => {
     const response = await call(
       { roles: ROLE.OBSERVER, wallets: [WATCHER] },
@@ -259,7 +259,7 @@ describe('the thaw queue', () => {
   })
 })
 
-// ─── Делегований шлях ────────────────────────────────────────────────────────
+// ─── Delegated path ──────────────────────────────────────────────────────────
 
 describe('thawing with the operational key', () => {
   it('signs itself and returns the signature', async () => {
@@ -275,7 +275,7 @@ describe('thawing with the operational key', () => {
       signature: SIGNATURE,
     })
     expect(operational.submit).toHaveBeenCalledTimes(1)
-    // Дзеркало отримує той самий статус, який поїхав у ланцюг.
+    // The mirror gets the same status that went to the chain.
     expect(holders.markThawed).toHaveBeenCalledWith(
       expect.objectContaining({
         wallet: HOLDER,
@@ -286,8 +286,8 @@ describe('thawing with the operational key', () => {
   })
 
   /**
-   * Повторне розморожування (після заморозки офіцером) статусу не несе:
-   * `thaw_holder` відхилив би `status: Some(..)` на заповненому записі.
+   * A repeat thaw (after an officer's freeze) carries no status:
+   * `thaw_holder` would reject `status: Some(..)` on a filled record.
    */
   it('a repeated thaw does not write the status a second time', async () => {
     const { server, holders } = app({ written: true })
@@ -314,8 +314,8 @@ describe('thawing with the operational key', () => {
   })
 
   /**
-   * Відмова програми — відповідь про стан ланцюга, а не збій API: людині треба
-   * показати саме її текст, а не «щось не вдалося».
+   * A program refusal is an answer about the state of the chain, not an API
+   * failure: the person must be shown its own text, not "something failed".
    */
   it('shows a program refusal in words', async () => {
     const submit = vi.fn(async () => {
@@ -355,7 +355,7 @@ describe('thawing with the operational key', () => {
   })
 })
 
-// ─── Шлях учасника складу ────────────────────────────────────────────────────
+// ─── Membership wallet path ──────────────────────────────────────────────────
 
 describe('thawing with a roster wallet', () => {
   const revoked: IssuerConfigView = { ...delegated, delegationMask: 0 }
@@ -365,9 +365,9 @@ describe('thawing with a roster wallet', () => {
   }
 
   it.each([
-    ['делегацію відкликано', revoked],
-    ['операційний ключ емітента — чужий', foreign],
-  ])('%s: віддає непідписану транзакцію', async (_name, config) => {
+    ['the delegation is revoked', revoked],
+    ["the issuer's operational key is someone else's", foreign],
+  ])('%s: returns an unsigned transaction', async (_name, config) => {
     const { server, holders, operational } = app({ config })
 
     const response = await server.request(thawPath(), { method: 'POST', headers })
@@ -382,7 +382,7 @@ describe('thawing with a roster wallet', () => {
       outcome: 'unsigned',
     })
     expect(operational.submit).not.toHaveBeenCalled()
-    // Нічого не підтверджено — отже, у черзі рахунок і лишається.
+    // Nothing is confirmed — so the account stays in the queue.
     expect(holders.markThawed).not.toHaveBeenCalled()
 
     const transaction = body.transaction as unknown as { base64: string; signers: string[] }
@@ -391,8 +391,8 @@ describe('thawing with a roster wallet', () => {
   })
 
   /**
-   * Названий підписант вимикає делегацію: емітент сказав «підпишу сам». Читання
-   * `IssuerConfig` при цьому зайве — і його не мусить бути.
+   * A named signer turns delegation off: the issuer said "I will sign
+   * myself". Reading `IssuerConfig` is then redundant — and must not happen.
    */
   it('a named signer disables delegation and does not read IssuerConfig', async () => {
     const { server, chain, operational } = app({
@@ -426,8 +426,9 @@ describe('thawing with a roster wallet', () => {
     expect(response.status).toBe(400)
   })
 
-  // Делегації немає, і жоден гаманець сесії не стоїть у складі: сказати треба
-  // обидві дороги — делегувати повноваження або ввійти адресою зі складу.
+  // No delegation, and none of the session's wallets is in the membership:
+  // both ways out must be named — delegate the power, or log in with a
+  // membership address.
   it('no delegation and no roster address — 401 with an explanation', async () => {
     const response = await post(
       { config: revoked, entries: [[OFFICER, ROLE.COMPLIANCE]] },
@@ -462,7 +463,7 @@ describe('thawing with a roster wallet', () => {
   })
 })
 
-// ─── Пачка ───────────────────────────────────────────────────────────────────
+// ─── Batch ───────────────────────────────────────────────────────────────────
 
 describe('a batch of thaws', () => {
   const batchPath = `/api/tokens/${MINT}/holders/thaw`
@@ -476,8 +477,8 @@ describe('a batch of thaws', () => {
       body: JSON.stringify({ wallets: [HOLDER, HOLDER_TWO] }),
     })
 
-    // Один у черзі, другого немає: пачка не падає цілком і не мовчить про того,
-    // хто не пройшов.
+    // One is in the queue, the other is not: the batch neither fails as a
+    // whole nor keeps quiet about the one that did not pass.
     expect(response.status).toBe(200)
     expect(await bodyOf(response)).toMatchObject({
       mode: 'delegated',
@@ -528,7 +529,7 @@ describe('a batch of thaws', () => {
   })
 })
 
-// ─── Реєстр статусів ─────────────────────────────────────────────────────────
+// ─── Status registry ─────────────────────────────────────────────────────────
 
 describe('updating the status register', () => {
   const statusPath = `/api/tokens/${MINT}/holders/${HOLDER}/status`
@@ -555,8 +556,9 @@ describe('updating the status register', () => {
   })
 
   /**
-   * `set_holder_status` акаунта не заводить (T016): без розморожування писати
-   * нікуди, і сказати це треба реченням, а не кодом `AccountNotInitialized`.
+   * `set_holder_status` does not create the account (T016): without a thaw
+   * there is nowhere to write, and that must be said as a sentence, not as
+   * the code `AccountNotInitialized`.
    */
   it('does not update an account with no on-chain status record', async () => {
     const { server, holders } = app({ written: false })
@@ -588,8 +590,8 @@ describe('updating the status register', () => {
     expect(holders.saveStatus).not.toHaveBeenCalled()
   })
 
-  // Заборона — найсуворіше, що вміє реєстр (FR-008a1): пропущене поле не має
-  // читатися як «зняти».
+  // A denial is the strictest thing the registry can do (FR-008a1): an
+  // omitted field must not read as "lift".
   it('requires an explicit denial, not a silent "no"', async () => {
     const response = await post({ written: true }, statusPath, {
       tier: 1,
@@ -600,9 +602,9 @@ describe('updating the status register', () => {
   })
 
   it.each([
-    ['юрисдикція не alpha-2', { ...status, jurisdiction: 'Ukraine' }],
-    ['рівень поза байтом', { ...status, tier: 300 }],
-    ['зайве поле', { ...status, source: 'provider' }],
+    ['jurisdiction not alpha-2', { ...status, jurisdiction: 'Ukraine' }],
+    ['tier beyond a byte', { ...status, tier: 300 }],
+    ['an extra field', { ...status, source: 'provider' }],
   ])('%s — 400', async (_name, body) => {
     expect((await post({ written: true }, statusPath, body)).status).toBe(400)
   })

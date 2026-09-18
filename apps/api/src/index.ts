@@ -1,5 +1,6 @@
-// Точка входу процесу api. Єдине місце, де читається оточення, відкривається
-// з'єднання з базою й займається порт — далі по коду ходять готові значення.
+// The api process entry point. The one place where the environment is read,
+// the database connection opened and the port taken — from here on the code
+// passes ready values around.
 import { createDatabase } from '@forge/db'
 import { createLogger } from '@forge/shared/log'
 import { serve } from '@hono/node-server'
@@ -18,10 +19,10 @@ function main() {
   const logger = createLogger({ level: config.logLevel, service: 'api' })
   const database = createDatabase(config.databaseUrl)
 
-  // `confirmed` — те, що читає лічильник токенів: `processed` віддав би номер
-  // із блоку, який ще може не дожити до фіналізації, тобто адресу mint,
-  // виведену з числа, якого не було. Це ж з'єднання відправляє делеговані
-  // транзакції, тож і підтвердження вони чекають за тим самим рівнем.
+  // `confirmed` is what the token counter reads at: `processed` would return a
+  // number from a block that may yet fail to reach finality, i.e. a mint
+  // address derived from a number that never was. The same connection sends
+  // the delegated transactions, so they await confirmation at the same level.
   const connection = new Connection(config.rpcUrl, {
     commitment: 'confirmed',
     fetch: fetchWithTimeout(),
@@ -42,8 +43,8 @@ function main() {
     logger.info({ port: info.port, origins: config.webOrigins }, 'api listening')
   })
 
-  // Railway надсилає SIGTERM при кожному розгортанні. Без цього процес добиває
-  // таймаут, а запити в польоті обриваються посеред відповіді.
+  // The host sends SIGTERM on every deploy. Without this the process runs out
+  // the timeout, and in-flight requests are cut off mid-response.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
       logger.info({ signal }, 'shutting down')
@@ -55,8 +56,9 @@ function main() {
 try {
   main()
 } catch (error) {
-  // Битий конфіг — це помилка розгортання, і вона має читатись без JSON-логера:
-  // її бачать у консолі Railway очима, а не в системі збору логів.
+  // A broken config is a deployment error, and it must be readable without the
+  // JSON logger: it is seen by eye in the hosting console, not in a log
+  // collection system.
   if (error instanceof ConfigError) {
     process.stderr.write(`${error.message}\n`)
     process.exit(1)

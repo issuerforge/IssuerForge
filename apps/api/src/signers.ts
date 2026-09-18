@@ -1,23 +1,24 @@
-// Вибір підписанта серед складу емітента.
+// Choosing a signer among the issuer's membership.
 //
-// Правило одне на всі ручки: **адреси приходять зі складу, а не з тіла
-// запиту**. Тіло може лише звузити вибір до одного з уже доведених — те саме,
-// що вміє `X-Issuer-Id` для орендаря (`session.ts`). Інакше «хто підписує»
-// стало б полем, яке заповнює клієнт.
+// One rule for every handler: **addresses come from the membership, not from
+// the request body**. The body can only narrow the choice to one of those
+// already proven — the same thing `X-Issuer-Id` does for the tenant
+// (`session.ts`). Otherwise "who signs" would become a field the client fills
+// in.
 //
-// Функція жила в `routes/tokens.ts` (T021) і переїхала сюди без змін, коли
-// другий маршрут (`routes/holders.ts`, T022) став обирати підписанта за тим
-// самим правилом: копія розійшлася б із оригіналом рівно там, де правило й
-// важливе.
+// The function lived in `routes/tokens.ts` (T021) and moved here unchanged
+// when a second route (`routes/holders.ts`, T022) started choosing a signer by
+// the same rule: a copy would have diverged from the original exactly where
+// the rule matters.
 import type { RosterEntry } from './directory.ts'
 import { invalidInput } from './errors.ts'
 
 /**
- * Один із кандидатів на підпис.
+ * One of the candidates for signing.
  *
- * Порожній перелік — не помилка вибору, тож рішення про код відмови ухвалює
- * викликач: «у складі немає атестатора» і «в цій сесії немає адміністратора» —
- * різні речі й різні коди.
+ * An empty list is not a selection error, so the refusal code is decided by
+ * the caller: "the membership has no attestor" and "this session has no admin"
+ * are different things and different codes.
  */
 export function chooseSigner(
   candidates: readonly RosterEntry[],

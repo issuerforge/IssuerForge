@@ -24,8 +24,8 @@ describe('folding roster rows into memberships', () => {
     expect(groupMemberships([])).toEqual([])
   })
 
-  // Офіцер, що зайшов соцвходом, а підписує зовнішнім гаманцем, має ті самі
-  // повноваження, що й з однією адресою (FR-034a).
+  // An officer who logged in with a social login and signs with an external
+  // wallet has the same powers as with a single address (FR-034a).
   it('merges the roles of several addresses of one person in one issuer', () => {
     const [membership] = groupMemberships([
       row({ wallet: EMBEDDED, roles: ROLE.OBSERVER }),
@@ -48,8 +48,9 @@ describe('folding roster rows into memberships', () => {
     )
   })
 
-  // Вік дзеркала — це вік найгіршого з того, що показує екран. Найновіший
-  // `synced_at` запевняв би, що склад свіжий, поруч із вчорашнім рядком.
+  // The age of the mirror is the age of the worst thing the screen shows. The
+  // newest `synced_at` would assure the membership is fresh next to
+  // yesterday's row.
   it('takes the oldest synced_at of the membership', () => {
     const [membership] = groupMemberships([
       row({ wallet: EMBEDDED, syncedAt: at('2026-08-21T10:00:00.000Z') }),

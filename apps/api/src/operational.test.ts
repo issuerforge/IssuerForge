@@ -15,7 +15,7 @@ const OTHER = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
 const SIGNATURE = '5'.repeat(88)
 
-/** План, який операційний ключ підписує сам. */
+/** A plan the operational key signs by itself. */
 const routine = () =>
   toPlan('thaw-holder', OPERATIONAL.publicKey, [
     SystemProgram.transfer({
@@ -25,16 +25,17 @@ const routine = () =>
     }),
   ])
 
-/** План, якому бракує чужого підпису, — тобто дія, що рухає чужі кошти. */
+/** A plan lacking someone else's signature — i.e. an action that moves someone else's funds. */
 const foreign = () =>
   toPlan('thaw-holder', OPERATIONAL.publicKey, [
     SystemProgram.transfer({ fromPubkey: OTHER, toPubkey: OPERATIONAL.publicKey, lamports: 1 }),
   ])
 
 /**
- * Заглушка з'єднання описана власними типами, а не типами `Connection`:
- * `confirmTransaction` віддає ще й `context` зі слотом, який тут ні на що не
- * впливає, і повторювати його в кожному тесті означало б шум замість наміру.
+ * The connection stub is described with its own types, not `Connection`'s:
+ * `confirmTransaction` also returns a `context` with a slot that affects
+ * nothing here, and repeating it in every test would mean noise instead of
+ * intent.
  */
 type Fakes = {
   send?: () => Promise<string>
@@ -79,16 +80,16 @@ describe('the operational key', () => {
 
     const transaction = sent[0]
     expect(transaction).toBeDefined()
-    // Підпис саме поставлений, а не залишений нульовим: непідписана транзакція
-    // серіалізується того ж розміру, тож перевіряти треба байти.
+    // The signature is actually put on, not left as zeros: an unsigned
+    // transaction serialises to the same size, so the bytes are what to check.
     expect(transaction?.signatures[0]?.some((byte) => byte !== 0)).toBe(true)
     expect(transaction?.message.recentBlockhash).toBe(BLOCKHASH)
   })
 
   /**
-   * Головна властивість цього файла: ключ платформи не підписує нічого, що
-   * потребує ще чийогось підпису (FR-035a, SC-012). Програма перевіряє це сама,
-   * але дія з коштами не має доходити до мережі навіть заради відмови.
+   * The main property of this file: the platform key signs nothing that needs
+   * anyone else's signature (FR-035a, SC-012). The program checks this itself,
+   * but an action with funds must not reach the network even to be refused.
    */
   it('refuses to sign a plan with a foreign signer', async () => {
     const { signer: operational, sent } = signer()
@@ -112,8 +113,8 @@ describe('the operational key', () => {
     expect(error.program?.name).toBe('powerNotDelegated')
   })
 
-  // Preflight може пропустити транзакцію, яка відмовиться в блоці: тоді номер
-  // приходить із підтвердження, а не з логів.
+  // Preflight may let through a transaction that fails in the block: then the
+  // number comes from the confirmation, not from the logs.
   it('parses a refusal that arrived from confirmation', async () => {
     const confirm = vi.fn(async () => ({
       value: { err: { InstructionError: [0, { Custom: 6037 }] } },

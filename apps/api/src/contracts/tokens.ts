@@ -1,15 +1,18 @@
-// Контракт двох ручок майстра: що приймає api й що він віддає.
+// The contract of the wizard's two handlers: what the api accepts and what it
+// returns.
 //
-// **Чому окремим модулем, а не в маршруті.** Схеми оголошувалися в
-// `routes/tokens.ts` (T021) із наміром, щоб консоль брала їх звідти, а не
-// писала другий опис того самого тіла. Намір був правильний, а місце — ні:
-// разом зі схемою консоль затягнула б у бандл `hono`, `drizzle` і `postgres`,
-// тобто пакети, яких у браузері не буває. Тут не імпортується нічого, крім
-// `zod`, моделі правил і примітивів, — і той самий файл читають обидві сторони.
+// **Why a separate module rather than the route.** The schemas were declared
+// in `routes/tokens.ts` (T021) with the intent that the console take them
+// from there rather than write a second description of the same body. The
+// intent was right, the place was not: along with the schema the console
+// would pull `hono`, `drizzle` and `postgres` into the bundle — packages that
+// never exist in a browser. Nothing is imported here except `zod`, the rule
+// model and the primitives — and both sides read the same file.
 //
-// **Межі значень нижче — дзеркало `create_token.rs`.** Програма перевіряє все
-// це сама й лишається авторитетом; тут перевірка стоїть, щоб помилка в майстрі
-// була реченням у формі, а не відмовою девнета через півхвилини.
+// **The value bounds below mirror `create_token.rs`.** The program checks all
+// of this itself and remains the authority; the check here exists so that a
+// mistake in the wizard is a sentence in the form, not a devnet refusal half a
+// minute later.
 import { TX_STEPS } from '@forge/chain/plan'
 import { transferVerdictSchema } from '@forge/policy/evaluate'
 import { jurisdictionSchema, policyRulesSchema, tierSchema } from '@forge/policy/model'
@@ -17,23 +20,23 @@ import { SCENARIO_NAMES, scenarioNameSchema } from '@forge/policy/scenarios'
 import { addressSchema, toU64, u64Schema, unixSecondsSchema } from '@forge/shared/primitives'
 import { z } from 'zod'
 
-// ─── Межі, узяті з програми ──────────────────────────────────────────────────
+// ─── Bounds taken from the program ───────────────────────────────────────────
 
-/** `MAX_NAME_LEN`, `MAX_SYMBOL_LEN`, `MAX_URI_LEN` з `create_token.rs`. */
+/** `MAX_NAME_LEN`, `MAX_SYMBOL_LEN`, `MAX_URI_LEN` from `create_token.rs`. */
 export const MAX_NAME_BYTES = 32
 export const MAX_SYMBOL_BYTES = 12
 export const MAX_URI_BYTES = 200
-/** `MAX_FEE_BPS`: сто відсотків у базисних пунктах. */
+/** `MAX_FEE_BPS`: one hundred percent in basis points. */
 export const MAX_FEE_BPS = 10_000
-/** Точність токена. Стеля — та сама, що `CHECK` у таблиці `tokens`. */
+/** Token decimals. The ceiling is the same as the `CHECK` on the `tokens` table. */
 export const MAX_DECIMALS = 9
 
 /**
- * Рядок, обмежений **байтами**, а не символами.
+ * A string bounded in **bytes**, not characters.
  *
- * Програма міряє `args.name.len()`, тобто довжину UTF-8. Перевірка по символах
- * пропустила б назву з кирилицею, яка вдвічі довша за дозволене, — і відмова
- * прийшла б із мережі після двох підписів.
+ * The program measures `args.name.len()`, i.e. the UTF-8 length. A check by
+ * characters would let through a non-Latin name twice as long as allowed —
+ * and the refusal would come from the network after two signatures.
  */
 const bounded = (maxBytes: number, label: string) =>
   z
@@ -45,7 +48,7 @@ const bounded = (maxBytes: number, label: string) =>
       `${label} must be at most ${maxBytes} bytes`,
     )
 
-/** `validate_currency` з `state/reserve.rs`: 3–8 великих латинських літер. */
+/** `validate_currency` from `state/reserve.rs`: 3–8 upper-case Latin letters. */
 const currencySchema = z
   .string()
   .regex(/^[A-Z]{3,8}$/, 'expected 3 to 8 uppercase letters, like USD or NGN')
@@ -53,22 +56,25 @@ const currencySchema = z
 // ─── POST /api/policy/simulate ───────────────────────────────────────────────
 
 /**
- * Тіло симуляції: чернетка політики й, за бажанням, звужений набір сценаріїв.
+ * The simulation body: a policy draft and, optionally, a narrowed set of
+ * scenarios.
  *
- * Сценарії названі іменами, а не описані контекстами: що таке «понад ліміт» за
- * цієї політики, вирішує каталог у `@forge/policy` (T021), і те саме число
- * бачать майстер і демо-сценарій. Клієнт, який складав би контексти сам, мав би
- * власну відповідь на це питання.
+ * Scenarios are named, not described as contexts: what "over the limit"
+ * means under this policy is decided by the catalogue in `@forge/policy`
+ * (T021), and the wizard and the demo scenario see the same number. A client
+ * assembling contexts itself would have its own answer to that question.
  */
 export const simulatePolicyBodySchema = z.strictObject({
   policy: policyRulesSchema,
   /**
-   * Стеля й заборона повторів — не педантизм, а межа роботи, яку запит замовляє.
+   * The ceiling and the ban on repeats are not pedantry but a bound on the
+   * work a request orders.
    *
-   * Перелік іменований і скінченний, тож більше за каталог попросити нема чого;
-   * без стелі та сама назва, повторена 50 000 разів, коштувала б секунди
-   * процесора й чотирьох мегабайтів відповіді на один запит (виміряно).
-   * Дублікат — помилка клієнта, а не спосіб замовити сценарій двічі.
+   * The list is named and finite, so there is nothing to ask for beyond the
+   * catalogue; without the ceiling the same name repeated 50 000 times would
+   * cost seconds of CPU and four megabytes of response per request
+   * (measured). A duplicate is a client error, not a way to order a scenario
+   * twice.
    */
   scenarios: z
     .array(scenarioNameSchema)
@@ -81,15 +87,16 @@ export const simulatePolicyBodySchema = z.strictObject({
 export type SimulatePolicyBody = z.infer<typeof simulatePolicyBodySchema>
 
 /**
- * Відповідь симуляції.
+ * The simulation response.
  *
- * `applicable: false` — не привід зникнути з переліку: «понад ліміт» при
- * політиці без лімітів лишається видимим рядком «ліміту немає — дозволено».
- * Чотири сценарії замість п'яти прочитались би як «усе гаразд» (рішення T021),
- * і консоль зобов'язана показати цей рядок окремо, а не сховати його.
+ * `applicable: false` is no reason to vanish from the list: "over the limit"
+ * under a policy without limits stays a visible line "no limit — allowed".
+ * Four scenarios instead of five would read as "all fine" (decision T021),
+ * and the console is obliged to show that line separately rather than hide
+ * it.
  */
 export const simulatePolicyResponseSchema = z.object({
-  /** Годинник **сервера**: за ним рахувалися строки в сценаріях. */
+  /** The **server's** clock: the expiries in the scenarios were computed by it. */
   now: unixSecondsSchema,
   scenarios: z.array(
     z.object({
@@ -106,19 +113,23 @@ export type SimulatePolicyResponse = z.infer<typeof simulatePolicyResponseSchema
 // ─── POST /api/tokens ────────────────────────────────────────────────────────
 
 /**
- * Тіло випуску.
+ * The issuance body.
  *
- * **Невідоме поле — помилка, а не сміття.** Схема строга: `attestedat` замість
- * `attestedAt` інакше просто зникло б, і атестація резерву отримала б час
- * запиту замість дати звіту аудитора — тобто мовчки інше значення там, де вся
- * задача продукту в тому, щоб чисел не підміняли.
+ * **An unknown field is an error, not noise.** The schema is strict:
+ * `attestedat` instead of `attestedAt` would otherwise simply vanish, and the
+ * reserve attestation would get the request time instead of the date of the
+ * auditor's report — i.e. silently a different value, where the whole point
+ * of the product is that numbers are not substituted.
  *
- * Чого тут немає навмисно:
- * - **номера токена** — його диктує `issuer_config.token_count`, а не клієнт;
- * - **`issuer_id`** — він береться з сесії й не перекривається параметром (FR-036);
- * - **`denied` у статусі засновника** — емітент не заводить власного засновника
- *   в чорний список у мить випуску, а поле, яке завжди `false`, було б місцем,
- *   де випуск можна зробити непрацездатним одним зайвим полем у JSON.
+ * What is deliberately absent here:
+ * - **the token number** — it is dictated by `issuer_config.token_count`,
+ *   not by the client;
+ * - **`issuer_id`** — it comes from the session and is not overridden by a
+ *   parameter (FR-036);
+ * - **`denied` in the founder's status** — an issuer does not blacklist its
+ *   own founder at the moment of issuance, and a field that is always `false`
+ *   would be a place where an issuance can be made inoperable by one stray
+ *   field in the JSON.
  */
 export const createTokenBodySchema = z
   .strictObject({
@@ -132,11 +143,12 @@ export const createTokenBodySchema = z
       amount: u64Schema,
       currency: currencySchema,
       /**
-       * Коли резерв підтверджений. За замовчуванням — час запиту.
+       * When the reserve was attested. Defaults to the request time.
        *
-       * Поле існує тому, що атестація буває зроблена раніше за випуск (звіт
-       * підписали вчора), а програма порівнює саме цей момент із дозволеним
-       * віком. Час із майбутнього вона відхиляє, і маршрут відхиляє його теж.
+       * The field exists because an attestation may have been made before the
+       * issuance (the report was signed yesterday), and the program compares
+       * exactly this moment against the allowed age. It rejects a time from
+       * the future, and so does the route.
        */
       attestedAt: unixSecondsSchema.optional(),
     }),
@@ -144,9 +156,9 @@ export const createTokenBodySchema = z
       credential: addressSchema,
       schema: addressSchema,
       /**
-       * Скільки атестація резерву лишається чинною. Стелі немає: строк
-       * призначає емітент зі своїм аудитором, і вигадана тут межа відкинула б
-       * дійсний випуск із причини, якої немає в жодній вимозі.
+       * How long a reserve attestation stays current. No ceiling: the period
+       * is set by the issuer with its auditor, and a bound invented here would
+       * reject a valid issuance for a reason found in no requirement.
        */
       maxAgeSeconds: z.number().int().positive(),
     }),
@@ -157,16 +169,16 @@ export const createTokenBodySchema = z
     founderStatus: z.strictObject({
       tier: tierSchema,
       jurisdiction: jurisdictionSchema,
-      /** Нуль — без строку, як і в самому `HolderStatus`. */
+      /** Zero — no expiry, as in `HolderStatus` itself. */
       expiresAt: unixSecondsSchema.default(0),
     }),
-    /** Потрібні, лише коли в складі кілька адміністраторів або атестаторів. */
+    /** Needed only when the membership has several admins or attestors. */
     founder: addressSchema.optional(),
     attestor: addressSchema.optional(),
   })
-  // Та сама нерівність, що в `ReserveCheck`: обіг нульовий, тож уся емісія
-  // мусить уміститись в атестований резерв (FR-022). Програма перевірить це
-  // ще раз і лишається авторитетом.
+  // The same inequality as in `ReserveCheck`: circulation is zero, so the
+  // whole issuance must fit into the attested reserve (FR-022). The program
+  // checks this again and remains the authority.
   .refine((body) => toU64(body.initialSupply) <= toU64(body.reserve.amount), {
     error: 'initial supply exceeds the attested reserve',
     path: ['initialSupply'],
@@ -175,13 +187,14 @@ export const createTokenBodySchema = z
 export type CreateTokenBody = z.infer<typeof createTokenBodySchema>
 
 /**
- * Непідписана транзакція в тому вигляді, у якому вона їде до браузера.
+ * An unsigned transaction in the shape it travels to the browser in.
  *
- * `signers` — адреси, чиїх підписів їй бракує, у порядку «платник, далі решта»
- * (T020). Консоль питає підписи саме в цьому порядку, а не вигадує свій.
- * `dependsOnPrevious` — заборона надіслати пачкою: `set_token_metadata` і
- * `initialize_extra_account_meta_list` читають `TokenConfig`, якого до
- * підтвердження `create_token` не існує.
+ * `signers` are the addresses whose signatures it lacks, in the order
+ * "payer, then the rest" (T020). The console asks for signatures in exactly
+ * that order rather than inventing its own. `dependsOnPrevious` forbids
+ * sending as a batch: `set_token_metadata` and
+ * `initialize_extra_account_meta_list` read a `TokenConfig` that does not
+ * exist until `create_token` is confirmed.
  */
 export const unsignedTransactionSchema = z.object({
   step: z.enum(TX_STEPS),
@@ -194,11 +207,13 @@ export const unsignedTransactionSchema = z.object({
 export type UnsignedTransactionView = z.infer<typeof unsignedTransactionSchema>
 
 /**
- * Відповідь випуску: три транзакції й адреси, відомі наперед.
+ * The issuance response: three transactions and the addresses known in
+ * advance.
  *
- * Адреси є в відповіді тому, що mint — PDA від номера токена, і консоль має
- * показати їх **до** підпису: людина, яка підписує створення токена, мусить
- * бачити його адресу, а не дізнаватись її з підтвердження.
+ * The addresses are in the response because the mint is a PDA of the token
+ * number, and the console must show them **before** signing: a person signing
+ * the creation of a token must see its address, not learn it from the
+ * confirmation.
  */
 export const createTokenResponseSchema = z.object({
   tokenIndex: z.number().int().nonnegative(),

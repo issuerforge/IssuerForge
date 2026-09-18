@@ -1,11 +1,12 @@
-// Hono-застосунок: маршрути консолі, SSE-стрічка, публічне читання.
-// Ключів емітента тут немає: ендпоінти, що змінюють ончейн-стан, віддають
-// непідписану транзакцію (docs/PLAN.md → «API-контракти»).
+// The Hono app: console routes, the SSE feed, public reads. There are no
+// issuer keys here: endpoints that change on-chain state return an unsigned
+// transaction (docs/PLAN.md → "API contracts").
 //
-// Застосунок збирається з переданих залежностей і нічого не створює сам: ані
-// з'єднання з базою, ані клієнта Privy, ані читання оточення. Завдяки цьому
-// тести піднімають той самий сервер, що й `index.ts`, без мережі й без бази —
-// підміняється рівно те, що ходить назовні.
+// The app is assembled from the dependencies passed in and creates nothing
+// itself: neither the database connection, nor the Privy client, nor the
+// environment read. Thanks to that, tests bring up the same server as
+// `index.ts`, with no network and no database — exactly what goes outside is
+// swapped.
 import { REQUEST_ID_HEADER, type Session } from '@forge/shared/api'
 import type { Logger } from '@forge/shared/log'
 import { Hono } from 'hono'
@@ -28,18 +29,18 @@ export interface ServerDeps extends SessionDeps {
   issuance: IssuanceStore
   holders: HolderStore
   /**
-   * Операційний ключ платформи. Єдина залежність сервера, яка вміє підписувати
-   * — і саме тому вона передається ззовні, як усе інше: тест піднімає ті самі
-   * маршрути, не маючи ключа взагалі.
+   * The platform's operational key. The only server dependency that can sign
+   * — and that is exactly why it is passed in from outside like everything
+   * else: a test brings up the same routes with no key at all.
    */
   operational: OperationalSigner
-  /** Підмінюється в тестах, щоб `requestId` у відповіді був передбачуваним. */
+  /** Swapped in tests so that the `requestId` in the response is predictable. */
   requestId?: () => string
-  /** Годинник. Підмінюється в тестах, щоб симуляція була відтворюваною. */
+  /** The clock. Swapped in tests so that the simulation is reproducible. */
   now?: () => Date
 }
 
-/** Найбільше тіло запиту, яке має сенс. Найбільше законне — випуск, ~2 КБ. */
+/** The largest request body that makes sense. The largest legitimate one is an issuance, ~2 KB. */
 export const MAX_BODY_BYTES = 32 * 1024
 
 export function createServer(deps: ServerDeps) {
@@ -50,9 +51,9 @@ export function createServer(deps: ServerDeps) {
   app.notFound(onNotFound)
 
   app.use('*', async (c, next) => {
-    // Ідентифікатор приймається від клієнта: консоль ставить його на запит і
-    // показує в повідомленні про помилку, і тоді рядок лога знаходиться за тим
-    // самим числом, яке бачила людина.
+    // The identifier is accepted from the client: the console puts it on the
+    // request and shows it in the error message, and then the log line is
+    // found by the same number the person saw.
     const requestId = c.req.header(REQUEST_ID_HEADER) ?? newRequestId()
     c.set('requestId', requestId)
     c.set('log', deps.logger.child({ requestId }))
@@ -60,9 +61,9 @@ export function createServer(deps: ServerDeps) {
     await next()
   })
 
-  // Походження перевіряється за точним збігом зі списком: `*` тут неможливий,
-  // бо консоль ходить із заголовком `Authorization`, а браузер не приймає
-  // подорожні облікові дані на відповідь із дозволом «будь-кому».
+  // The origin is checked by exact match against the list: `*` is impossible
+  // here, because the console sends an `Authorization` header, and the
+  // browser does not accept credentials on a response that allows "anyone".
   app.use(
     '/api/*',
     cors({
@@ -74,36 +75,38 @@ export function createServer(deps: ServerDeps) {
     }),
   )
 
-  // Стеля тіла стоїть одна на всі ручки, а не по копії в кожній: без неї
-  // двадцятимегабайтний JSON розбирається цілком і тільки потім відкидається
-  // схемою (виміряно). Найбільше законне тіло — випуск токена — важить близько
-  // двох кілобайтів, тож запас тут тридцятикратний із гаком.
+  // One body ceiling for all handlers rather than a copy in each: without it
+  // a twenty-megabyte JSON is parsed in full and only then rejected by the
+  // schema (measured). The largest legitimate body — a token issuance — weighs
+  // about two kilobytes, so the headroom here is thirtyfold and then some.
   app.use(
     '/api/*',
     bodyLimit({
       maxSize: MAX_BODY_BYTES,
       onError: () => {
-        // 413 у переліку кодів немає, і вигадувати його заради одного випадку
-        // означало б другий спосіб відповідати на «клієнт надіслав не те».
+        // 413 is not in the list of codes, and inventing it for one case would
+        // mean a second way of answering "the client sent the wrong thing".
         throw invalidInput('request body is too large', { limit: MAX_BODY_BYTES })
       },
     }),
   )
 
-  /** Проба живості для Railway. Без автентифікації і без звертань до бази. */
+  /** The liveness probe for the host. No authentication and no database access. */
   app.get('/health', (c) => c.json({ status: 'ok' as const }))
 
   app.use('/api/*', requireSession(deps))
 
   /**
-   * Те, що сервер вивів із токена входу. Консоль малює з цього перемикач
-   * орендарів і набір доступних екранів (T010), а не вигадує роль сама.
+   * What the server derived from the login token. The console draws the
+   * tenant switcher and the set of available screens from this (T010) rather
+   * than inventing the role itself.
    */
   app.get('/api/session', (c) => c.json(c.get('session') satisfies Session))
 
-  // Маршрути монтуються **після** `requireSession`: Hono добирає обробники в
-  // порядку реєстрації, тож ручка, додана нижче, все одно проходить через уже
-  // оголошений вхід. Стану «маршрут під /api без сесії» не існує.
+  // The routes are mounted **after** `requireSession`: Hono picks handlers in
+  // registration order, so a handler added below still goes through the login
+  // already declared. The state "a route under /api without a session" does
+  // not exist.
   const now = deps.now ?? (() => new Date())
   app.route('/api', createTokenRoutes({ ...deps, now }))
   app.route('/api', createHolderRoutes({ ...deps, now }))

@@ -1,44 +1,49 @@
-// Вхід у консоль: перевірка токена Privy і склад підтверджених гаманців (FR-034).
+// Console login: Privy token verification and the set of verified wallets
+// (FR-034).
 //
-// Два кроки, і вони різні за природою:
+// Two steps, and they differ in nature:
 //
-// 1. **Підпис токена перевіряється локально** — ES256 проти публічного ключа з
-//    оточення. Мережі тут немає взагалі, тож недоступність постачальника входу
-//    не робить кожен запит повільним, а прострочений токен відсікається дешево.
-// 2. **Адреси гаманців доводиться питати.** У токені Privy їх немає ніколи:
-//    claim'и — це `sub` (DID), `sid`, `iss`, `aud`, `iat`, `exp`. Роль же
-//    прив'язана до адреси, а не до облікового запису входу (FR-034a), тож без
-//    кроку DID → гаманці сесія не має чим шукати повноваження.
+// 1. **The token signature is verified locally** — ES256 against the public
+//    key from the environment. There is no network here at all, so an
+//    unavailable login provider does not make every request slow, and an
+//    expired token is cut off cheaply.
+// 2. **The wallet addresses have to be asked for.** A Privy token never has
+//    them: the claims are `sub` (DID), `sid`, `iss`, `aud`, `iat`, `exp`. A
+//    role, however, is bound to an address, not to the login account
+//    (FR-034a), so without the DID → wallets step the session has nothing to
+//    look up powers by.
 //
-// Клієнт не бере адресу з тіла запиту принципово: значення, яке надсилає
-// браузер, доводить лише те, що браузер уміє його надрукувати.
+// The client does not take the address from the request body as a matter of
+// principle: a value the browser sends proves only that the browser can print
+// it.
 import { addressSchema } from '@forge/shared/primitives'
 import { importSPKI, type JWTPayload, jwtVerify, type KeyObject } from 'jose'
 import { z } from 'zod'
 import { internal, unauthorized } from './errors.ts'
 
-/** Privy підписує токени доступу ES256 і тільки ним. */
+/** Privy signs access tokens with ES256 and nothing else. */
 const ALGORITHM = 'ES256'
 const ISSUER = 'privy.io'
 
 /**
- * Скільки склад гаманців живе в кеші.
+ * How long the set of wallets lives in the cache.
  *
- * Хвилина — це вікно, у якому відв'язаний у Privy гаманець ще вважається
- * підтвердженим. Воно свідоме: сам по собі гаманець нічого не дозволяє, бо
- * повноваження дає рядок у складі емітента, який читається з бази **на кожен
- * запит** і не кешується. Без кешу ж кожне звертання до консолі — це запит до
- * стороннього сервісу на шляху відповіді.
+ * A minute is the window in which a wallet unlinked in Privy still counts as
+ * verified. It is deliberate: a wallet by itself allows nothing, because
+ * powers are granted by a row in the issuer's membership, which is read from
+ * the database **on every request** and is not cached. Without the cache,
+ * every call to the console would be a request to a third-party service on
+ * the response path.
  */
 const CACHE_TTL_MS = 60_000
 
-/** Стеля кешу: після неї витісняється найдавніше вставлений запис. */
+/** The cache ceiling: past it the earliest inserted entry is evicted. */
 const CACHE_MAX_ENTRIES = 1_000
 
 export interface PrivyUser {
-  /** DID: `did:privy:...`. Ролей не несе — це ідентифікатор входу. */
+  /** DID: `did:privy:...`. Carries no roles — it is a login identifier. */
   userId: string
-  /** Підтверджені Solana-адреси акаунта: вбудований гаманець і зовнішні. */
+  /** The account's verified Solana addresses: the embedded wallet and external ones. */
   wallets: string[]
 }
 
@@ -49,19 +54,20 @@ export interface PrivyClient {
 export interface PrivyClientOptions {
   appId: string
   appSecret: string
-  /** PEM SPKI публічного ключа застосунку. */
+  /** PEM SPKI of the app's public key. */
   verificationKey: string
   apiUrl: string
-  /** Підмінюється в тестах — мережі в них немає. */
+  /** Swapped in tests — they have no network. */
   fetch?: typeof globalThis.fetch
   now?: () => number
   cacheTtlMs?: number
 }
 
 /**
- * Відповідь Privy читається `looseObject`: сервіс додає поля до пов'язаних
- * акаунтів між релізами, і сувора схема робила б будь-яке нове поле відмовою
- * входу. Ми забираємо рівно те, що читаємо, і не заперечуємо проти решти.
+ * The Privy response is read with `looseObject`: the service adds fields to
+ * linked accounts between releases, and a strict schema would turn any new
+ * field into a login refusal. We take exactly what we read and do not object
+ * to the rest.
  */
 const linkedAccountSchema = z.looseObject({
   type: z.string(),
@@ -85,9 +91,9 @@ export function createPrivyClient(options: PrivyClientOptions): PrivyClient {
   const ttl = options.cacheTtlMs ?? CACHE_TTL_MS
   const cache = new Map<string, CacheEntry>()
 
-  // Ключ імпортується один раз і лениво: розбір PEM коштує помітно більше за
-  // саму перевірку підпису, а падати на битому ключі краще при першому вході,
-  // ніж на старті процесу, який ще нічого не обслуговує.
+  // The key is imported once and lazily: parsing the PEM costs noticeably more
+  // than the signature check itself, and failing on a broken key is better at
+  // the first login than at the start of a process that serves nothing yet.
   let keyPromise: Promise<CryptoKey | KeyObject> | undefined
   const key = () => {
     keyPromise ??= importSPKI(options.verificationKey, ALGORITHM)
@@ -105,8 +111,8 @@ export function createPrivyClient(options: PrivyClientOptions): PrivyClient {
       })
       return payload
     } catch {
-      // Причина відмови назовні не йде: «прострочений» проти «чужий підпис» —
-      // це підказка тому, хто підбирає токени, і нікому більше.
+      // The reason for the refusal does not go out: "expired" versus "foreign
+      // signature" is a hint to whoever is guessing tokens, and to nobody else.
       throw unauthorized('invalid or expired access token')
     }
   }
@@ -125,8 +131,8 @@ export function createPrivyClient(options: PrivyClientOptions): PrivyClient {
       throw internal('login provider is unreachable', { cause: String(cause) })
     }
 
-    // Токен підписаний нашим застосунком, але користувача вже немає — це вхід,
-    // що не веде нікуди, а не збій сервера.
+    // The token is signed by our app, but the user no longer exists — a login
+    // that leads nowhere, not a server failure.
     if (response.status === 404) throw unauthorized('login account no longer exists')
     if (!response.ok) {
       throw internal('login provider returned an error', { status: response.status })
@@ -138,9 +144,9 @@ export function createPrivyClient(options: PrivyClientOptions): PrivyClient {
     const wallets = parsed.data.linked_accounts
       .filter((a) => a.type === 'wallet' && a.chain_type === 'solana')
       .map((a) => a.address)
-      // Адреса іншої мережі або порожній рядок тут не помилка постачальника —
-      // акаунт законно тримає гаманці кількох ланцюгів. Нас цікавлять ті, які
-      // взагалі можуть стояти у складі емітента.
+      // An address of another network or an empty string is not a provider
+      // error here — an account legitimately holds wallets of several chains.
+      // We care about those that can be in an issuer's membership at all.
       .filter((a): a is string => addressSchema.safeParse(a).success)
 
     return [...new Set(wallets)]

@@ -31,15 +31,16 @@ describe('the thaw decision', () => {
   })
 
   /**
-   * Повторне розморожування статусу не пише: `thaw_holder` відхилив би
-   * `status: Some(..)` на заповненому записі як `HolderStatusAlreadySet` (T016).
+   * A repeat thaw does not write the status: `thaw_holder` would reject
+   * `status: Some(..)` on a filled record as `HolderStatusAlreadySet` (T016).
    */
   it('a repeated thaw carries no status', () => {
     expect(decideThaw(row(), true)).toEqual({ kind: 'repeat' })
   })
 
-  // Рахунок, розморожений учора й заморожений офіцером сьогодні, у черзі не
-  // стоїть — а розморозити його треба. Ончейн-запис уже є, і цього досить.
+  // An account thawed yesterday and frozen by an officer today is not in the
+  // queue — yet it has to be thawed. The on-chain record already exists, and
+  // that is enough.
   it('a repeated thaw needs no queue row at all', () => {
     expect(decideThaw(undefined, true)).toEqual({ kind: 'repeat' })
   })
@@ -48,12 +49,13 @@ describe('the thaw decision', () => {
     expect(decideThaw(undefined, false)).toEqual({ kind: 'refuse', reason: 'not-queued' })
   })
 
-  // Рівень і юрисдикцію ставить зарахування в чергу, тож порожніми вони бувають
-  // лише в рядка, який завела не ця ручка. Присвоїти рівень наосліп не можна.
+  // The tier and the jurisdiction are set by joining the queue, so they are
+  // empty only in a row this handler did not create. A tier must not be
+  // assigned blindly.
   it.each([
-    ['без рівня', { tier: null }],
-    ['без юрисдикції', { jurisdiction: null }],
-  ])('%s — відмова, а не здогад', (_name, overrides) => {
+    ['no tier', { tier: null }],
+    ['no jurisdiction', { jurisdiction: null }],
+  ])('%s — a refusal, not a guess', (_name, overrides) => {
     expect(decideThaw(row(overrides), false)).toEqual({ kind: 'refuse', reason: 'no-status' })
   })
 
@@ -65,13 +67,13 @@ describe('the thaw decision', () => {
 })
 
 describe('expiry', () => {
-  // Нуль у програмі означає «без строку» (T016), тож клієнт, який прочитав
-  // ончейн-запис і надіслав його назад, не має завести рядок із 1970 роком.
+  // Zero in the program means "no expiry" (T016), so a client that read the
+  // on-chain record and sent it back must not create a row dated 1970.
   it.each([
-    ['нуль', 0],
+    ['zero', 0],
     ['null', null],
-    ['відсутнє', undefined],
-  ])('%s означає «без строку»', (_name, value) => {
+    ['absent', undefined],
+  ])('%s means "no expiry"', (_name, value) => {
     expect(toExpiryDate(value)).toBeNull()
   })
 

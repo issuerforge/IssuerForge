@@ -34,10 +34,10 @@ describe('the same issuance', () => {
   })
 
   it.each([
-    ['інший символ', { symbol: 'USDX' }],
-    ['інша назва', { name: 'Dollar Stable' }],
-    ['інша точність', { decimals: 6 }],
-  ])('%s — номер тримає чужий випуск', (_case, difference) => {
+    ['a different symbol', { symbol: 'USDX' }],
+    ['a different name', { name: 'Dollar Stable' }],
+    ['different decimals', { decimals: 6 }],
+  ])('%s — the number is held by another issuance', (_case, difference) => {
     const decision = decideReservation(row(difference), request())
 
     expect(decision.kind).toBe('taken')
@@ -76,7 +76,7 @@ describe('reservation lifetime', () => {
 
 describe('a confirmed token', () => {
   it.each(['live', 'paused'] as const)(
-    'стан %s не звільняє номер навіть протухлий і навіть під той самий випуск',
+    'state %s does not release the number even when stale and even for the same issuance',
     (state) => {
       const createdAt = new Date(NOW.getTime() - RESERVATION_TTL_MS - 60_000)
       const decision = decideReservation(row({ state, createdAt }), request())

@@ -1,12 +1,14 @@
-// Від адрес гаманців до членств у складі емітентів.
+// From wallet addresses to memberships in issuers.
 //
-// Це другий крок входу і єдиний, який справді дає повноваження: перший (Privy)
-// доводить лише, що адреси належать тому, хто прийшов. `role_assignments` —
-// дзеркало `IssuerConfig.members`, тож джерелом правди лишається ланцюг, а тут
-// відповідається питання «які екрани показувати», не «що дозволити з коштами».
+// This is the second step of login and the only one that really grants
+// powers: the first (Privy) proves only that the addresses belong to whoever
+// came. `role_assignments` is a mirror of `IssuerConfig.members`, so the
+// source of truth remains the chain, and what is answered here is "which
+// screens to show", not "what to allow with funds".
 //
-// Кешу тут немає навмисно: склад змінюється кворумом, і відкликана роль має
-// зникати з консолі в тому ж запиті, а не за хвилину.
+// There is deliberately no cache here: the membership is changed by quorum,
+// and a revoked role must vanish from the console in the same request, not a
+// minute later.
 import { type Database, roleAssignments } from '@forge/db'
 import type { Membership } from '@forge/shared/api'
 import { eq, inArray } from 'drizzle-orm'
@@ -14,18 +16,18 @@ import { eq, inArray } from 'drizzle-orm'
 export interface Directory {
   membershipsFor(wallets: readonly string[]): Promise<Membership[]>
   /**
-   * Склад одного емітента — по рядках, а не зведеною маскою.
+   * One issuer's membership — row by row, not as a merged mask.
    *
-   * Членство в сесії каже, **чи** має людина роль; тут видно, **яка адреса** її
-   * має. Різниця істотна рівно там, де адреса стає підписантом: `create_token`
-   * підписують засновник-адміністратор і атестатор, і об'єднана маска не вміє
-   * відповісти, котрий із двох гаманців акаунта входу стоїть у складі з роллю
-   * адміністратора.
+   * The membership in the session says **whether** a person has a role; here
+   * it is visible **which address** has it. The difference matters exactly
+   * where an address becomes a signer: `create_token` is signed by the
+   * founder-admin and the attestor, and a merged mask cannot say which of the
+   * login account's two wallets is in the membership with the admin role.
    */
   rosterFor(issuerId: string): Promise<RosterEntry[]>
 }
 
-/** Рядок складу: адреса, її ролі й слот, за яким її індексує кворум. */
+/** A membership row: the address, its roles and the slot the quorum indexes it by. */
 export interface RosterEntry {
   wallet: string
   roles: number
@@ -35,8 +37,8 @@ export interface RosterEntry {
 export function createDirectory(db: Database): Directory {
   return {
     async membershipsFor(wallets) {
-      // `inArray` з порожнім списком — це або SQL-помилка, або `false` залежно
-      // від версії драйвера. Запиту тут просто не існує.
+      // `inArray` with an empty list is either a SQL error or `false`, depending
+      // on the driver version. There simply is no query here.
       if (wallets.length === 0) return []
 
       const rows = await db
@@ -61,9 +63,9 @@ export function createDirectory(db: Database): Directory {
         })
         .from(roleAssignments)
         .where(eq(roleAssignments.issuerId, issuerId))
-        // Порядок — слотами складу: він же порядок бітів у бітмапі підписів
-        // (T025), тож перелік, показаний людині, збігається з тим, який рахує
-        // кворум.
+        // Ordered by membership slot: that is also the bit order in the
+        // signature bitmap (T025), so the list shown to a person matches the
+        // one the quorum counts.
         .orderBy(roleAssignments.memberIndex)
     },
   }
@@ -77,15 +79,16 @@ export interface MembershipRow {
 }
 
 /**
- * Рядки складу зводяться в членства по емітентах.
+ * Membership rows are folded into memberships per issuer.
  *
- * Маска — об'єднання ролей усіх адрес людини в цього емітента: офіцер, що
- * зайшов соцвходом і підписує зовнішнім гаманцем, має ті самі повноваження, що
- * й з однією адресою (FR-034a).
+ * The mask is the union of the roles of all the person's addresses at this
+ * issuer: an officer who logged in with a social login and signs with an
+ * external wallet has the same powers as with a single address (FR-034a).
  *
- * `syncedAt` береться **найстаріший** із рядків, а не найновіший: вік дзеркала
- * — це вік найгіршого з того, що екран показує. Оптимістичне число тут
- * означало б консоль, яка запевняє, що склад свіжий, показуючи вчорашній рядок.
+ * `syncedAt` is the **oldest** of the rows, not the newest: the age of the
+ * mirror is the age of the worst thing the screen shows. An optimistic number
+ * here would mean a console that assures the membership is fresh while
+ * showing yesterday's row.
  */
 export function groupMemberships(rows: readonly MembershipRow[]): Membership[] {
   const byIssuer = new Map<string, { roles: number; wallets: string[]; syncedAt: Date }>()
@@ -113,8 +116,9 @@ export function groupMemberships(rows: readonly MembershipRow[]): Membership[] {
         wallets: m.wallets.toSorted(),
         syncedAt: m.syncedAt.toISOString(),
       }))
-      // Порядок стабільний: консоль малює перемикач орендарів списком, і той не
-      // має переставлятись між запитами через порядок рядків у Postgres.
+      // The order is stable: the console draws the tenant switcher as a list,
+      // and it must not reshuffle between requests because of the row order in
+      // Postgres.
       .toSorted((a, b) => a.issuerId.localeCompare(b.issuerId))
   )
 }

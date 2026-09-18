@@ -1,40 +1,43 @@
-// Резервація номера токена: рядок `tokens` у стані `pending`.
+// Reserving a token number: a `tokens` row in the `pending` state.
 //
-// **Навіщо взагалі замок.** `create_token` виводить seeds mint із
-// `issuer_config.token_count` у самій програмі (T018), тож номер не є вибором
-// клієнта: два випуски, зібрані між читанням лічильника й підтвердженням першої
-// транзакції, отримають **одну й ту саму** адресу mint. Ланцюг це переживе —
-// другий побачить зайнятий акаунт, а не створить токен-близнюк, — але людина
-// побачить `ConstraintSeeds` замість речення. Замок робить відмову видимою там,
-// де вона зрозуміла: у майстрі, до підпису.
+// **Why a lock at all.** `create_token` derives the mint seeds from
+// `issuer_config.token_count` inside the program (T018), so the number is not
+// the client's choice: two issuances assembled between reading the counter
+// and confirming the first transaction get **the same** mint address. The
+// chain survives that — the second sees an occupied account rather than
+// creating a twin token — but the person sees `ConstraintSeeds` instead of a
+// sentence. The lock makes the refusal visible where it is understandable: in
+// the wizard, before signing.
 //
-// **Замком є сам первинний ключ `tokens.mint`.** Окремої таблиці оренди немає:
-// стан `pending` заведений у схемі рівно під це («транзакція випуску зібрана,
-// підтвердження з мережі ще немає»), а адреса mint виводиться з номера, тож
-// конфлікт по ключу — це і є конфлікт по номеру.
+// **The lock is the primary key `tokens.mint` itself.** There is no separate
+// lease table: the `pending` state exists in the schema exactly for this
+// ("the issuance transaction is assembled, no confirmation from the network
+// yet"), and the mint address is derived from the number, so a key conflict
+// is a number conflict.
 //
-// **Що вважається тим самим випуском.** Назва, символ і точність: токен
-// впізнається людиною за ними, і два випуски, що збіглися в усіх трьох, — це
-// повторна спроба того самого, а не другий токен. Тоді маршрут віддає той самий
-// mint зі свіжим blockhash (ідемпотентність, рішення T021), і майстер переживає
-// протухлий blockhash без втрати номера. Межа названа вголос: два різні випуски
-// з однаковою назвою, зібрані одночасно, вважатимуться одним — і на ланцюгу
-// виграє той, хто підпише першим. Ціна помилки тут — «спробуйте ще раз», бо
-// нічого, крім номера, резервація не роздає.
+// **What counts as the same issuance.** Name, symbol and decimals: a person
+// recognises a token by them, and two issuances that match on all three are a
+// retry of the same thing, not a second token. Then the route returns the
+// same mint with a fresh blockhash (idempotency, decision T021), and the
+// wizard survives a stale blockhash without losing the number. The boundary
+// is stated out loud: two different issuances with the same name, assembled
+// at the same time, will count as one — and on chain whoever signs first
+// wins. The cost of a mistake here is "try again", because the reservation
+// hands out nothing but the number.
 import { type Database, tokens } from '@forge/db'
 import { and, eq } from 'drizzle-orm'
 
 /**
- * Скільки живе незакрита резервація.
+ * How long an unclosed reservation lives.
  *
- * Порахована з того, що її тримає: blockhash живий ~60–90 секунд, тож майстер,
- * який підписав і відправив, укладається в хвилину. Все, що довше, — це
- * покинута вкладка, і тримати за нею номер означає, що емітент не може
- * випустити токен, доки хтось не прибере рядок руками.
+ * Computed from what holds it: a blockhash lives ~60–90 seconds, so a wizard
+ * that signed and sent fits within a minute. Anything longer is an abandoned
+ * tab, and holding the number for it means the issuer cannot issue a token
+ * until someone removes the row by hand.
  */
 export const RESERVATION_TTL_MS = 5 * 60_000
 
-/** Те, чим випуск упізнається при повторі. */
+/** What an issuance is recognised by on a retry. */
 export interface IssuanceIdentity {
   readonly symbol: string
   readonly name: string
@@ -44,16 +47,16 @@ export interface IssuanceIdentity {
 export interface ReservationRequest extends IssuanceIdentity {
   readonly issuerId: string
   readonly mint: string
-  /** Час запиту. Приходить ззовні, щоб час не був прихованим входом. */
+  /** The request time. Comes from outside so that time is not a hidden input. */
   readonly at: Date
 }
 
 /**
- * Чим скінчилась спроба зайняти номер.
+ * How the attempt to take the number ended.
  *
- * `reserved` — номер наш: або взятий уперше, або той самий випуск повторили, або
- * покинута резервація протухла. `taken` — номер тримає **інший** випуск, і
- * маршрут мусить показати, який саме.
+ * `reserved` — the number is ours: taken for the first time, or the same
+ * issuance retried, or an abandoned reservation went stale. `taken` — the
+ * number is held by **another** issuance, and the route must show which one.
  */
 export type Reservation =
   | { readonly kind: 'reserved' }
@@ -63,19 +66,20 @@ export interface IssuanceStore {
   reserve(request: ReservationRequest): Promise<Reservation>
 }
 
-/** Рядок `tokens` у тій частині, яку читає рішення про резервацію. */
+/** The `tokens` row, in the part the reservation decision reads. */
 export interface ReservationRow extends IssuanceIdentity {
   readonly state: 'pending' | 'live' | 'paused'
   readonly createdAt: Date
 }
 
 /**
- * Що робити з уже зайнятим номером. Винесено з запитів до бази навмисно: це
- * єдине місце задачі, де є розгалуження, і воно перевіряється без Postgres.
+ * What to do with an already taken number. Deliberately lifted out of the
+ * database queries: it is the only place in the task with branching, and it
+ * is tested without Postgres.
  *
- * `takeover` — рядок наш, але його треба переписати під цей випуск: або це
- * повтор того самого (протухлий blockhash), або покинута резервація, чий строк
- * вийшов.
+ * `takeover` — the row is ours, but it has to be rewritten for this issuance:
+ * either a retry of the same one (stale blockhash), or an abandoned
+ * reservation whose time ran out.
  */
 export type ReservationDecision =
   | { readonly kind: 'takeover' }
@@ -91,9 +95,10 @@ export function decideReservation(
   const holder = { symbol: existing.symbol, name: existing.name, decimals: existing.decimals }
   const since = existing.createdAt
 
-  // Підтверджений токен резервацію не звільняє ніколи: якщо на цьому номері
-  // вже стоїть `live`, то або дзеркало відстало від лічильника, або номер
-  // порахований не з того емітента — і те, й те гірше за відмову.
+  // A confirmed token never releases the reservation: if this number already
+  // holds a `live` one, then either the mirror lagged behind the counter or
+  // the number was computed from the wrong issuer — and both are worse than a
+  // refusal.
   if (existing.state !== 'pending') return { kind: 'taken', holder, since }
 
   const stale = request.at.getTime() - since.getTime() > RESERVATION_TTL_MS
@@ -103,18 +108,19 @@ export function decideReservation(
 }
 
 /**
- * Скільки разів пробувати, коли рядок зник між вставкою й читанням.
+ * How many times to try when the row vanished between insert and read.
  *
- * Двох досить: це гонка з видаленням, а не стан. Цикл без стелі був би місцем,
- * де запит висить, поки хтось у сусідній вкладці прибирає рядки.
+ * Two is enough: it is a race with a deletion, not a state. A loop without a
+ * ceiling would be a place where a request hangs while someone in the next
+ * tab removes rows.
  */
 const RESERVE_ATTEMPTS = 2
 
 export function createIssuanceStore(db: Database): IssuanceStore {
-  /** `undefined` — рядок зник між вставкою й читанням; рішення немає, треба ще раз. */
+  /** `undefined` — the row vanished between insert and read; no decision, try again. */
   async function attempt(request: ReservationRequest): Promise<Reservation | undefined> {
-    // Вставка з `onConflictDoNothing` — одна операція замість «прочитати й
-    // вставити»: два одночасні запити не можуть обидва побачити порожньо.
+    // An insert with `onConflictDoNothing` is one operation instead of "read
+    // then insert": two concurrent requests cannot both see empty.
     const inserted = await db
       .insert(tokens)
       .values({
@@ -134,8 +140,9 @@ export function createIssuanceStore(db: Database): IssuanceStore {
     const decision = decideReservation(existing, request)
     if (decision.kind === 'taken') return decision
 
-    // Перехоплення протухлої резервації переписує саме те, чим випуск
-    // упізнається: далі рядок описує той випуск, під який віддані транзакції.
+    // Taking over a stale reservation rewrites exactly what the issuance is
+    // recognised by: from here on the row describes the issuance the
+    // transactions were handed out for.
     await db
       .update(tokens)
       .set({ symbol: request.symbol, name: request.name, decimals: request.decimals })
@@ -152,8 +159,8 @@ export function createIssuanceStore(db: Database): IssuanceStore {
       }
 
       const last = await attempt(request)
-      // Рядок зник і вдруге: це не «номер зайнятий», а стан, якого маршрут не
-      // може пояснити, тож він і не вдає, що може.
+      // The row vanished a second time: that is not "the number is taken" but
+      // a state the route cannot explain, so it does not pretend it can.
       if (last === undefined)
         throw new Error(`issuance reservation kept vanishing: ${request.mint}`)
       return last

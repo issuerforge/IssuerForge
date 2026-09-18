@@ -1,12 +1,13 @@
-// Сесія: перевірений токен входу → `issuer_id` і маска ролей.
+// The session: a verified login token → `issuer_id` and the role mask.
 //
-// Головне правило ізоляції орендарів (FR-036) формулюється тут одним реченням:
-// **`issuerId` береться зі складу емітента, а не з запиту.** Заголовок
-// `X-Issuer-Id` існує лише для випадку, коли членств кілька, і вміє тільки
-// звузити вибір до одного з уже доведених — надати доступ він не може ніяк.
+// The main rule of tenant isolation (FR-036) is stated here in one sentence:
+// **`issuerId` is taken from the issuer's membership, not from the request.**
+// The `X-Issuer-Id` header exists only for the case of several memberships,
+// and can only narrow the choice to one of those already proven — it cannot
+// grant access in any way.
 //
-// Такий випадок не екзотика: аудитор або юрист законно обслуговує двох
-// емітентів однією адресою, і саме двома орендарями вимірюється SC-011.
+// That case is not exotic: an auditor or a lawyer legitimately serves two
+// issuers with one address, and SC-011 is measured with exactly two tenants.
 import { ISSUER_HEADER, type Membership, type Session } from '@forge/shared/api'
 import { createMiddleware } from 'hono/factory'
 import type { Directory } from './directory.ts'
@@ -19,7 +20,7 @@ export interface SessionDeps {
   directory: Directory
 }
 
-/** `Authorization: Bearer <token>`. Схема нечутлива до регістру за RFC 7235. */
+/** `Authorization: Bearer <token>`. The scheme is case-insensitive per RFC 7235. */
 export function bearerToken(header: string | undefined): string | undefined {
   if (header === undefined) return undefined
   const match = /^Bearer[ ]+(?<token>[^\s]+)$/i.exec(header)
@@ -27,11 +28,12 @@ export function bearerToken(header: string | undefined): string | undefined {
 }
 
 /**
- * Обирає орендаря серед доведених членств.
+ * Picks the tenant among the proven memberships.
  *
- * Заголовок, що називає емітента поза цим переліком, — це `INVALID_INPUT`, а не
- * `NOT_FOUND`: існує той емітент чи ні, з боку цієї сесії питання не має сенсу,
- * і відповідь на нього була б відповіддю про чужі дані.
+ * A header naming an issuer outside this list is `INVALID_INPUT`, not
+ * `NOT_FOUND`: whether that issuer exists is a question that makes no sense
+ * from this session's side, and an answer to it would be an answer about
+ * someone else's data.
  */
 export function selectMembership(
   memberships: readonly Membership[],
@@ -59,8 +61,9 @@ export function selectMembership(
 }
 
 /**
- * Middleware входу. Ставить `session` у контекст або не пускає далі взагалі —
- * стану «маршрут виконався без сесії» не існує.
+ * The login middleware. Puts `session` into the context or does not let
+ * execution through at all — the state "the route ran without a session" does
+ * not exist.
  */
 export function requireSession(deps: SessionDeps) {
   return createMiddleware<AppEnv>(async (c, next) => {
@@ -83,8 +86,9 @@ export function requireSession(deps: SessionDeps) {
     }
 
     c.set('session', session)
-    // `issuerId` у логері запиту — не прикраса: журнал комплаєнс-продукту
-    // мусить давати відповідь «що робили в цього емітента» без join'ів.
+    // `issuerId` in the request logger is not decoration: the journal of a
+    // compliance product must answer "what was done at this issuer" with no
+    // joins.
     c.set('log', c.get('log').child({ issuerId: session.issuerId, userId: session.userId }))
 
     await next()

@@ -31,39 +31,40 @@ const membership = (issuerId: string, roles = ROLE.ADMIN): Membership => ({
 })
 
 /**
- * Заглушки того, що ходить назовні. Ці тести перевіряють вхід і формат помилок,
- * тож мережі й резервації тут не існує: маршрути випуску мають власний файл.
+ * Stubs of everything that goes outside. These tests check login and the
+ * error format, so there is no network and no reservation here: the issuance
+ * routes have their own file.
  */
 const unreachable = (what: string) => () => {
-  throw new Error(`${what} у цих тестах не потрібне`)
+  throw new Error(`${what} is not needed in these tests`)
 }
 
 const chain: ChainReader = {
   program: undefined as unknown as ChainReader['program'],
   tokenCount: async () => undefined,
-  issuerConfig: unreachable('читання IssuerConfig'),
-  holderStatusWritten: unreachable('читання HolderStatus'),
-  latestBlockhash: unreachable('мережа'),
+  issuerConfig: unreachable('reading IssuerConfig'),
+  holderStatusWritten: unreachable('reading HolderStatus'),
+  latestBlockhash: unreachable('the network'),
 }
 
 const holders: HolderStore = {
-  ownsToken: unreachable('база холдерів'),
-  list: unreachable('база холдерів'),
-  get: unreachable('база холдерів'),
-  enqueue: unreachable('база холдерів'),
-  markThawed: unreachable('база холдерів'),
-  saveStatus: unreachable('база холдерів'),
+  ownsToken: unreachable('the holder database'),
+  list: unreachable('the holder database'),
+  get: unreachable('the holder database'),
+  enqueue: unreachable('the holder database'),
+  markThawed: unreachable('the holder database'),
+  saveStatus: unreachable('the holder database'),
 }
 
-/** Ключ тут не потрібен: жоден із цих тестів не доходить до підпису. */
+/** No key is needed here: none of these tests gets as far as signing. */
 const operational: OperationalSigner = {
   publicKey: undefined as unknown as OperationalSigner['publicKey'],
-  submit: unreachable('підпис операційним ключем'),
+  submit: unreachable('signing with the operational key'),
 }
 
 const issuance: IssuanceStore = {
   reserve: async () => {
-    throw new Error('резервація в цих тестах не потрібна')
+    throw new Error('a reservation is not needed in these tests')
   },
 }
 
@@ -125,9 +126,9 @@ describe('login', () => {
   })
 
   it.each([
-    ['Basic abc', 'чужа схема'],
-    ['Bearer', 'схема без токена'],
-    ['token-without-scheme', 'токен без схеми'],
+    ['Basic abc', 'a foreign scheme'],
+    ['Bearer', 'a scheme without a token'],
+    ['token-without-scheme', 'a token without a scheme'],
   ])('%s (%s) — 401', async (header) => {
     const response = await app([membership(ALPHA)]).request('/api/session', {
       headers: { authorization: header },
@@ -205,11 +206,11 @@ describe('session', () => {
     const session = sessionSchema.parse(await response.json())
     expect(session.issuerId).toBe(BETA)
     expect(session.roles).toBe(ROLE.OBSERVER)
-    // Перемикач орендарів у консолі малюється з цього переліку.
+    // The tenant switcher in the console is drawn from this list.
     expect(session.memberships.map((m) => m.issuerId)).toEqual([ALPHA, BETA])
   })
 
-  // Заголовок звужує вибір серед уже доведених членств і не надає доступу.
+  // The header narrows the choice among memberships already proven and grants no access.
   it('a header naming a foreign issuer does not get in', async () => {
     const response = await app([membership(ALPHA)]).request(
       '/api/session',
@@ -218,11 +219,11 @@ describe('session', () => {
 
     expect(response.status).toBe(400)
     const error = (await bodyOf(response)).error as { code: string }
-    // NOT_FOUND сказав би, існує той емітент чи ні, — це відповідь про чужі дані.
+    // NOT_FOUND would say whether that issuer exists — an answer about someone else's data.
     expect(error.code).toBe('INVALID_INPUT')
   })
 
-  // FR-036: жоден параметр запиту не перекриває issuer_id сесії.
+  // FR-036: no request parameter overrides the session's issuer_id.
   it('a query parameter does not change the tenant', async () => {
     const response = await app([membership(ALPHA)]).request(
       `/api/session?issuerId=${BETA}&issuer_id=${BETA}`,
@@ -265,7 +266,7 @@ describe('errors', () => {
 
     expect(response.status).toBe(500)
     const body = await bodyOf(response)
-    // Текст драйвера містить рядок з'єднання з паролем.
+    // The driver's text contains the connection string with the password.
     expect(JSON.stringify(body)).not.toContain('hunter2')
     const error = body.error as { code: string; message: string; details: { requestId: string } }
     expect(error.code).toBe('INTERNAL')
@@ -296,7 +297,7 @@ describe('CORS', () => {
       headers: { origin: 'https://console.example', ...authorized().headers },
     })
 
-    // `*` неможливий: браузер не приймає його на відповідь із credentials.
+    // `*` is impossible: the browser does not accept it on a response with credentials.
     expect(response.headers.get('access-control-allow-origin')).toBe('https://console.example')
     expect(response.headers.get('access-control-allow-credentials')).toBe('true')
   })

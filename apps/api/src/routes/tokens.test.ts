@@ -44,7 +44,7 @@ type Fakes = {
   reservation?: Reservation
   reserve?: IssuanceStore['reserve']
   now?: Date
-  /** Підміна окремих методів, коли тест рахує виклики. */
+  /** Overrides individual methods when a test counts calls. */
   chain?: Partial<ChainReader>
   directory?: Partial<Directory>
 }
@@ -65,14 +65,14 @@ function app(fakes: Fakes = {}) {
   }
 
   const absent = (what: string) => () => {
-    throw new Error(`${what} на шляху випуску не читається`)
+    throw new Error(`${what} is not read on the issuance path`)
   }
 
   const chain: ChainReader = {
-    // Провайдер без гаманця: збірка інструкцій за IDL у мережу не ходить.
+    // A provider without a wallet: assembling instructions from the IDL does not go to the network.
     program: createForgeProgram(new Connection('http://127.0.0.1:8899')),
     tokenCount: async () => ('tokenCount' in fakes ? fakes.tokenCount : TOKEN_INDEX),
-    issuerConfig: absent('IssuerConfig цілком'),
+    issuerConfig: absent('the whole IssuerConfig'),
     holderStatusWritten: absent('HolderStatus'),
     latestBlockhash: async () => BLOCKHASH,
     ...fakes.chain,
@@ -82,18 +82,18 @@ function app(fakes: Fakes = {}) {
     reserve: fakes.reserve ?? (async () => fakes.reservation ?? { kind: 'reserved' }),
   }
 
-  // Онбординг холдерів має власний файл тестів; сюди він потрапляє лише тому,
-  // що сервер збирається цілком.
+  // Holder onboarding has its own test file; it appears here only because the
+  // server is assembled as a whole.
   const holders = new Proxy({} as HolderStore, {
     get: (_, key) => () => {
-      throw new Error(`холдери на шляху випуску не потрібні (${String(key)})`)
+      throw new Error(`holders are not needed on the issuance path (${String(key)})`)
     },
   })
 
   const operational: OperationalSigner = {
     publicKey: new PublicKey(ADMIN),
     submit: async () => {
-      throw new Error('випуск підписує гаманець, а не операційний ключ')
+      throw new Error('an issuance is signed by the wallet, not the operational key')
     },
   }
 
@@ -138,7 +138,7 @@ const errorOf = async (response: Response) =>
     details?: Record<string, unknown>
   }
 
-// ─── Тіло випуску ────────────────────────────────────────────────────────────
+// ─── Issuance body ───────────────────────────────────────────────────────────
 
 const issuanceBody = (overrides: Record<string, unknown> = {}) => ({
   name: 'Naira Stable',
@@ -247,7 +247,7 @@ describe('request bounds', () => {
   it.each([
     ['/api/policy/simulate', { policy: OPEN_POLICY, junk: 'x' }],
     ['/api/tokens', issuanceBody({ attestedat: 1 })],
-  ])('%s: невідоме поле відхиляється, а не мовчки зникає', async (path, json) => {
+  ])('%s: an unknown field is rejected rather than silently dropped', async (path, json) => {
     const response = await post(path, json)
 
     expect(response.status).toBe(400)
@@ -286,7 +286,7 @@ describe('POST /api/tokens — assembly', () => {
     ])
     expect(transactions.map((t) => t.dependsOnPrevious)).toEqual([false, true, true])
     expect(transactions[0]?.signers).toEqual([ADMIN, ATTESTOR])
-    // Бюджет T018 виміряний, а не оцінений: 1180 із 1232.
+    // The T018 budget is measured, not estimated: 1180 of 1232.
     expect(transactions[0]?.bytes).toBe(1180)
     for (const transaction of transactions) {
       expect(transaction.bytes).toBeLessThanOrEqual(1232)
@@ -327,8 +327,9 @@ describe('non-functional', () => {
     })
 
     expect(response.status).toBe(200)
-    // Збірка інструкцій за IDL у мережу не ходить: якби ходила, ці числа були б
-    // більші, а тести взагалі не проходили б без ноди.
+    // Assembling instructions from the IDL does not go to the network: if it
+    // did, these numbers would be larger, and the tests would not pass without
+    // a node at all.
     expect(tokenCount).toHaveBeenCalledTimes(1)
     expect(latestBlockhash).toHaveBeenCalledTimes(1)
   })
@@ -340,7 +341,7 @@ describe('non-functional', () => {
     for (const { base64 } of transactions) {
       const signatures = fromBase64(base64).signatures
       expect(signatures.length).toBeGreaterThan(0)
-      // Порожній підпис — 64 нулі. Ключів у API немає, і це видно в байтах.
+      // An empty signature is 64 zeros. The API has no keys, and that is visible in the bytes.
       for (const signature of signatures) {
         expect(signature.every((byte) => byte === 0)).toBe(true)
       }
@@ -366,8 +367,9 @@ describe('non-functional', () => {
     expect(response.status).toBe(400)
     expect(rosterFor).not.toHaveBeenCalled()
     expect(tokenCount).not.toHaveBeenCalled()
-    // Перелік членств у деталях — це власні членства сесії, і чужого ID серед
-    // них немає: відповідь не підтверджує навіть існування названого емітента.
+    // The membership list in the details is the session's own memberships, and
+    // the foreign ID is not among them: the response does not even confirm
+    // that the named issuer exists.
     expect(JSON.stringify(await bodyOf(response))).not.toContain(OTHER_ISSUER)
   })
 })
@@ -475,23 +477,23 @@ describe('POST /api/tokens — number reservation', () => {
 
 describe('POST /api/tokens — value bounds', () => {
   it.each([
-    ['назва довша за 32 байти', { name: 'x'.repeat(33) }],
-    ['символ довший за 12 байтів', { symbol: 'x'.repeat(13) }],
-    ['посилання довше за 200 байтів', { uri: `https://e.example/${'x'.repeat(200)}` }],
-    ['точність понад 9', { decimals: 10 }],
-    ['комісія понад 100%', { fee: { treasury: TREASURY, bps: 10_001 } }],
-    ['валюта не з великих літер', { reserve: { amount: '1', currency: 'ngn' } }],
-    ['валюта коротша за три літери', { reserve: { amount: '1', currency: 'NG' } }],
-    ['сума не рядком', { initialSupply: 1000 }],
+    ['a name longer than 32 bytes', { name: 'x'.repeat(33) }],
+    ['a symbol longer than 12 bytes', { symbol: 'x'.repeat(13) }],
+    ['a uri longer than 200 bytes', { uri: `https://e.example/${'x'.repeat(200)}` }],
+    ['decimals above 9', { decimals: 10 }],
+    ['a fee above 100%', { fee: { treasury: TREASURY, bps: 10_001 } }],
+    ['a currency not in upper case', { reserve: { amount: '1', currency: 'ngn' } }],
+    ['a currency shorter than three letters', { reserve: { amount: '1', currency: 'NG' } }],
+    ['an amount not as a string', { initialSupply: 1000 }],
     [
-      'емісія понад атестований резерв',
+      'an issuance above the attested reserve',
       { initialSupply: '2', reserve: { amount: '1', currency: 'NGN' } },
     ],
     [
-      'строк чинності атестації нульовий',
+      'a zero attestation validity period',
       { attestation: { credential: CREDENTIAL, schema: SCHEMA, maxAgeSeconds: 0 } },
     ],
-    ['чужа адреса скарбниці', { fee: { treasury: 'not-an-address', bps: 0 } }],
+    ['a malformed treasury address', { fee: { treasury: 'not-an-address', bps: 0 } }],
   ])('%s — 400', async (_case, override) => {
     const response = await post('/api/tokens', issuanceBody(override))
 
@@ -507,8 +509,8 @@ describe('POST /api/tokens — value bounds', () => {
   })
 
   it('the name is counted in bytes, not characters', async () => {
-    // 17 кириличних літер — 34 байти UTF-8 при 17 символах.
-    const parsed = createTokenBodySchema.safeParse(issuanceBody({ name: 'абвгдеєжзиійклмно' }))
+    // 17 Greek letters are 34 bytes of UTF-8 at 17 characters.
+    const parsed = createTokenBodySchema.safeParse(issuanceBody({ name: 'αβγδεζηθικλμνξοπρ' }))
 
     expect(parsed.success).toBe(false)
   })

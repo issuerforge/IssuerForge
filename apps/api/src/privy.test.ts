@@ -92,19 +92,19 @@ describe('token verification', () => {
   })
 
   it.each([
-    ['чужий підпис', async () => token({}, { key: foreignKey })],
-    ['чужий emitent токена', async () => token({}, { issuer: 'evil.example' })],
-    ['токен іншого застосунку', async () => token({}, { audience: 'another-app' })],
-    ['прострочений токен', async () => token({}, { expires: '-1h' })],
-    ['не токен узагалі', async () => 'not-a-jwt'],
-  ])('відхиляє %s', async (_name, make) => {
+    ['a foreign signature', async () => token({}, { key: foreignKey })],
+    ['a foreign token issuer', async () => token({}, { issuer: 'evil.example' })],
+    ['a token of another app', async () => token({}, { audience: 'another-app' })],
+    ['an expired token', async () => token({}, { expires: '-1h' })],
+    ['not a token at all', async () => 'not-a-jwt'],
+  ])('rejects %s', async (_name, make) => {
     const fetchImpl = vi.fn(async () => userResponse(solanaWallets))
     const error = await problem(
       client(fetchImpl as unknown as typeof fetch).authenticate(await make()),
     )
 
     expect(error.code).toBe('UNAUTHORIZED')
-    // До постачальника входу справа не дійшла: підпис перевіряється локально.
+    // It never got as far as the login provider: the signature is checked locally.
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
@@ -113,7 +113,7 @@ describe('token verification', () => {
       client(vi.fn() as unknown as typeof fetch).authenticate(await token({}, { expires: '-1h' })),
     )
 
-    // «Прострочений» проти «чужий підпис» — підказка тому, хто підбирає токени.
+    // "Expired" versus "foreign signature" is a hint to whoever is guessing tokens.
     expect(error.message).toBe('invalid or expired access token')
   })
 })
@@ -141,7 +141,7 @@ describe('wallet set', () => {
     const fetchImpl = vi.fn(async () => userResponse([{ type: 'email', address: 'a@b.c' }]))
     const user = await client(fetchImpl as unknown as typeof fetch).authenticate(await token())
 
-    // Це не помилка входу: людина ввійшла, просто складом емітента не є.
+    // Not a login error: the person is logged in, they are just not in any issuer's membership.
     expect(user.wallets).toEqual([])
   })
 
@@ -172,13 +172,13 @@ describe('wallet set', () => {
     expect(error.code).toBe('UNAUTHORIZED')
   })
 
-  it.each([500, 502, 429])('%d від Privy — це збій, а не відмова входу', async (status) => {
+  it.each([500, 502, 429])('%d from Privy is a failure, not a login refusal', async (status) => {
     const fetchImpl = vi.fn(async () => new Response('', { status }))
     const error = await problem(
       client(fetchImpl as unknown as typeof fetch).authenticate(await token()),
     )
 
-    // Інакше збій постачальника виглядав би для консолі як «вас вигнали».
+    // Otherwise a provider failure would look to the console like "you were kicked out".
     expect(error.code).toBe('INTERNAL')
   })
 
