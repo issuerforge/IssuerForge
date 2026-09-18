@@ -5,14 +5,16 @@ import { IDL, type IssuerForge } from './idl/issuer-forge.ts'
 export type ForgeProgram = Program<IssuerForge>
 
 /**
- * Клієнт програми: читання акаунтів і збірка інструкцій за IDL.
+ * The program client: reading accounts and assembling instructions from the
+ * IDL.
  *
- * Провайдер тут — рівно `{ connection }`, без гаманця, і це навмисно. Пакет не
- * тримає ключа й не вміє підписувати: транзакції з нього виходять
- * непідписаними (T020), а підпис ставить гаманець у браузері або кворум
- * емітента. `AnchorProvider` із гаманцем зробив би `program.methods.…rpc()`
- * доступним звідусіль, тобто дав би операційному ключу платформи шлях
- * підписати дію з коштами — те, чого програма не має дозволяти (FR-035a).
+ * The provider here is exactly `{ connection }`, with no wallet, and that is
+ * deliberate. The package holds no key and cannot sign: transactions leave it
+ * unsigned (T020), and the signature is put on by the wallet in the browser or
+ * by the issuer's quorum. An `AnchorProvider` with a wallet would make
+ * `program.methods.…rpc()` available everywhere, i.e. give the platform's
+ * operational key a path to sign an action with funds — the thing the program
+ * must not allow (FR-035a).
  */
 export function createForgeProgram(connection: Connection): ForgeProgram {
   const provider: Provider = { connection }
@@ -20,10 +22,10 @@ export function createForgeProgram(connection: Connection): ForgeProgram {
 }
 
 /**
- * Типи акаунтів прямо з IDL — джерело те саме, що й у програми.
+ * Account types straight from the IDL — the same source the program has.
  *
- * Тут поки лише `IssuerConfig`: в IDL потрапляють тільки ті акаунти, які згадує
- * хоч одна інструкція, а `TokenConfig` з'явиться з `create_token` (T018).
+ * Only `IssuerConfig` for now: the IDL includes only the accounts at least one
+ * instruction mentions, and `TokenConfig` arrives with `create_token` (T018).
  */
 export type ForgeAccounts = IdlAccounts<IssuerForge>
 export type IssuerConfigAccount = ForgeAccounts['issuerConfig']

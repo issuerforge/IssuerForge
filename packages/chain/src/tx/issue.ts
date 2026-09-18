@@ -1,20 +1,23 @@
-// Випуск токена — три транзакції, а не одна (FR-001, борг T018).
+// Token issuance — three transactions, not one (FR-001, debt T018).
 //
-// **Чому три.** `create_token` важить ~1180 із 1232 байтів: 384 байти політики,
-// 13 акаунтів, два підписи. Ані рядки метаданих, ані перелік акаунтів хука туди
-// не влізають, тож обидва йдуть окремо. Обидва вікна безпечні, але з різних
-// причин, і різницю варто знати: без метаданих токен просто без назви, а без
-// переліку акаунтів токен-програма **не може** резолвити хук — переказ не
-// проходить узагалі.
+// **Why three.** `create_token` weighs ~1180 of 1232 bytes: 384 bytes of
+// policy, 13 accounts, two signatures. Neither the metadata strings nor the
+// hook's account list fit in there, so both go separately. Both windows are
+// safe, but for different reasons, and the difference is worth knowing:
+// without metadata the token is merely nameless, while without the account
+// list the token program **cannot** resolve the hook — a transfer does not go
+// through at all.
 //
-// **Адреси всіх трьох відомі до першої з них**: mint є PDA (`["mint", issuer_id,
-// index]`), тож зібрати можна одразу все. Відправляти — по черзі: другій і
-// третій потрібен `TokenConfig`, якого до підтвердження першої не існує.
+// **The addresses of all three are known before the first one**: the mint is
+// a PDA (`["mint", issuer_id, index]`), so everything can be assembled at
+// once. Sending is sequential: the second and the third need a `TokenConfig`,
+// which does not exist until the first is confirmed.
 //
-// **Номер токена приходить аргументом, а не читається тут.** `IssuerConfig`
-// читає той, у кого вже є Connection (маршрут API), а білдер лишається чистим.
-// Наслідок гонки чесний: якщо номер за цей час зайняв інший випуск, транзакція
-// впаде на вже існуючому акаунті — видимою відмовою, а не токеном-близнюком.
+// **The token number comes as an argument and is not read here.**
+// `IssuerConfig` is read by whoever already has a Connection (the API route),
+// and the builder stays pure. The consequence of the race is honest: if
+// another issuance took the number in the meantime, the transaction fails on
+// an already existing account — a visible refusal, not a twin token.
 import { BN } from '@coral-xyz/anchor'
 import { encodeRules } from '@forge/policy/layout'
 import type { PolicyRules } from '@forge/policy/model'
@@ -37,17 +40,17 @@ import {
 import type { ForgeProgram } from '../program.ts'
 import { type TxPlan, toPlan } from './plan.ts'
 
-/** Номер першої версії політики. Її пише `create_token`; `set_policy` — з другої. */
+/** The number of the first policy version. `create_token` writes it; `set_policy` starts from the second. */
 export const FIRST_POLICY_VERSION = 1
 
-/** Індекс першої атестації резерву. Її створює `create_token`. */
+/** The index of the first reserve attestation. `create_token` creates it. */
 export const FIRST_ATTESTATION_INDEX = 0n
 
 /**
- * Статус холдера у формі, яку приймає програма.
+ * A holder status in the shape the program accepts.
  *
- * `expiresAt` нуль означає «без строку», а не «протерміновано» — та сама
- * домовленість, що в `HolderStatus` і в оцінювачі правил.
+ * `expiresAt` of zero means "no expiry", not "expired" — the same convention
+ * as in `HolderStatus` and in the rule evaluator.
  */
 export type HolderStatusInput = {
   readonly tier: number
@@ -59,8 +62,9 @@ export type HolderStatusInput = {
 export type CreateTokenArgs = {
   readonly issuerId: PublicKey
   /**
-   * `IssuerConfig.token_count` **до** випуску — номер, який займе цей токен.
-   * Він же seed адреси mint, тож адреса відома до підписання.
+   * `IssuerConfig.token_count` **before** issuance — the number this token
+   * will take. It is also the seed of the mint address, so the address is
+   * known before signing.
    */
   readonly tokenIndex: number
   readonly founder: PublicKey
@@ -71,7 +75,7 @@ export type CreateTokenArgs = {
   readonly treasury: PublicKey
   readonly feeBps: number
   readonly attestationMaxAge: bigint
-  /** Валюта резерву, вона ж валюта токена: 3–8 великих літер. */
+  /** The reserve currency, which is also the token's currency: 3–8 upper-case letters. */
   readonly reserveCurrency: string
   readonly policy: PolicyRules
   readonly initialSupply: bigint
@@ -81,9 +85,9 @@ export type CreateTokenArgs = {
 }
 
 /**
- * Валюта в тій формі, у якій її тримає акаунт: рівно вісім байтів, добиті
- * нулями. Довжину перевіряє програма, але зібрати неправильний масив тут — це
- * відмова на девнеті замість помилки в тесті.
+ * The currency in the shape the account holds it: exactly eight bytes,
+ * zero-padded. The program checks the length, but assembling a wrong array
+ * here would be a refusal on devnet instead of a failure in a test.
  */
 function currencyBytes(currency: string): number[] {
   const bytes = new TextEncoder().encode(currency)
@@ -96,10 +100,10 @@ function currencyBytes(currency: string): number[] {
 /**
  * `bigint` → `BN`.
  *
- * Межа пакета навмисно тримає `bigint`: це рідний тип мови для u64, і саме він
- * приходить із `@forge/shared`. Anchor 0.32.1 усередині кодує через `BN`, тож
- * перетворення живе тут — рівно в одному місці, і `BN` не витікає в типи, які
- * читає консоль.
+ * The package boundary deliberately keeps `bigint`: it is the language's
+ * native type for u64, and it is what arrives from `@forge/shared`. Anchor
+ * 0.32.1 encodes through `BN` internally, so the conversion lives here — in
+ * exactly one place — and `BN` does not leak into the types the console reads.
  */
 const bn = (value: bigint): BN => new BN(value.toString())
 
@@ -119,8 +123,9 @@ const toStatusInput = (status: HolderStatusInput) => ({
 })
 
 /**
- * Адреси, які виводяться з випуску. Потрібні й білдерам, і консолі: майстер
- * показує адресу токена до підписання, бо вона вже відома.
+ * The addresses derived from an issuance. Needed by the builders and by the
+ * console alike: the wizard shows the token address before signing, because
+ * it is already known.
  */
 export function issuanceAddresses(issuerId: PublicKey, tokenIndex: number) {
   const mint = mintPda(issuerId, tokenIndex)
@@ -135,11 +140,11 @@ export function issuanceAddresses(issuerId: PublicKey, tokenIndex: number) {
 }
 
 /**
- * Транзакція 1: mint із розширеннями, конфігурація, політика версії 1,
- * атестація резерву #0 і початкова емісія.
+ * Transaction 1: the mint with its extensions, the configuration, policy
+ * version 1, reserve attestation #0 and the initial issuance.
  *
- * Підписів два — засновник (він же платник) і атестатор. Кворуму немає: розбір
- * причини — у `SCRATCHPAD.md`, блок T018.
+ * Two signatures — the founder (who is also the payer) and the attestor. No
+ * quorum: the reasoning is in `SCRATCHPAD.md`, block T018.
  */
 export async function buildCreateToken(
   program: ForgeProgram,
@@ -159,8 +164,9 @@ export async function buildCreateToken(
       feeBps: args.feeBps,
       attestationMaxAge: bn(args.attestationMaxAge),
       reserveCurrency: currencyBytes(args.reserveCurrency),
-      // Політика їде байтами, а не структурою: канонічне кодування — єдина
-      // форма, у якій вона існує в акаунті, і саме її хешує програма.
+      // The policy travels as bytes, not as a structure: the canonical encoding
+      // is the only form in which it exists in the account, and it is what the
+      // program hashes.
       rules: Buffer.from(encodeRules(args.policy)),
       initialSupply: bn(args.initialSupply),
       reserveAmount: bn(args.reserveAmount),
@@ -183,9 +189,10 @@ export async function buildCreateToken(
       ),
       holderStatus: holderStatusPda(mint, args.founder),
       velocityCounter: velocityCounterPda(mint, args.founder),
-      // Токен-програма передається явно, хоч програма й приймає інтерфейс:
-      // mint із розширеннями буває тільки в Token-2022, і помилка тут дала б
-      // токен без жодного розширення, який виглядав би працюючим.
+      // The token program is passed explicitly even though the program accepts
+      // the interface: a mint with extensions exists only in Token-2022, and a
+      // mistake here would yield a token with no extension at all that would
+      // look like it works.
       tokenProgram: TOKEN_2022_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
     })
@@ -198,14 +205,14 @@ export type SetTokenMetadataArgs = {
   readonly issuerId: PublicKey
   readonly mint: PublicKey
   readonly payer: PublicKey
-  /** Адміністратор складу емітента. Платником бути не зобов'язаний. */
+  /** An admin of the issuer's membership. Not required to be the payer. */
   readonly authority: PublicKey
   readonly name: string
   readonly symbol: string
   readonly uri: string
 }
 
-/** Транзакція 2: назва, символ і посилання в самому mint. */
+/** Transaction 2: name, symbol and URI in the mint itself. */
 export async function buildSetTokenMetadata(
   program: ForgeProgram,
   args: SetTokenMetadataArgs,
@@ -226,11 +233,13 @@ export async function buildSetTokenMetadata(
 }
 
 /**
- * Транзакція 3: перелік акаунтів, які токен-програма підкладатиме хуку.
+ * Transaction 3: the list of accounts the token program will hand to the
+ * hook.
  *
- * Без неї переказів немає взагалі — резолюція акаунтів хука падає на боці
- * токен-програми. Тому вона мусить пройти до першого переказу, і майстер не має
- * права показати токен готовим, доки її немає.
+ * Without it there are no transfers at all — the resolution of the hook's
+ * accounts fails on the token program's side. So it must go through before
+ * the first transfer, and the wizard has no right to show the token as ready
+ * until it is there.
  */
 export async function buildInitializeExtraAccountMetaList(
   program: ForgeProgram,
@@ -256,11 +265,12 @@ export type IssuanceArgs = CreateTokenArgs & {
 }
 
 /**
- * Увесь випуск одним викликом: три плани в порядку відправки.
+ * The whole issuance in one call: three plans in sending order.
  *
- * Порядок несе сам результат, а не домовленість між викликачами: другий і
- * третій план мають `dependsOnPrevious`, тож майстер не може відправити їх
- * пачкою й отримати відмову «акаунта немає».
+ * The order is carried by the result itself, not by an agreement between
+ * callers: the second and the third plan have `dependsOnPrevious`, so the
+ * wizard cannot send them as a batch and get an "account does not exist"
+ * refusal.
  */
 export async function buildTokenIssuance(
   program: ForgeProgram,

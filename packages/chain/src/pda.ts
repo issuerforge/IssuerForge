@@ -4,19 +4,19 @@ import { PublicKey } from '@solana/web3.js'
 import { IDL } from './idl/issuer-forge.ts'
 
 /**
- * Адреса програми. Єдине джерело — вендорований IDL: він приходить із тієї самої
- * збірки, що й `declare_id!`, тож розійтися з програмою не може. Поки це
- * заглушка `ForgePo1icy1111…`; справжня адреса з'явиться перегенерацією IDL
- * після першого деплою, а не правкою константи.
+ * The program address. The only source is the vendored IDL: it comes from the
+ * same build as `declare_id!`, so it cannot diverge from the program. For now
+ * it is the placeholder `ForgePo1icy1111…`; the real address arrives by
+ * regenerating the IDL after the first deploy, not by editing a constant.
  */
 export const PROGRAM_ID = new PublicKey(IDL.address)
 
 const utf8 = new TextEncoder()
 
 /**
- * Мітки seeds. Мусять збігатися з `programs/issuer-forge/src/constants.rs` —
- * там сьогодні є тільки `issuer` і `token`, решта приходить зі своїми
- * інструкціями (`docs/PLAN.md` → «Модель даних»).
+ * Seed labels. Must match `programs/issuer-forge/src/constants.rs` — today
+ * only `issuer` and `token` exist there, the rest arrive with their
+ * instructions (`docs/PLAN.md` → "Data model").
  */
 export const SEED = {
   issuer: utf8.encode('issuer'),
@@ -31,13 +31,14 @@ export const SEED = {
 } as const
 
 /**
- * Числовий seed — **little-endian**, шириною рівно того типу, яким поле
- * оголошене в Rust.
+ * A numeric seed is **little-endian**, exactly as wide as the type the field
+ * is declared with in Rust.
  *
- * Це не стиль: `to_le_bytes()` — те, що дає Anchor у `seeds = [...]`, і
- * розбіжність тут не ламає ані збірку, ані типи. Вона просто виводить іншу
- * адресу, і виявиться це відмовою `ConstraintSeeds` на девнеті. Тести
- * `pda.test.ts` пінять саме байти, а не тільки адресу.
+ * This is not style: `to_le_bytes()` is what Anchor gets in `seeds = [...]`,
+ * and a divergence here breaks neither the build nor the types. It simply
+ * derives a different address, and that shows up as a `ConstraintSeeds`
+ * refusal on devnet. The tests in `pda.test.ts` pin the bytes themselves, not
+ * just the address.
  */
 export function u32Seed(value: number): Uint8Array {
   if (!Number.isInteger(value) || value < 0 || value > 0xff_ff_ff_ff) {
@@ -48,7 +49,7 @@ export function u32Seed(value: number): Uint8Array {
   return bytes
 }
 
-/** Те саме для `u64`. Лічильники й nonce не влазять у double, тож `bigint`. */
+/** The same for `u64`. Counters and nonces do not fit in a double, hence `bigint`. */
 export function u64Seed(value: bigint): Uint8Array {
   if (value < 0n || value > U64_MAX) {
     throw new RangeError(`seed does not fit in u64: ${value}`)
@@ -65,24 +66,25 @@ function derive(seeds: Uint8Array[], programId: PublicKey): PublicKey {
 /**
  * `IssuerConfig` — `["issuer", issuer_id]`.
  *
- * `issuer_id` не є гаманцем засновника й нічого не підписує: інакше цей гаманець
- * лишався б несучою конструкцією назавжди, навіть виключений кворумом за
- * компрометацією (`constants.rs`).
+ * `issuer_id` is not the founder's wallet and signs nothing: otherwise that
+ * wallet would remain a load-bearing part forever, even after the quorum
+ * removed it for being compromised (`constants.rs`).
  */
 export function issuerConfigPda(issuerId: PublicKey, programId = PROGRAM_ID): PublicKey {
   return derive([SEED.issuer, issuerId.toBytes()], programId)
 }
 
 /**
- * Сам токен — `["mint", issuer_id, index]`, індекс `u32`.
+ * The token itself — `["mint", issuer_id, index]`, index `u32`.
  *
- * Mint є PDA, а не клієнтським ключем: третій підпис у транзакції випуску не
- * вміщається в її 1232 байти (`SCRATCHPAD.md`, блок T018). Для клієнта це
- * вигідніше за компроміс — адреса токена відома до підписання, а перелік
- * токенів емітента будується перебором номерів від нуля, без індексатора.
+ * The mint is a PDA, not a client key: a third signature in the issuance
+ * transaction does not fit into its 1232 bytes (`SCRATCHPAD.md`, block T018).
+ * For the client this is better than a compromise — the token address is
+ * known before signing, and the list of an issuer's tokens is built by walking
+ * the numbers from zero, with no indexer.
  *
- * `index` — `IssuerConfig.token_count` **до** випуску, тобто номер, який
- * інструкція займе.
+ * `index` is `IssuerConfig.token_count` **before** issuance, i.e. the number
+ * the instruction will take.
  */
 export function mintPda(issuerId: PublicKey, index: number, programId = PROGRAM_ID): PublicKey {
   return derive([SEED.mint, issuerId.toBytes(), u32Seed(index)], programId)
@@ -94,11 +96,11 @@ export function tokenConfigPda(mint: PublicKey, programId = PROGRAM_ID): PublicK
 }
 
 /**
- * `PolicyConfig` — `["policy", mint, version]`, версія `u32`.
+ * `PolicyConfig` — `["policy", mint, version]`, version `u32`.
  *
- * Версія в seeds — це і є незмінність історії (FR-010): нова політика не
- * перезаписує акаунт, вона створює наступний, а хук читає рівно ту версію, на
- * яку налаштований mint.
+ * The version in the seeds is the immutability of history (FR-010): a new
+ * policy does not overwrite the account, it creates the next one, and the hook
+ * reads exactly the version the mint is configured with.
  */
 export function policyConfigPda(
   mint: PublicKey,
@@ -111,8 +113,9 @@ export function policyConfigPda(
 /**
  * `HolderStatus` — `["holder", mint, wallet]`.
  *
- * `wallet` — власник токен-акаунта, а не сам токен-акаунт: хук дістає його
- * зрізом даних (offset 32) і мусить прийти до тієї самої адреси, що й клієнт.
+ * `wallet` is the owner of the token account, not the token account itself:
+ * the hook reads it as a slice of the account data (offset 32) and must arrive
+ * at the same address as the client.
  */
 export function holderStatusPda(
   mint: PublicKey,
@@ -122,7 +125,7 @@ export function holderStatusPda(
   return derive([SEED.holder, mint.toBytes(), wallet.toBytes()], programId)
 }
 
-/** `VelocityCounter` — `["velocity", mint, wallet]`. Той самий `wallet`. */
+/** `VelocityCounter` — `["velocity", mint, wallet]`. The same `wallet`. */
 export function velocityCounterPda(
   mint: PublicKey,
   wallet: PublicKey,
@@ -141,10 +144,11 @@ export function actionProposalPda(
 }
 
 /**
- * `ReserveAttestation` — `["reserve", mint, index]`, індекс `u64`.
+ * `ReserveAttestation` — `["reserve", mint, index]`, index `u64`.
  *
- * Індекс, а не час: акаунт append-only, і саме послідовний номер робить
- * «попередню атестацію» адресованою, а не знайденою перебором.
+ * An index, not a time: the account is append-only, and it is the sequential
+ * number that makes "the previous attestation" addressable rather than found
+ * by search.
  */
 export function reserveAttestationPda(
   mint: PublicKey,
@@ -157,9 +161,9 @@ export function reserveAttestationPda(
 /**
  * `RedemptionEscrow` — `["redemption", mint, request_id]`.
  *
- * `request_id` — 32 байти, згенеровані клієнтом, а не лічильник: дві заявки,
- * подані одночасно, не мають конкурувати за наступний номер. Та сама причина,
- * що й у `issuer_id`.
+ * `request_id` is 32 client-generated bytes, not a counter: two requests
+ * submitted at the same time must not compete for the next number. The same
+ * reason as for `issuer_id`.
  */
 export function redemptionEscrowPda(
   mint: PublicKey,
@@ -170,11 +174,13 @@ export function redemptionEscrowPda(
 }
 
 /**
- * `ExtraAccountMetaList` — `["extra-account-metas", mint]` під програмою хука.
+ * `ExtraAccountMetaList` — `["extra-account-metas", mint]` under the hook
+ * program.
  *
- * Виводимо не самі: seeds задає `spl-tlv-account-resolution`, і повторювати їх
- * тут означало б тримати копію чужої константи. Токен-програма шукає акаунт за
- * своєю формулою — розбіжність із нею робить переказ неможливим взагалі.
+ * Not derived by hand: the seeds are set by `spl-tlv-account-resolution`, and
+ * repeating them here would mean keeping a copy of someone else's constant.
+ * The token program looks the account up by its own formula — a divergence
+ * from it makes a transfer impossible altogether.
  */
 export function extraAccountMetaListPda(mint: PublicKey, programId = PROGRAM_ID): PublicKey {
   return getExtraAccountMetaAddress(mint, programId)

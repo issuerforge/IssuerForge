@@ -1,7 +1,7 @@
 import { defineConfig } from 'drizzle-kit'
 
-// `generate` працює без бази — з'єднання потрібне тільки `migrate`, тож
-// відсутній `DATABASE_URL` не має ламати генерацію міграції.
+// `generate` works without a database — only `migrate` needs a connection, so
+// a missing `DATABASE_URL` must not break migration generation.
 export default defineConfig({
   dialect: 'postgresql',
   schema: './src/schema.ts',

@@ -1,15 +1,16 @@
-// Base58 у тій самій реалізації, якою користується решта ланцюга.
+// Base58 in the same implementation the rest of the chain code uses.
 //
-// Кодек живе тут, а не в `apps/api`, з двох причин. Перша: base58 у Solana — це
-// не «якийсь base58», а конкретний алфавіт, і другий його примірник у репозиторії
-// колись розійшовся б із першим. Друга: `@coral-xyz/anchor` уже несе цю
-// реалізацію транзитивно, тож окрема залежність купила б лише зайвий рядок у
-// локфайлі.
+// The codec lives here rather than in `apps/api` for two reasons. First:
+// base58 on Solana is not "some base58" but a specific alphabet, and a second
+// copy of it in the repository would one day diverge from the first. Second:
+// `@coral-xyz/anchor` already carries this implementation transitively, so a
+// separate dependency would buy nothing but an extra line in the lockfile.
 //
-// **Ключа тут немає й не з'являється.** Це кодек байтів: що саме за байти
-// приїхали — секретний ключ, адреса чи підпис, — цей файл не знає й знати не
-// мусить. `Keypair` із них збирає `apps/api/src/operational.ts`, тобто рівно той
-// процес, який єдиний має право тримати операційний ключ.
+// **There is no key here, and none ever appears.** This is a byte codec: what
+// the bytes are — a secret key, an address or a signature — this file does not
+// know and must not know. `Keypair`s are built from them in
+// `apps/api/src/operational.ts`, i.e. exactly the one process that is allowed
+// to hold the operational key.
 import { utils } from '@coral-xyz/anchor'
 
 export function decodeBase58(value: string): Uint8Array {
@@ -21,12 +22,12 @@ export function encodeBase58(bytes: Uint8Array): string {
 }
 
 /**
- * Скільки байтів вийде з рядка — або `undefined`, якщо рядок не base58.
+ * How many bytes the string decodes to — or `undefined` if it is not base58.
  *
- * Існує заради валідації оточення: конфіг мусить сказати «не той ключ» на
- * старті процесу, а не кинути виняток із надр кодека на першому розморожуванні.
- * Довжину при цьому перевіряє викликач: 32 байти — це адреса, 64 — секретний
- * ключ ed25519, і плутати їх не можна.
+ * Exists for environment validation: the config must say "wrong key" at
+ * process start, not throw from the depths of the codec on the first thaw.
+ * The length itself is checked by the caller: 32 bytes is an address, 64 is
+ * an ed25519 secret key, and the two must not be confused.
  */
 export function base58ByteLength(value: string): number | undefined {
   try {

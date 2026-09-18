@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { programErrorByCode, programErrorFrom } from './program-error.ts'
 
-/** `PowerNotDelegated` — перша відмова, яку побачить делегована операція. */
+/** `PowerNotDelegated` — the first refusal a delegated operation will see. */
 const POWER_NOT_DELEGATED = 6033
 
 const anchorLogs = (code: number) => [
@@ -24,23 +24,23 @@ describe('a program refusal', () => {
     })
   })
 
-  // Обгортки по дорозі лишають від логів тільки текст повідомлення — і саме в
-  // такому вигляді відмова доїжджає, коли preflight вимкнений.
+  // Wrappers along the way keep only the message text of the logs — and that
+  // is exactly the shape the refusal arrives in when preflight is off.
   it('reads the number from the hex tail of the message', () => {
     const message = `Transaction failed: custom program error: 0x${POWER_NOT_DELEGATED.toString(16)}`
 
     expect(programErrorFrom(new Error(message))?.name).toBe('powerNotDelegated')
   })
 
-  // `confirmTransaction` віддає вже розібрану помилку **без** логів.
+  // `confirmTransaction` returns an already parsed error **without** logs.
   it('reads the number from a parsed transaction error', () => {
     expect(programErrorFrom({ InstructionError: [0, { Custom: POWER_NOT_DELEGATED }] })?.code).toBe(
       POWER_NOT_DELEGATED,
     )
   })
 
-  // Лог має пріоритет над текстом: у ньому номер стоїть десятковим і без
-  // ризику сплутати його з чужим шістнадцятковим хвостом.
+  // The log takes priority over the text: there the number is decimal, with
+  // no risk of confusing it with someone else's hex tail.
   it('prefers the logs over the message text', () => {
     const error = Object.assign(new Error('custom program error: 0x0'), {
       logs: anchorLogs(6037),
@@ -49,8 +49,9 @@ describe('a program refusal', () => {
     expect(programErrorFrom(error)?.name).toBe('holderStatusRequired')
   })
 
-  // Вбудовані коди Anchor приходять тим самим шляхом, і саме вони означають
-  // «токен ще не створений» — без них делегована операція мовчала б.
+  // Anchor's built-in codes arrive by the same path, and they are what means
+  // "the token is not created yet" — without them a delegated operation would
+  // stay silent.
   it("parses Anchor's built-in codes", () => {
     expect(programErrorByCode(3012)).toEqual({
       code: 3012,
@@ -60,14 +61,14 @@ describe('a program refusal', () => {
   })
 
   it.each([
-    ['обрив мережі', new Error('fetch failed')],
-    ['порожній об’єкт', {}],
-    ['рядок', 'boom'],
+    ['a dropped connection', new Error('fetch failed')],
+    ['an empty object', {}],
+    ['a string', 'boom'],
     ['null', null],
-    ['невідомий номер', { InstructionError: [0, { Custom: 999_999 }] }],
-  ])('%s не є відмовою програми', (_name, error) => {
-    // `undefined` тут значуще: мережеву невдачу не можна показувати як відмову
-    // правила, бо ланцюг про неї нічого не казав.
+    ['an unknown number', { InstructionError: [0, { Custom: 999_999 }] }],
+  ])('%s is not a program refusal', (_name, error) => {
+    // `undefined` is significant here: a network failure must not be shown as
+    // a rule refusal, because the chain said nothing about it.
     expect(programErrorFrom(error)).toBeUndefined()
   })
 })

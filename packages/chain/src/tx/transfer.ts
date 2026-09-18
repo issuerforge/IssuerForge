@@ -1,17 +1,17 @@
-// Переказ по токену з хуком (FR-002, FR-012).
+// A transfer of a token with a hook (FR-002, FR-012).
 //
-// **Єдиний білдер, який ходить у мережу, і це не наш вибір.** Перелік акаунтів
-// хука лежить ончейн, і резолвити його мусить клієнт: `ExtraAccountMetaList`
-// описує адреси через seeds, серед яких є зрізи **даних інших акаунтів**
-// (`TokenConfig.policy_version`, credential і schema — рішення спайка T057).
-// Прочитати їх без RPC неможливо.
+// **The only builder that goes to the network, and that is not our choice.**
+// The hook's account list lives on chain, and the client must resolve it:
+// `ExtraAccountMetaList` describes addresses through seeds, among which are
+// slices of **other accounts' data** (`TokenConfig.policy_version`, credential
+// and schema — the decision of spike T057). They cannot be read without RPC.
 //
-// **Складати переказ уручну — не можна, і це правило репо, а не порада.**
-// Токен-програма підкладає хуку рівно ті акаунти, які виводить із переліку; на
-// один невгаданий акаунт вона відхилить переказ **до** нашої перевірки, тобто
-// холдер побачить помилку токен-програми замість названої причини (FR-011).
-// Тому резолюцію робить `createTransferCheckedWithTransferHookInstruction`, а не
-// ми.
+// **Assembling a transfer by hand is not allowed, and that is a repository
+// rule, not advice.** The token program hands the hook exactly the accounts it
+// derives from the list; on a single unguessed account it rejects the
+// transfer **before** our check, so the holder sees a token program error
+// instead of a named reason (FR-011). That is why the resolution is done by
+// `createTransferCheckedWithTransferHookInstruction`, not by us.
 import {
   createTransferCheckedWithTransferHookInstruction,
   getAssociatedTokenAddressSync,
@@ -26,19 +26,21 @@ export type TransferArgs = {
   readonly recipient: PublicKey
   readonly amount: bigint
   /**
-   * Точність токена. Приходить аргументом, а не читається з mint: у
-   * `transferChecked` вона й існує для того, щоб клієнт **заявив**, у яких
-   * одиницях сума, — і розбіжність із mint відхиляє токен-програма. Прочитати
-   * її тут означало б звірити mint сам із собою.
+   * The token's decimals. Passed as an argument rather than read from the
+   * mint: in `transferChecked` they exist precisely so that the client
+   * **declares** which units the amount is in — and a mismatch with the mint is
+   * rejected by the token program. Reading them here would mean checking the
+   * mint against itself.
    */
   readonly decimals: number
 }
 
 /**
- * Непідписаний переказ між асоційованими рахунками сторін.
+ * An unsigned transfer between the parties' associated token accounts.
  *
- * Обидва рахунки — ATA: інших у продукті немає, бо `thaw_holder` розморожує
- * саме їх, а статус і лічильник виводяться з власника, не з рахунку.
+ * Both accounts are ATAs: the product has no others, because `thaw_holder`
+ * thaws exactly those, and the status and the counter are derived from the
+ * owner, not from the account.
  */
 export async function buildTransfer(
   connection: Connection,

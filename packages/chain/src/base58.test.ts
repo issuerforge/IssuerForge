@@ -12,8 +12,9 @@ describe('base58', () => {
     expect(Keypair.fromSecretKey(decodeBase58(encoded)).publicKey).toEqual(KEYPAIR.publicKey)
   })
 
-  // Той самий алфавіт, що й у решти Solana: адреса, закодована нами, мусить
-  // читатись `PublicKey`, інакше кодек у репозиторії був би другим.
+  // The same alphabet as the rest of Solana: an address we encode must be
+  // readable by `PublicKey`, otherwise the codec in the repository would be a
+  // second one.
   it('matches the encoding of addresses', () => {
     expect(encodeBase58(KEYPAIR.publicKey.toBytes())).toBe(KEYPAIR.publicKey.toBase58())
     expect(new PublicKey(decodeBase58(KEYPAIR.publicKey.toBase58())).toBase58()).toBe(
@@ -21,14 +22,14 @@ describe('base58', () => {
     )
   })
 
-  // Різниця, заради якої довжина взагалі міряється: 32 байти — це адреса, 64 —
-  // секретний ключ, і конфіг мусить розрізняти їх на старті процесу.
+  // The difference the length is measured for at all: 32 bytes is an address,
+  // 64 is a secret key, and the config must tell them apart at process start.
   it('tells an address from a secret key by length', () => {
     expect(base58ByteLength(KEYPAIR.publicKey.toBase58())).toBe(32)
     expect(base58ByteLength(encodeBase58(KEYPAIR.secretKey))).toBe(64)
   })
 
-  it.each(['0OIl', 'не base58', ''])('не base58 не має довжини: %s', (value) => {
+  it.each(['0OIl', 'not base58', ''])('non-base58 has no length: %s', (value) => {
     expect(base58ByteLength(value)).not.toBe(64)
   })
 })

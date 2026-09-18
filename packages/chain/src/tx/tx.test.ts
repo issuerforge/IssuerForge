@@ -23,8 +23,9 @@ import {
   transactionBytes,
 } from './plan.ts'
 
-// Адреса ноди тут не використовується: жоден білдер випуску в мережу не ходить,
-// а `Program` потребує провайдера лише для відправки, якої пакет не робить.
+// The node address is not used here: no issuance builder goes to the network,
+// and `Program` needs a provider only for sending, which the package does not
+// do.
 const program = createForgeProgram(new Connection('http://127.0.0.1:8899'))
 
 const ISSUER_ID = new PublicKey('11111111111111111111111111111112')
@@ -35,28 +36,28 @@ const CREDENTIAL = new PublicKey('SysvarS1otHashes111111111111111111111111111')
 const SCHEMA = new PublicKey('SysvarS1otHistory11111111111111111111111111')
 
 /**
- * Єдина інструкція плану.
+ * The plan's only instruction.
  *
- * Не зручність: усі плани T020 складаються рівно з однієї інструкції, і друга,
- * додана колись, змінила б розмір транзакції мовчки. Тому перевірка стоїть тут,
- * а не повторюється в кожному тесті.
+ * Not a convenience: every T020 plan consists of exactly one instruction, and
+ * a second one added some day would change the transaction size silently. So
+ * the check sits here rather than being repeated in every test.
  */
 function only(plan: TxPlan): TransactionInstruction {
   const [instruction, ...rest] = plan.instructions
   if (instruction === undefined || rest.length > 0) {
-    throw new Error(`${plan.step}: очікувалась рівно одна інструкція`)
+    throw new Error(`${plan.step}: expected exactly one instruction`)
   }
   return instruction
 }
 
-/** Адреса акаунта за позицією. Позиція значуща: її задає програма, не ми. */
+/** The account address at a position. The position matters: the program sets it, not us. */
 function keyAt(plan: TxPlan, index: number): PublicKey {
   const key = only(plan).keys[index]
-  if (key === undefined) throw new RangeError(`${plan.step}: немає акаунта ${index}`)
+  if (key === undefined) throw new RangeError(`${plan.step}: no account at ${index}`)
   return key.pubkey
 }
 
-/** Чужий blockhash — компіляція від нього не залежить, а розмір залежить лише від довжини. */
+/** Someone else's blockhash — compilation does not depend on it, and the size only on its length. */
 const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
 
 const createArgs = (over: Partial<CreateTokenArgs> = {}): CreateTokenArgs => ({
@@ -96,16 +97,17 @@ describe('token issuance', () => {
     )
 
     const keys = only(plan).keys.map((key) => key.pubkey.toBase58())
-    // Тринадцять акаунтів — те число, під яке рахований бюджет транзакції
-    // (SCRATCHPAD.md, блок T018). Чотирнадцятий не поміститься мовчки.
+    // Thirteen accounts is the number the transaction budget was computed for
+    // (SCRATCHPAD.md, block T018). A fourteenth will not fit silently.
     expect(keys).toHaveLength(13)
     expect(keys.slice(0, 7)).toEqual(
       [FOUNDER, ATTESTOR, issuerConfig, mint, tokenConfig, policyConfig, attestation].map((key) =>
         key.toBase58(),
       ),
     )
-    // Token-2022 передається явно: mint із розширеннями в старій токен-програмі
-    // не буває, а токен без розширень виглядав би працюючим.
+    // Token-2022 is passed explicitly: a mint with extensions does not exist in
+    // the old token program, and a token without extensions would look like it
+    // works.
     expect(keys).toContain(TOKEN_2022_PROGRAM_ID.toBase58())
   })
 
@@ -119,18 +121,20 @@ describe('token issuance', () => {
   })
 
   /**
-   * Найважливіший тест пакета. Бюджет транзакції — найтісніше обмеження
-   * проєкту: T018 порахував ~1180 із 1232 **на папері**, і тут це число
-   * нарешті міряється, а не оцінюється. Політика взята найкоротша (`OPEN_POLICY`),
-   * але вона все одно займає всі 384 байти: масив слотів фіксованої довжини.
+   * The most important test in the package. The transaction budget is the
+   * tightest constraint in the project: T018 computed ~1180 of 1232 **on
+   * paper**, and here the number is finally measured rather than estimated.
+   * The shortest policy is taken (`OPEN_POLICY`), but it still takes all 384
+   * bytes: a fixed-length array of slots.
    */
   it('fits in a transaction — the same budget T018 computed', async () => {
     const plan = await buildCreateToken(program, createArgs())
     const size = transactionBytes(compileTransaction(plan, BLOCKHASH))
 
     expect(size).toBeLessThanOrEqual(MAX_TRANSACTION_BYTES)
-    // Запас називається числом навмисно: якщо він зникне, це має бути видно в
-    // діффі тесту, а не в невдалій транзакції на девнеті.
+    // The headroom is named as a number on purpose: if it disappears, that
+    // must be visible in the test's diff, not in a failed transaction on
+    // devnet.
     expect(MAX_TRANSACTION_BYTES - size).toBeGreaterThan(20)
   })
 
@@ -143,9 +147,10 @@ describe('token issuance', () => {
   })
 
   /**
-   * Два підписи `create_token` ставлять різні гаманці, тож транзакція їздить
-   * між ними рядком. Круг мусить давати ті самі байти: підпис стосується
-   * конкретних байтів, і транзакція, зібрана вдруге, була б іншою.
+   * The two signatures on `create_token` are put on by different wallets, so
+   * the transaction travels between them as a string. The round trip must
+   * yield the same bytes: a signature is over specific bytes, and a
+   * transaction assembled a second time would be a different one.
    */
   it('survives a round trip through the transport form unchanged', async () => {
     const plan = await buildCreateToken(program, createArgs())
@@ -184,8 +189,9 @@ describe('an issuance is three transactions', () => {
       'token-metadata',
       'hook-accounts',
     ])
-    // Друга й третя читають `TokenConfig`, якого до підтвердження першої не
-    // існує. Прапорець тут — щоб майстер не міг відправити їх пачкою.
+    // The second and the third read a `TokenConfig` that does not exist until
+    // the first is confirmed. The flag is here so the wizard cannot send them
+    // as a batch.
     expect(plans.map((plan) => plan.dependsOnPrevious)).toEqual([false, true, true])
   })
 
@@ -218,7 +224,7 @@ describe('an issuance is three transactions', () => {
   })
 
   it('the longest allowed metadata fits too', async () => {
-    // Стелі задає програма (32/12/200); транзакція мусить тримати їх усі.
+    // The ceilings are set by the program (32/12/200); the transaction must hold all of them.
     const plan = await buildSetTokenMetadata(program, {
       issuerId: ISSUER_ID,
       mint: mintPda(ISSUER_ID, 0),
@@ -232,8 +238,8 @@ describe('an issuance is three transactions', () => {
     expect(transactionBytes(compileTransaction(plan, BLOCKHASH))).toBeLessThanOrEqual(
       MAX_TRANSACTION_BYTES,
     )
-    // Платник і той, хто санкціонує, — різні підписи: тут місце для цього є, на
-    // відміну від `create_token`.
+    // The payer and the one who authorises are different signatures: there is
+    // room for that here, unlike in `create_token`.
     expect(plan.signers).toHaveLength(2)
   })
 
@@ -271,8 +277,9 @@ describe('holder onboarding', () => {
       wallet: TREASURY,
       payer: FOUNDER,
       authority: ATTESTOR,
-      // `null` — «запис уже є, я його не чіпаю». Програма відхиляє розбіжність
-      // між наміром і станом акаунта, тож форма тут значуща.
+      // `null` — "the record already exists, I am not touching it". The program
+      // rejects a mismatch between the intent and the account state, so the
+      // shape matters here.
       status: null,
     })
 

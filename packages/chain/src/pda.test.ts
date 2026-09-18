@@ -25,8 +25,9 @@ const WALLET = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const OTHER_PROGRAM = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
 
 describe('numeric seeds', () => {
-  // Байти, а не адреса: помилка в порядку або в ширині дає валідну адресу, якої
-  // програма просто не виводить, і виявляється вона відмовою на девнеті.
+  // Bytes, not an address: a mistake in the order or the width yields a valid
+  // address the program simply never derives, and it shows up as a refusal on
+  // devnet.
   it('u32 — little-endian, exactly four bytes', () => {
     expect(u32Seed(1)).toEqual(new Uint8Array([1, 0, 0, 0]))
     expect(u32Seed(0x0a_0b_0c_0d)).toEqual(new Uint8Array([0x0d, 0x0c, 0x0b, 0x0a]))
@@ -48,12 +49,13 @@ describe('numeric seeds', () => {
 })
 
 describe('seed labels', () => {
-  // Єдина мітка, яку сьогодні можна звірити з програмою, а не з власною
-  // константою: `initialize_issuer` оголошує свій PDA прямо в IDL.
+  // The only label that can be checked against the program today rather than
+  // against our own constant: `initialize_issuer` declares its PDA right in
+  // the IDL.
   //
-  // Інструкція шукається **за іменем**, а не за індексом: Anchor упорядковує
-  // перелік сам, і нова інструкція зсуває його — так цей тест уже раз падав на
-  // `execute`, у якої першим акаунтом стоїть токен-акаунт без PDA.
+  // The instruction is looked up **by name**, not by index: Anchor orders the
+  // list itself, and a new instruction shifts it — this test already failed
+  // once on `execute`, whose first account is a token account with no PDA.
   it('`issuer` matches what the IDL declares', () => {
     const instruction = IDL.instructions.find((ix) => ix.name === 'initializeIssuer')
     const account = instruction?.accounts.find((a) => a.name === 'issuerConfig')
@@ -82,13 +84,14 @@ describe('seed labels', () => {
 })
 
 describe('PDA addresses', () => {
-  // Пін-значення: будь-яка зміна seeds або кодування ловиться тут, а не в
-  // транзакції на девнеті.
+  // Pinned values: any change to the seeds or the encoding is caught here,
+  // not in a transaction on devnet.
   //
-  // Значення перераховані один раз — коли `anchor keys sync` замінив заглушку
-  // `ForgePo1icy111…` на справжню адресу програми перед першим деплоєм (T024).
-  // Це єдина законна причина їх міняти: усе інше, що зрушить ці адреси, — це
-  // зміна seeds, тобто саме те, що тест і ловить.
+  // The values were recomputed once — when `anchor keys sync` replaced the
+  // placeholder `ForgePo1icy111…` with the real program address before the
+  // first deploy (T024). That is the only legitimate reason to change them:
+  // anything else that moves these addresses is a change of seeds, i.e.
+  // exactly what the test catches.
   it.each([
     ['IssuerConfig', issuerConfigPda(ISSUER_ID), '78JU4hsTQ33q6DgvU5K3BRjLdKe2eqgapNucWGcr3RuU'],
     ['mint', mintPda(ISSUER_ID, 0), '91YeQseGJTGKM24XpSRjEC1zQWxKGuo5Bkf15xRX7ubS'],
@@ -111,13 +114,14 @@ describe('PDA addresses', () => {
       redemptionEscrowPda(MINT, ISSUER_ID),
       'ACvCyUZBRMpAToAW3jGpgPiXvESv14LRdBPvLDpoQDYp',
     ],
-  ])('%s виводиться в закріплену адресу', (_name, actual, expected) => {
+  ])('%s derives to the pinned address', (_name, actual, expected) => {
     expect(actual.toBase58()).toBe(expected)
   })
 
-  // Ця мітка звіряється з програмою, а не з власною константою: `create_token`
-  // оголошує seeds mint прямо в IDL, і розбіжність означала б, що клієнт шукає
-  // токен не там, де його створює програма.
+  // This label is checked against the program, not against our own constant:
+  // `create_token` declares the mint seeds right in the IDL, and a divergence
+  // would mean the client looks for the token somewhere other than where the
+  // program creates it.
   it('`mint` matches what the IDL declares', () => {
     const instruction = IDL.instructions.find((ix) => ix.name === 'createToken')
     const account = instruction?.accounts.find((a) => a.name === 'mint')
@@ -143,8 +147,9 @@ describe('PDA addresses', () => {
     expect(tokenConfigPda(MINT, OTHER_PROGRAM).equals(tokenConfigPda(MINT))).toBe(false)
   })
 
-  // Формулу задає spl-tlv-account-resolution, і токен-програма шукає акаунт саме
-  // за нею. Тест тримає її на видноті: розбіжність робить переказ неможливим.
+  // The formula is set by spl-tlv-account-resolution, and the token program
+  // looks the account up by exactly that. The test keeps it in plain sight: a
+  // divergence makes a transfer impossible.
   it('ExtraAccountMetaList is `["extra-account-metas", mint]` under the hook program', () => {
     const [expected] = PublicKey.findProgramAddressSync(
       [new TextEncoder().encode('extra-account-metas'), MINT.toBytes()],
@@ -168,10 +173,10 @@ describe('the program client', () => {
   })
 
   /**
-   * Головна перевірка вендорованого IDL: Anchor резолвить `issuer_config` за
-   * seeds, які оголосила **програма**, а `issuerConfigPda` — за нашими. Збіг
-   * означає, що копія IDL і pda.ts описують ту саму адресу; розбіжність тут —
-   * єдине місце, де її видно без мережі.
+   * The main check of the vendored IDL: Anchor resolves `issuer_config` from
+   * the seeds the **program** declared, and `issuerConfigPda` from ours. A
+   * match means the IDL copy and pda.ts describe the same address; a
+   * divergence here is the only place it is visible without the network.
    */
   it('IDL-driven resolution matches issuerConfigPda', async () => {
     const instruction = await program.methods

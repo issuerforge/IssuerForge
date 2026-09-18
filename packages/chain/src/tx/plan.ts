@@ -1,14 +1,17 @@
-// План транзакції: інструкції плюс те, чого з інструкцій не видно (FR-001).
+// A transaction plan: the instructions plus what the instructions do not
+// show (FR-001).
 //
-// **Два рівні, і межа між ними — мережа.** Білдери випуску, розморожування й
-// статусів чисті: вони складають інструкції з відомих адрес і тестуються без
-// жодного мока. Усе, що потребує RPC, живе тут (`toUnsignedTransaction`) або в
-// `transfer.ts`, де читання неминуче — резолюцію додаткових акаунтів хука
-// робить токен-програма за переліком з ланцюга.
+// **Two levels, and the boundary between them is the network.** The builders
+// for issuance, thawing and statuses are pure: they assemble instructions from
+// known addresses and are tested without a single mock. Everything that needs
+// RPC lives here (`toUnsignedTransaction`) or in `transfer.ts`, where reading
+// is unavoidable — the resolution of the hook's extra accounts is done by the
+// token program from the list on chain.
 //
-// **Пакет не тримає ключа й не підписує.** Звідси й форма: назовні виходить
-// непідписана транзакція та перелік адрес, чиїх підписів їй бракує. Підпис
-// ставить гаманець у браузері або кворум емітента.
+// **The package holds no key and does not sign.** Hence the shape: what comes
+// out is an unsigned transaction and the list of addresses whose signatures
+// it lacks. The signature is put on by the wallet in the browser or by the
+// issuer's quorum.
 import {
   type Connection,
   type PublicKey,
@@ -18,9 +21,9 @@ import {
 } from '@solana/web3.js'
 
 /**
- * Крок, який виконує транзакція. Не декорація: випуск токена — це **три**
- * транзакції (T018), і консоль мусить показувати, на якій із них зупинився
- * майстер, а не «щось не вдалося».
+ * The step a transaction performs. Not decoration: token issuance is
+ * **three** transactions (T018), and the console must show which one the
+ * wizard stopped at, not "something failed".
  */
 export const TX_STEPS = [
   'create-token',
@@ -36,33 +39,36 @@ export type TxStep = (typeof TX_STEPS)[number]
 export type TxPlan = {
   readonly step: TxStep
   readonly instructions: readonly TransactionInstruction[]
-  /** Хто платить за транзакцію. Він же перший підписант. */
+  /** Who pays for the transaction. Also the first signer. */
   readonly feePayer: PublicKey
   /**
-   * Адреси, чиї підписи потрібні, — **виведені з інструкцій**, а не оголошені
-   * поруч із ними.
+   * The addresses whose signatures are needed — **derived from the
+   * instructions**, not declared next to them.
    *
-   * Другий перелік розійшовся б із першим рівно тоді, коли інструкція отримає
-   * нового підписанта: список забули б оновити, консоль не попросила б підпису,
-   * і транзакція впала б у мережі замість того, щоб не зібратися тут.
+   * A second list would diverge from the first exactly when an instruction
+   * gains a new signer: the list would be left un-updated, the console would
+   * not ask for the signature, and the transaction would fail on the network
+   * instead of failing to assemble here.
    */
   readonly signers: readonly PublicKey[]
   /**
-   * Чи мусить попередній крок **підтвердитися** до відправки цього.
+   * Whether the previous step must be **confirmed** before this one is sent.
    *
-   * Для випуску це так: `set_token_metadata` і
-   * `initialize_extra_account_meta_list` читають `TokenConfig`, якого до
-   * підтвердження `create_token` не існує. Адреси при цьому відомі наперед
-   * (mint — PDA), тож зібрати всі три можна одразу; відправити — ні.
+   * For issuance it must: `set_token_metadata` and
+   * `initialize_extra_account_meta_list` read a `TokenConfig` that does not
+   * exist until `create_token` is confirmed. The addresses are known in
+   * advance (the mint is a PDA), so all three can be assembled at once; sent —
+   * no.
    */
   readonly dependsOnPrevious: boolean
 }
 
 /**
- * Підписанти в порядку «платник, далі решта за появою».
+ * The signers in the order "payer, then the rest as they appear".
  *
- * Порядок значущий для людини, а не для мережі: консоль питає підписи по черзі,
- * і платник перший, бо саме він відкриває транзакцію.
+ * The order matters to a person, not to the network: the console asks for
+ * signatures one by one, and the payer goes first because they are the one
+ * who opens the transaction.
  */
 function requiredSigners(
   instructions: readonly TransactionInstruction[],
@@ -99,28 +105,29 @@ export function toPlan(
   }
 }
 
-/** Непідписана транзакція в тій формі, у якій вона їде до браузера. */
+/** An unsigned transaction in the shape it travels to the browser in. */
 export type UnsignedTransaction = {
   readonly step: TxStep
   readonly transaction: VersionedTransaction
-  /** Транспортна форма: те, що кладеться в JSON відповіді API. */
+  /** The transport form: what goes into the JSON of the API response. */
   readonly base64: string
   readonly signers: readonly PublicKey[]
   readonly dependsOnPrevious: boolean
 }
 
 /**
- * План + blockhash → непідписана транзакція.
+ * Plan + blockhash → unsigned transaction.
  *
- * Чиста функція, і це не косметика: розмір транзакції видно тільки після
- * компіляції, а бюджет випуску (1232 байти) — найтісніше обмеження проєкту.
- * Мати цей крок без мережі означає мати тест на бюджет, який не залежить від
- * ноди.
+ * A pure function, and that is not cosmetics: the size of a transaction is
+ * visible only after compilation, and the issuance budget (1232 bytes) is the
+ * tightest constraint in the project. Having this step without the network
+ * means having a budget test that does not depend on a node.
  *
- * **Транзакція версійна (v0) з порожнім переліком таблиць адрес.** Два зайві
- * байти купують те, що таблицю можна додати, не змінюючи ані контракту API, ані
- * коду консолі: якщо кворум на випуску таки знадобиться (відкритий борг T018),
- * місце під нього береться саме звідти.
+ * **The transaction is versioned (v0) with an empty list of address lookup
+ * tables.** Two extra bytes buy the ability to add a table without changing
+ * either the API contract or the console code: if a quorum on issuance does
+ * turn out to be needed (open debt T018), the room for it comes from exactly
+ * there.
  */
 export function compileTransaction(plan: TxPlan, blockhash: string): VersionedTransaction {
   const message = new TransactionMessage({
@@ -133,39 +140,41 @@ export function compileTransaction(plan: TxPlan, blockhash: string): VersionedTr
 }
 
 /**
- * Base64 без `Buffer`.
+ * Base64 without `Buffer`.
  *
- * `fromBase64` існує саме для браузера — транзакція з двома підписами їздить
- * між гаманцями рядком, — а `Buffer` там глобальним не буває: Vite його не
- * підставляє, і виклик упав би `Buffer is not defined` уже після того, як
- * людина натиснула «підписати». `btoa`/`atob` є з обох боків.
+ * `fromBase64` exists precisely for the browser — a transaction with two
+ * signatures travels between wallets as a string — and `Buffer` is never a
+ * global there: Vite does not inject it, and the call would fail with
+ * `Buffer is not defined` after the person has already clicked "sign".
+ * `btoa`/`atob` exist on both sides.
  */
 export const base64FromBytes = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes))
 
 export const bytesFromBase64 = (value: string): Uint8Array =>
   Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 
-/** Найбільший розмір транзакції, який приймає мережа. */
+/** The largest transaction size the network accepts. */
 export const MAX_TRANSACTION_BYTES = 1232
 
 /**
- * Скільки байтів займе транзакція **з усіма підписами**.
+ * How many bytes the transaction takes **with all signatures**.
  *
- * `serialize()` на непідписаній транзакції записує порожні (нульові) підписи
- * рівно того ж розміру, що й справжні, тож число не зміниться після підписання.
- * Саме тому бюджет можна міряти тут, а не в мережі.
+ * `serialize()` on an unsigned transaction writes empty (zero) signatures of
+ * exactly the same size as real ones, so the number does not change after
+ * signing. That is why the budget can be measured here rather than on the
+ * network.
  */
 export function transactionBytes(transaction: VersionedTransaction): number {
   return transaction.serialize().length
 }
 
 /**
- * План → непідписана транзакція зі свіжим blockhash.
+ * Plan → unsigned transaction with a fresh blockhash.
  *
- * Єдине місце шляху випуску, що ходить у мережу. Обидва підписанти
- * `create_token` підписують **одну й ту саму** серіалізовану транзакцію по
- * черзі, тож blockhash мусить бути один — брати його окремо для кожного підпису
- * означало б дві різні транзакції.
+ * The only place on the issuance path that goes to the network. Both signers
+ * of `create_token` sign **the same** serialised transaction in turn, so
+ * there must be one blockhash — fetching it separately for each signature
+ * would mean two different transactions.
  */
 export async function toUnsignedTransaction(
   connection: Connection,
@@ -175,12 +184,12 @@ export async function toUnsignedTransaction(
 }
 
 /**
- * План + уже відомий blockhash → непідписана транзакція.
+ * Plan + an already known blockhash → unsigned transaction.
  *
- * Пара до `toUnsignedTransaction` для випадку, коли blockhash **мусить бути
- * один на кілька транзакцій**: три транзакції випуску маршрут API віддає разом,
- * і брати їм три різні blockhash означало б три різні строки життя на те, що
- * людина підписує однією дією.
+ * The counterpart of `toUnsignedTransaction` for the case where the blockhash
+ * **must be shared by several transactions**: the API route returns the three
+ * issuance transactions together, and giving them three different blockhashes
+ * would mean three different lifetimes for what a person signs in one action.
  */
 export function toUnsigned(plan: TxPlan, blockhash: string): UnsignedTransaction {
   const transaction = compileTransaction(plan, blockhash)
@@ -195,12 +204,13 @@ export function toUnsigned(plan: TxPlan, blockhash: string): UnsignedTransaction
 }
 
 /**
- * Розбір транспортної форми назад.
+ * Parsing the transport form back.
  *
- * Пара до `base64`, і потрібна вона саме через два підписи `create_token`:
- * гаманець засновника підписує, віддає рядок, гаманець атестатора розбирає його
- * й дописує свій підпис. Зібрати транзакцію вдруге тут не можна — підпис
- * стосується конкретних байтів.
+ * The counterpart of `base64`, and it is needed precisely because of the two
+ * signatures on `create_token`: the founder's wallet signs and hands back a
+ * string, the attestor's wallet parses it and adds its own signature. The
+ * transaction cannot be assembled a second time here — a signature is over
+ * specific bytes.
  */
 export function fromBase64(base64: string): VersionedTransaction {
   return VersionedTransaction.deserialize(bytesFromBase64(base64))

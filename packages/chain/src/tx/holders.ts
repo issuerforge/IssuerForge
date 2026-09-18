@@ -1,10 +1,11 @@
-// Онбординг холдера й оновлення його статусу (FR-008b, FR-008b1).
+// Holder onboarding and status updates (FR-008b, FR-008b1).
 //
-// **Розморожування дозволом на переказ не є.** Воно знімає
-// `DefaultAccountState = Frozen` і заводить два акаунти, без яких хук відмовляє;
-// правила політики перевіряються далі на кожному переказі окремо. Тому пара
-// інструкцій тут, а не одна: `set_holder_status` міняє статус, не чіпаючи
-// заморозки, і саме вона робить FR-008b1 виконуваним.
+// **Thawing is not a permission to transfer.** It lifts
+// `DefaultAccountState = Frozen` and creates the two accounts without which
+// the hook refuses; the policy rules are then checked on every transfer
+// separately. Hence a pair of instructions here, not one: `set_holder_status`
+// changes the status without touching the freeze, and it is what makes
+// FR-008b1 enforceable.
 import { BN } from '@coral-xyz/anchor'
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import type { PublicKey } from '@solana/web3.js'
@@ -23,24 +24,25 @@ const toStatusInput = (status: HolderStatusInput) => ({
   tier: status.tier,
   jurisdiction: jurisdictionBytes(status.jurisdiction),
   denied: status.denied,
-  // Те саме перетворення, що в `issue.ts`: `bigint` на межі, `BN` усередині.
+  // The same conversion as in `issue.ts`: `bigint` at the boundary, `BN` inside.
   expiresAt: new BN(status.expiresAt.toString()),
 })
 
 export type ThawHolderArgs = {
   readonly issuerId: PublicKey
   readonly mint: PublicKey
-  /** Власник рахунку. Статус лягає за адресою, виведеною саме з нього. */
+  /** The account owner. The status lands at the address derived from it. */
   readonly wallet: PublicKey
   readonly payer: PublicKey
-  /** Операційний ключ платформи в межах делегації або уповноважений складу. */
+  /** The platform's operational key within its delegation, or an authorised member. */
   readonly authority: PublicKey
   /**
-   * Статус — тільки для **першого** розморожування.
+   * The status — only for the **first** thaw.
    *
-   * `null` означає «запис уже є, я його не чіпаю»: так виглядає повторне
-   * розморожування після заморозки офіцером. Розбіжність між наміром і станом
-   * акаунта програма відхиляє, а не тлумачить.
+   * `null` means "the record already exists, I am not touching it": that is
+   * what a repeat thaw after an officer's freeze looks like. A mismatch
+   * between the intent and the account state is rejected by the program, not
+   * interpreted.
    */
   readonly status: HolderStatusInput | null
 }
@@ -84,14 +86,15 @@ export type SetHolderStatusArgs = {
 }
 
 /**
- * Оновлення статусу у власному реєстрі емітента.
+ * A status update in the issuer's own registry.
  *
- * Токен-акаунта тут немає навмисно: зміна статусу нічого не морозить. Рахунок
- * лишається розмороженим, а переказ із нього перестає проходити тієї ж миті —
- * бо статус читається на кожному переказі, а не при розморожуванні.
+ * There is deliberately no token account here: a status change freezes
+ * nothing. The account stays thawed, and a transfer from it stops passing
+ * that very moment — because the status is read on every transfer, not at
+ * thaw time.
  *
- * Платника окремо немає: акаунт уже існує, оренди ця дія не потребує, тож
- * платить той, хто санкціонує.
+ * No separate payer: the account already exists, the action needs no rent,
+ * so whoever authorises pays.
  */
 export async function buildSetHolderStatus(
   program: ForgeProgram,
