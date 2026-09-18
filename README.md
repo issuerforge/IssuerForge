@@ -112,7 +112,8 @@ docs/                   SPEC, PLAN, TASKS, SCRATCHPAD — not tracked in git
 
 ## Stack
 
-pnpm workspaces (no Turborepo) · TypeScript 5.9 strict · Biome · Vitest 4 ·
+Node 26 (runs `.ts` directly, no build step for the api) · pnpm workspaces (no
+Turborepo) · TypeScript 5.9 strict · Biome · Vitest 4 ·
 Hono · Drizzle + Supabase · React 19 + Vite 8 · Anchor 0.32.1 / Token-2022 ·
 Solana CLI 4.2 · Rust 1.97 · mollusk-svm 0.15 for program tests
 

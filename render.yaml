@@ -19,13 +19,16 @@ services:
     plan: free
     region: frankfurt
     buildCommand: corepack enable && pnpm install --frozen-lockfile
-    # Node ≥ 22.18 runs .ts directly (type stripping); the api is written for it.
-    # Render provides PORT itself; the config reads it.
+    # Node runs .ts directly (type stripping); the api is written for it and
+    # provides no build step. Render provides PORT itself; the config reads it.
     startCommand: node apps/api/src/index.ts
     healthCheckPath: /health
     envVars:
+      # 26, the version the api is developed and measured on. Node 22 fails at
+      # start-up: @coral-xyz/anchor is CommonJS, and 22's CJS export lexer does
+      # not see `BN` as a named export ("Named export 'BN' not found").
       - key: NODE_VERSION
-        value: "22"
+        value: "26"
       - key: LOG_LEVEL
         value: info
       # The Pages origin — scheme and host only, no path:
