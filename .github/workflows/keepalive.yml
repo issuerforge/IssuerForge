@@ -1,0 +1,27 @@
+name: Keep the api awake
+
+# The free Render instance spins down after 15 minutes without traffic, and a
+# sleeping api means the console's first request waits a minute for a cold
+# start. A request every 5 minutes (GitHub may run a schedule a few minutes
+# late) keeps it up; the 750 free instance hours a month cover one service
+# around the clock. GitHub disables schedules after 60 days without a commit —
+# re-enable it under Actions if the repository goes quiet.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      # A sleeping instance takes about a minute to answer the first request.
+      - name: GET /health
+        run: |
+          curl --silent --show-error --fail --max-time 120 \
+            "${{ vars.VITE_API_URL || 'https://issuerforge-api.onrender.com' }}/health" \
+            | cut -c1-60

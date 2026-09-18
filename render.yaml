@@ -1,0 +1,50 @@
+# Render Blueprint: the api as one free web service.
+#
+# The free instance is the only one Render gives away, and it cannot run a
+# background worker — when the indexer arrives (T031, M2) it will run inside
+# this process behind a RUN_WORKER flag rather than as a second service. The
+# instance spins down after 15 minutes without traffic; the keepalive workflow
+# pings /health every 5 minutes, and the 750 free instance hours a month cover
+# one service around the clock.
+#
+# Values marked sync: false are entered in the Render dashboard, never here.
+# The console on GitHub Pages reaches this service through VITE_API_URL.
+#
+# Owner, once: Render → New → Blueprint → this repository → fill in the
+# sync: false values. The service then redeploys on every push to main.
+services:
+  - type: web
+    name: issuerforge-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    # Node ≥ 22.18 runs .ts directly (type stripping); the api is written for it.
+    # Render provides PORT itself; the config reads it.
+    startCommand: node apps/api/src/index.ts
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: LOG_LEVEL
+        value: info
+      # The Pages origin — scheme and host only, no path:
+      # https://issuerforge.github.io
+      - key: WEB_ORIGIN
+        sync: false
+      # The paid node with a key. Lives here and only here — never in VITE_*.
+      - key: DEVNET_RPC_URL
+        sync: false
+      # Supabase transaction pooler, port 6543 (not the direct 5432 string).
+      - key: DATABASE_URL
+        sync: false
+      # base58 ed25519 secret key; its powers are bounded on chain (FR-035a).
+      - key: OPERATIONAL_SECRET_KEY
+        sync: false
+      - key: PRIVY_APP_ID
+        sync: false
+      - key: PRIVY_APP_SECRET
+        sync: false
+      # PEM as one line with \n — the config restores the line breaks.
+      - key: PRIVY_VERIFICATION_KEY
+        sync: false

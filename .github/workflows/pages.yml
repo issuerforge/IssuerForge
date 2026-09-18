@@ -1,0 +1,81 @@
+name: Pages
+
+# Deploys the issuer console (apps/web) to GitHub Pages:
+# https://issuerforge.github.io/IssuerForge/
+#
+# Only the static bundle goes here. The api holds keys and a database
+# connection and is hosted elsewhere (render.yaml); the console reaches it
+# through VITE_API_URL. The bundle is public, so every VITE_* value is public
+# too — the paid RPC node with a key stays on the api side (DEVNET_RPC_URL).
+#
+# Repository settings, once, by the owner:
+#   Settings → Pages → Source: GitHub Actions
+#   Settings → Secrets and variables → Actions → Variables:
+#     VITE_API_URL          https://issuerforge-api.onrender.com
+#     VITE_PRIVY_APP_ID     the Privy app id (public identifier, not a key)
+#     VITE_DEVNET_RPC_URL   optional; defaults to the public devnet node
+#     PAGES_BASE_PATH       only for a custom domain: "/"
+#
+# Rust is not needed: the IDL is vendored in packages/chain.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer push waits for the running one rather than
+# cancelling it: a cancelled deploy leaves Pages half-updated.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # takes the version from package.json → packageManager
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A project site lives under /<repo>/; a custom domain sets PAGES_BASE_PATH to /.
+      # The web build fails loudly on a missing or placeholder variable — see
+      # apps/web/src/env.ts — rather than shipping a bundle that cannot log in.
+      - name: Build the console
+        run: pnpm --filter @forge/web build
+        env:
+          BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_PRIVY_APP_ID: ${{ vars.VITE_PRIVY_APP_ID }}
+          VITE_DEVNET_RPC_URL: ${{ vars.VITE_DEVNET_RPC_URL || 'https://api.devnet.solana.com' }}
+
+      # Pages has no rewrites: an unknown path is served 404.html, and a copy of
+      # the app shell there lets the router take over on a deep link.
+      - name: SPA fallback
+        run: cp apps/web/dist/index.html apps/web/dist/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

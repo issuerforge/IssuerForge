@@ -20,7 +20,12 @@ try {
   const env = readWebEnv(import.meta.env)
   root.render(
     // Прапорці v7 увімкнені явно: інакше router друкує попередження в консоль.
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    // `basename` — це `base` з vite.config.ts: на GitHub Pages консоль живе під
+    // `/<repo>/`, і без нього жоден маршрут не збігся б із адресою.
+    <BrowserRouter
+      basename={import.meta.env.BASE_URL}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <ConsoleProviders env={env}>
         <App />
       </ConsoleProviders>

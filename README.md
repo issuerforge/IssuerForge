@@ -105,6 +105,8 @@ tools/demo              The measurement script behind the table above
 tools/spikes            Feasibility spikes kept with their tests (can the hook
                         resolve a provider attestation directly? — it can)
 scripts/                WSL build/test/localnet helpers, IDL sync
+.github/workflows/      Pages deploy of the console, keep-alive ping of the api
+render.yaml             Render Blueprint for the api (one free web service)
 docs/                   SPEC, PLAN, TASKS, SCRATCHPAD — not tracked in git
 ```
 
@@ -194,6 +196,46 @@ verifies signature, audience and expiry exactly as in production.
 Public devnet RPC rate-limits aggressively; the demo paces its requests with a
 token bucket, and `web3.js` retries on `429`. Expect a handful of retry lines
 per run.
+
+## Deploying for free
+
+The console is a static bundle and the api is one Node process, so the whole
+thing runs at $0: **GitHub Pages** for the console, **Render** (free web
+service) for the api, **Supabase** for Postgres. Nothing here touches mainnet.
+
+```
+https://issuerforge.github.io/IssuerForge/   apps/web   GitHub Pages, on every push to main
+https://issuerforge-api.onrender.com         apps/api   Render Blueprint, on every push to main
+```
+
+**Console → GitHub Pages** (`.github/workflows/pages.yml`). Once, in the
+repository settings:
+
+1. *Settings → Pages → Source:* **GitHub Actions**.
+2. *Settings → Secrets and variables → Actions → Variables* (not
+   *Environments*): `VITE_API_URL` = the Render URL, `VITE_PRIVY_APP_ID` = the
+   Privy app id. `VITE_DEVNET_RPC_URL` is optional and defaults to the public
+   devnet node — the paid node with a key stays on the api side, because
+   everything in `VITE_*` is baked into a public bundle.
+
+A project site lives under `/IssuerForge/`; the workflow passes that as
+`BASE_PATH` to Vite and the router picks it up as `basename`. Pages has no
+rewrites, so the workflow copies `index.html` to `404.html` and deep links
+land in the router. For a custom domain set the variable `PAGES_BASE_PATH=/`
+and add the domain under *Settings → Pages*.
+
+**Api → Render** (`render.yaml`). *Render → New → Blueprint → this
+repository*, then fill in the values marked `sync: false`: `WEB_ORIGIN` is
+`https://issuerforge.github.io` (scheme and host only — no path), `DATABASE_URL`
+is the Supabase **transaction pooler** string (port 6543), and the rest are
+the same secrets as in `.env.example`. Render provides `PORT` itself. The free
+instance sleeps after 15 minutes of silence; `.github/workflows/keepalive.yml`
+pings `/health` every 5 minutes, which the 750 free hours a month cover.
+GitHub disables the schedule after 60 days without a commit — re-enable it
+under *Actions* if the repository goes quiet.
+
+The indexer (M2) will run inside the api process behind a flag rather than
+as a second service: Render's free plan has no background workers.
 
 ## What comes next
 
