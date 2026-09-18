@@ -1,11 +1,13 @@
-// Провайдери консолі: вхід, кеш запитів, обраний орендар, клієнт api.
+// The console providers: login, the query cache, the chosen tenant, the api
+// client.
 //
-// Порядок вкладення не довільний. Клієнт api бере токен у Privy й обраного
-// емітента в перемикача, тож він мусить бути всередині обох. Кеш запитів стоїть
-// вище за клієнт, бо переживає його перестворення.
+// The nesting order is not arbitrary. The api client takes the token from
+// Privy and the chosen issuer from the switcher, so it must be inside both.
+// The query cache sits above the client because it outlives its recreation.
 //
-// Нічого з цього не читає оточення саме: `WebEnv` приходить згори (`main.tsx`),
-// як залежності приходять у `createServer(deps)` на боці api.
+// None of this reads the environment itself: `WebEnv` comes from above
+// (`main.tsx`), the way dependencies come into `createServer(deps)` on the
+// api side.
 import { PrivyProvider, usePrivy } from '@privy-io/react-auth'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -22,12 +24,12 @@ import type { WebEnv } from '@/env'
 import { readStoredTenant, writeStoredTenant } from './tenant'
 
 /**
- * Кеш запитів.
+ * The query cache.
  *
- * `retry: false` на помилках api навмисний: `UNAUTHORIZED` і `INVALID_INPUT`
- * від повтору не змінюються, а три однакові відмови в мережевій панелі
- * приховують ту одну, що пояснює причину. Повторюється тільки те, що схоже на
- * зрив зв'язку.
+ * `retry: false` on api errors is deliberate: `UNAUTHORIZED` and
+ * `INVALID_INPUT` do not change on a retry, and three identical refusals in
+ * the network panel hide the one that explains the cause. Only what looks
+ * like a dropped connection is retried.
  */
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -35,8 +37,9 @@ function createQueryClient(): QueryClient {
       queries: {
         retry: (failureCount, error) =>
           error instanceof ApiRequestError && error.code === 'INTERNAL' && failureCount < 2,
-        // Склад ролей змінюється кворумом, і відкликана роль має зникати з
-        // екрана в тому ж запиті: сесія не кешується між фокусами вікна.
+        // The role membership is changed by quorum, and a revoked role must
+        // vanish from the screen in the same request: the session is not
+        // cached between window focuses.
         staleTime: 0,
         refetchOnWindowFocus: true,
       },
@@ -45,7 +48,7 @@ function createQueryClient(): QueryClient {
 }
 
 interface TenantValue {
-  /** Обраний емітент або `undefined`, поки вибір не зроблено. */
+  /** The chosen issuer, or `undefined` until a choice is made. */
   issuerId: string | undefined
   select: (issuerId: string | undefined) => void
 }
@@ -55,11 +58,11 @@ const ApiContext = createContext<ApiClient | null>(null)
 const EnvContext = createContext<WebEnv | null>(null)
 
 /**
- * Оточення як залежність, а не як глобальний `import.meta.env`.
+ * The environment as a dependency, not as the global `import.meta.env`.
  *
- * Читає його `main.tsx` — один раз і однією чистою функцією, — а екрани беруть
- * готове значення звідси. Другого місця, де вирішується, що таке адреса вузла,
- * у консолі немає (T023: майстер відправляє транзакції сам).
+ * `main.tsx` reads it — once, with one pure function — and the screens take
+ * the ready value from here. There is no second place in the console where
+ * the node address is decided (T023: the wizard sends transactions itself).
  */
 export function useWebEnv(): WebEnv {
   const ctx = useContext(EnvContext)
@@ -85,9 +88,10 @@ function ApiAndTenant({ apiUrl, children }: { apiUrl: string; children: ReactNod
     () => readStoredTenant() ?? undefined,
   )
 
-  // Клієнт читає емітента через ref, а не через замикання на стані: інакше
-  // кожне перемикання орендаря створювало б новий клієнт, а з ним — новий ключ
-  // усіх запитів, і кеш скидався б там, де достатньо одного перезапиту.
+  // The client reads the issuer through a ref, not through a closure over
+  // state: otherwise every tenant switch would create a new client, and with
+  // it a new key for every query, and the cache would reset where one refetch
+  // is enough.
   const current = useRef(issuerId)
   current.current = issuerId
 
@@ -122,8 +126,9 @@ export function ConsoleProviders({ env, children }: { env: WebEnv; children: Rea
     <PrivyProvider
       appId={env.VITE_PRIVY_APP_ID}
       config={{
-        // Solana-only: у проєкті немає жодної дії в іншому ланцюзі, а список
-        // гаманців, які нічого не підпишуть, — це запрошення обрати не той.
+        // Solana only: the project has no action on another chain, and a list
+        // of wallets that will sign nothing is an invitation to pick the wrong
+        // one.
         appearance: {
           theme: 'light',
           accentColor: '#15181c',
@@ -131,12 +136,13 @@ export function ConsoleProviders({ env, children }: { env: WebEnv; children: Rea
           landingHeader: 'IssuerForge',
           loginMessage: 'Sign in to the issuer console',
         },
-        // Пошта плюс зовнішній гаманець — обидва шляхи з FR-034: офіцер без
-        // крипти отримує вбудований ключ, адміністратор приносить свій.
+        // Email plus an external wallet — both paths from FR-034: an officer
+        // without crypto gets an embedded key, an admin brings their own.
         loginMethods: ['email', 'wallet'],
         embeddedWallets: {
-          // `users-without-wallets`: той, хто зайшов зовнішнім гаманцем, уже має
-          // адресу, під якою стоїть у складі, і другий ключ їй нічого не додає.
+          // `users-without-wallets`: whoever logged in with an external wallet
+          // already has the address they are in the membership under, and a
+          // second key adds nothing to it.
           solana: { createOnLogin: 'users-without-wallets' },
         },
       }}

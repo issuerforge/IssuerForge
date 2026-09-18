@@ -1,8 +1,9 @@
-// Ґарди маршрутів: вхід, орендар, роль.
+// Route guards: login, tenant, role.
 //
-// Стану «екран намалювався без сесії» не існує — так само, як його немає на
-// боці api (`requireSession` там або ставить сесію в контекст, або не пускає
-// далі). Компоненти нижче або показують сесію, або показують, чого бракує.
+// The state "a screen drew without a session" does not exist — just as it
+// does not on the api side (`requireSession` there either puts the session
+// into the context or does not let execution through). The components below
+// either show the session or show what is missing.
 import type { Session } from '@forge/shared/api'
 import { usePrivy } from '@privy-io/react-auth'
 import { createContext, type ReactNode, useContext, useEffect, useState } from 'react'
@@ -20,12 +21,13 @@ import { resolveTenant } from './tenant'
 const SessionContext = createContext<Session | null>(null)
 
 /**
- * Скільки чекати на постачальника входу, перш ніж сказати, що він не відповів.
+ * How long to wait for the login provider before saying it did not answer.
  *
- * Це не про повільну мережу: `ready` не стає істинним ніколи, якщо
- * `VITE_PRIVY_APP_ID` синтаксично правильний, але такого застосунку немає —
- * а це рівно та помилка розгортання, якої `readWebEnv` не бачить. Без межі
- * консоль вічно показує «відкриваємо», і причина лишається в мережевій панелі.
+ * This is not about a slow network: `ready` never becomes true if
+ * `VITE_PRIVY_APP_ID` is syntactically valid but no such app exists — and
+ * that is exactly the deployment mistake `readWebEnv` does not see. Without
+ * a limit the console shows "opening" forever, and the cause stays in the
+ * network panel.
  */
 const READY_TIMEOUT_MS = 10_000
 
@@ -41,7 +43,7 @@ function useReadyTimedOut(ready: boolean): boolean {
   return timedOut && !ready
 }
 
-/** Сесія всередині ґарда. Поза ним викликати нема звідки — і не можна. */
+/** The session inside the guard. There is nowhere to call it from outside — and it must not be. */
 export function useConsoleSession(): Session {
   const session = useContext(SessionContext)
   if (!session) throw new Error('useConsoleSession must be used inside RequireSession')
@@ -49,12 +51,12 @@ export function useConsoleSession(): Session {
 }
 
 /**
- * Перелік емітентів, який api назвав у `details.issuerIds`, коли заголовок не
- * обраний або називає емітента поза складом.
+ * The list of issuers the api named in `details.issuerIds` when the header
+ * is not chosen or names an issuer outside the membership.
  *
- * Окремої ручки «мої емітенти» немає навмисно: сервер уже сказав, серед чого
- * вибирати, і другий запит за тим самим переліком був би другим джерелом
- * правди про членства.
+ * There is deliberately no separate "my issuers" handler: the server has
+ * already said what to choose from, and a second request for the same list
+ * would be a second source of truth about memberships.
  */
 function offeredIssuers(error: unknown): string[] | undefined {
   if (!(error instanceof ApiRequestError) || error.code !== 'INVALID_INPUT') return undefined
@@ -71,18 +73,20 @@ export function RequireSession() {
   const [dropped, setDropped] = useState<string | undefined>(undefined)
   const loginUnreachable = useReadyTimedOut(ready)
 
-  // Склад емітентів, відомий цій відповіді: або з успішної сесії, або з
-  // переліку, який api назвав у відмові. Обидва джерела — той самий сервер.
+  // The set of issuers known to this response: either from a successful
+  // session or from the list the api named in the refusal. Both sources are
+  // the same server.
   const known = session.data?.memberships.map((m) => m.issuerId) ?? offeredIssuers(session.error)
-  // Рядком, а не масивом: новий масив на кожен рендер зациклив би ефект.
+  // A string, not an array: a new array on every render would loop the effect.
   const knownKey = known?.join(',')
 
   useEffect(() => {
     if (knownKey === undefined) return
     const resolved = resolveTenant(knownKey === '' ? [] : knownKey.split(','), issuerId)
-    // Роль відкликають кворумом, і збережений вибір це переживає. Сказати про
-    // це треба один раз і вголос: інакше людина бачить перелік емітентів без
-    // жодного пояснення, чому її викинуло з того, що було відкрите вчора.
+    // A role is revoked by quorum, and the stored choice outlives that. It
+    // must be said once and out loud: otherwise the person sees a list of
+    // issuers with no explanation of why they were thrown out of what was
+    // open yesterday.
     if (resolved.dropped !== undefined) setDropped(resolved.dropped)
     if (resolved.issuerId !== issuerId) select(resolved.issuerId)
   }, [knownKey, issuerId, select])
@@ -117,9 +121,10 @@ export function RequireSession() {
 
     const problem = session.error instanceof ApiRequestError ? session.error : undefined
 
-    // `UNAUTHORIZED` тут означає не «токен поганий», а «ця адреса не стоїть у
-    // складі жодного емітента»: токен уже перевірений, інакше входу не було б.
-    // Пропозиція увійти ще раз була б порадою, яка нічого не змінює.
+    // `UNAUTHORIZED` here does not mean "bad token" but "this address is in no
+    // issuer's membership": the token is already verified, otherwise there
+    // would be no login. Suggesting to log in again would be advice that
+    // changes nothing.
     if (problem?.code === 'UNAUTHORIZED') {
       return (
         <Notice
@@ -148,7 +153,7 @@ export function RequireSession() {
   )
 }
 
-/** Роль не відкриває екран — кажемо це, а не показуємо 404 і не редіректимо. */
+/** The role does not open the screen — we say so, rather than showing a 404 or redirecting. */
 export function RequireScreen({ screen, children }: { screen: Screen; children: ReactNode }) {
   const session = useConsoleSession()
   if (!permits(session.roles, screen)) return <Forbidden screen={screen} roles={session.roles} />

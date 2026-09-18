@@ -1,8 +1,9 @@
-// Відправка транзакцій і те, заради чого демо взагалі існує: числа.
+// Sending transactions, and what the demo exists for in the first place:
+// numbers.
 //
-// **Кожна відправка повертає вимір.** CU і лампорти — не побічний продукт, а
-// предмет SC-003, і брати їх окремим проходом означало б міряти іншу
-// транзакцію, ніж та, що пройшла.
+// **Every send returns a measurement.** CU and lamports are not a by-product
+// but the subject of SC-003, and taking them in a separate pass would mean
+// measuring a different transaction from the one that went through.
 import { compileTransaction, programErrorFrom, type TxPlan, toPlan } from '@forge/chain'
 import type {
   Connection,
@@ -14,19 +15,19 @@ import type {
 
 export interface Sent {
   readonly signature: string
-  /** Спожиті одиниці обчислення. `undefined` — вузол їх не повернув. */
+  /** Compute units consumed. `undefined` — the node did not return them. */
   readonly computeUnits: number | undefined
-  /** Комісія в лампортах, як її списала мережа. */
+  /** The fee in lamports, as the network charged it. */
   readonly feeLamports: number | undefined
   readonly bytes: number
 }
 
 export interface Refused {
-  /** Код нашої програми або вбудований код Anchor, якщо він розібрався. */
+  /** Our program's code or a built-in Anchor code, if it parsed. */
   readonly code: number | undefined
   readonly name: string | undefined
   readonly message: string
-  /** Лог симуляції: у ньому видно, хто саме відмовив — токен-програма чи хук. */
+  /** The simulation log: it shows who exactly refused — the token program or the hook. */
   readonly logs: readonly string[]
 }
 
@@ -67,10 +68,12 @@ export async function sign(
 }
 
 /**
- * Відправляє й чекає підтвердження; повертає вимір або кидає `TransactionRefused`.
+ * Sends and awaits confirmation; returns a measurement or throws
+ * `TransactionRefused`.
  *
- * Preflight лишається ввімкненим: саме він приносить лог із кодом відмови **до**
- * списання комісії, а вимір SC-002 читає саме код, а не факт невдачі.
+ * Preflight stays on: it is what brings the log with the refusal code
+ * **before** the fee is charged, and the SC-002 measurement reads the code,
+ * not the mere fact of failure.
  */
 export async function send(
   connection: Connection,
@@ -94,8 +97,8 @@ export async function send(
     throw new TransactionRefused(refusalOf(confirmation.value.err))
   }
 
-  // `maxSupportedTransactionVersion` обов'язковий: транзакції тут версійні (v0),
-  // і без нього вузол відповідає `null` на кожну з них.
+  // `maxSupportedTransactionVersion` is mandatory: the transactions here are
+  // versioned (v0), and without it the node answers `null` for every one.
   const detail = await connection.getTransaction(signature, {
     commitment: 'confirmed',
     maxSupportedTransactionVersion: 0,
@@ -109,7 +112,7 @@ export async function send(
   }
 }
 
-/** Підписати й відправити готовий план (те, що зібрали білдери T020). */
+/** Sign and send a ready plan (what the T020 builders assembled). */
 export async function submitPlan(
   connection: Connection,
   plan: TxPlan,
@@ -119,12 +122,13 @@ export async function submitPlan(
 }
 
 /**
- * Те саме для інструкцій, яких у білдерах немає.
+ * The same for instructions the builders do not have.
  *
- * Демо ходить не лише продуктовими шляхами: створення емітента, переказ повз
- * наші білдери, виклик чужої програми. Мітка кроку в `TxPlan` описує **продукт**
- * (T020), і додавати до неї назви, яких у продукті не існує, означало б
- * розширювати його словник заради інструменту виміру.
+ * The demo does not only walk product paths: creating an issuer, a transfer
+ * bypassing our builders, a call to a foreign program. The step label in
+ * `TxPlan` describes the **product** (T020), and adding names to it that do
+ * not exist in the product would mean widening its vocabulary for the sake
+ * of a measurement tool.
  */
 export async function submit(
   connection: Connection,
@@ -136,10 +140,11 @@ export async function submit(
 }
 
 /**
- * Очікувана відмова: успіх тут — це саме відмова.
+ * An expected refusal: success here is the refusal itself.
  *
- * Повертає розібрану причину, а транзакцію, яка **пройшла**, перетворює на
- * помилку. Для SC-002 це і є вимір: сто відсотків спроб мусять сюди потрапити.
+ * Returns the parsed reason, and turns a transaction that **went through**
+ * into an error. For SC-002 this is the measurement: one hundred percent of
+ * attempts must land here.
  */
 export async function expectRefusal(
   connection: Connection,
@@ -157,12 +162,13 @@ export async function expectRefusal(
 }
 
 /**
- * Спроба, яка **пройшла**. Окремий тип, а не звичайна помилка.
+ * An attempt that **went through**. A separate type, not an ordinary error.
  *
- * Різниця не педантична: «переказ пройшов» — це провал критерію SC-002, а
- * «спробу не вдалося навіть зібрати» — поламаний вимір. Один `catch` на обидва
- * випадки перетворив би другий на перший і показав би дірку в правилі там, де
- * її немає (саме це й сталося на першому прогоні).
+ * The difference is not pedantic: "the transfer went through" is a failure
+ * of criterion SC-002, while "the attempt could not even be assembled" is a
+ * broken measurement. One `catch` for both would turn the second into the
+ * first and show a hole in the rule where there is none (which is exactly
+ * what happened on the first run).
  */
 export class PassedThrough extends Error {
   constructor(message: string) {

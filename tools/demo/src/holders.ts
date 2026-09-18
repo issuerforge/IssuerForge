@@ -1,9 +1,10 @@
-// Онбординг холдерів: ATA, розморожування, статуси.
+// Holder onboarding: ATAs, thawing, statuses.
 //
-// **Підписує операційний ключ платформи, а не емітент.** Це перша делегована
-// операція (FR-035b, T022): у масці делегації є `THAW_HOLDER` і
-// `SET_HOLDER_STATUS`, і рівно їх ключ і використовує. Спроба вийти за маску
-// перевіряється окремо, у наборі порушень.
+// **The platform's operational key signs, not the issuer.** This is the first
+// delegated operation (FR-035b, T022): the delegation mask has `THAW_HOLDER`
+// and `SET_HOLDER_STATUS`, and exactly those are what the key uses. An
+// attempt to step outside the mask is checked separately, in the violation
+// set.
 import { buildSetHolderStatus, buildThawHolder, type HolderStatusInput } from '@forge/chain'
 import {
   createAssociatedTokenAccountInstruction,
@@ -26,13 +27,13 @@ export const ataOf = (mint: PublicKey, owner: PublicKey): PublicKey =>
   getAssociatedTokenAddressSync(mint, owner, false, TOKEN_2022_PROGRAM_ID)
 
 /**
- * Тільки ATA, без розморожування.
+ * Only the ATA, no thaw.
  *
- * Потрібне для виміру: рахунок, якого емітент не впускав, усе одно мусить
- * **існувати**, інакше переказ на нього не збирається на боці клієнта —
- * резолюція акаунтів хука читає дані самого рахунку (`owner`, рішення T017), і
- * без нього спроба зупиняється в браузері, а не правилом. Заморожений рахунок
- * без статусу — це і є «той, кого не впускали».
+ * Needed for the measurement: an account the issuer never let in must still
+ * **exist**, otherwise a transfer to it does not assemble on the client side
+ * — the hook's account resolution reads the account's own data (`owner`,
+ * decision T017), and without it the attempt stops in the browser, not at
+ * the rule. A frozen account with no status is "the one who was not let in".
  */
 export async function createAta(
   context: DemoContext,
@@ -61,12 +62,12 @@ export async function createAta(
 }
 
 /**
- * Рахунок холдера від нуля до розмороженого.
+ * A holder account from nothing to thawed.
  *
- * Два кроки, і другий не є наслідком першого: свіжий ATA приходить у стан
- * `Frozen` через `DefaultAccountState` на mint (FR-008b), тож без
- * `thaw_holder` він існує й нічого не приймає. Саме це й робить розморожування
- * дією, а не формальністю.
+ * Two steps, and the second does not follow from the first: a fresh ATA
+ * arrives in the `Frozen` state through `DefaultAccountState` on the mint
+ * (FR-008b), so without `thaw_holder` it exists and accepts nothing. That is
+ * exactly what makes thawing an action rather than a formality.
  */
 export async function onboard(
   context: DemoContext,
@@ -78,8 +79,9 @@ export async function onboard(
   const { connection, program, keys } = context
   const tokenAccount = ataOf(mint, holder.publicKey)
 
-  // Оренду ATA платить засновник: у холдера демо SOL немає взагалі, і це той
-  // самий випадок, під який у `initialize_issuer` розділені `payer` і `founder`.
+  // The founder pays the ATA rent: the demo holder has no SOL at all, and
+  // that is the very case `payer` and `founder` are separated for in
+  // `initialize_issuer`.
   const createdAta = await submit(
     connection,
     keys.founder.publicKey,
@@ -99,8 +101,9 @@ export async function onboard(
     issuerId,
     mint,
     wallet: holder.publicKey,
-    // Платить засновник, санкціонує операційний ключ: у делегованій операції
-    // це дві різні адреси, і програма перевіряє тільки другу.
+    // The founder pays, the operational key authorises: in a delegated
+    // operation these are two different addresses, and the program checks
+    // only the second.
     payer: keys.founder.publicKey,
     authority: keys.operational.publicKey,
     status,
@@ -111,7 +114,7 @@ export async function onboard(
   return { wallet: holder.publicKey, tokenAccount, createdAta, thawed }
 }
 
-/** Зміна статусу у власному реєстрі — друга делегована операція. */
+/** A status change in the issuer's own registry — the second delegated operation. */
 export async function setStatus(
   context: DemoContext,
   mint: PublicKey,

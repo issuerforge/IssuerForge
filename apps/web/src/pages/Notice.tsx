@@ -1,8 +1,9 @@
-// Одноекранне повідомлення: очікування, відмова, збій.
+// A single-screen notice: waiting, refusal, failure.
 //
-// Один компонент на всі три, бо вони відрізняються тільки текстом, а не формою.
-// `requestId` показується завжди, коли він є: за ним рядок лога api знаходиться
-// однозначно, і це єдине, що варто переказати по телефону.
+// One component for all three, because they differ only in text, not in
+// shape. `requestId` is shown whenever there is one: it finds the api log
+// line unambiguously, and it is the only thing worth reading out over the
+// phone.
 import { usePrivy } from '@privy-io/react-auth'
 
 export default function Notice({

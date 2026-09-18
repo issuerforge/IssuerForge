@@ -1,50 +1,54 @@
-// Фікстурний постачальник входу: те, чим для api є Privy, коли Privy немає.
+// The fixture login provider: what Privy is to the api when there is no
+// Privy.
 //
-// **Чому це взагалі потрібно.** `requireSession` робить два кроки різної
-// природи (`apps/api/src/privy.ts`): підпис токена перевіряє локально проти
-// `PRIVY_VERIFICATION_KEY`, а **адреси гаманців питає в постачальника** —
-// у токені їх немає ніколи, бо роль прив'язана до адреси, а не до акаунта
-// входу (FR-034a). Гаманці ж демо генеруються на кожен прогін, і живий Privy
-// не може знати адрес, яких не існувало, коли акаунт створювався.
+// **Why this is needed at all.** `requireSession` takes two steps of a
+// different nature (`apps/api/src/privy.ts`): it verifies the token signature
+// locally against `PRIVY_VERIFICATION_KEY`, but **asks the provider for the
+// wallet addresses** — a token never has them, because a role is bound to an
+// address, not to the login account (FR-034a). The demo wallets, though, are
+// generated on every run, and a live Privy cannot know addresses that did not
+// exist when the account was created.
 //
-// **Чому api від цього не міняється.** `PRIVY_API_URL` винесений у змінну
-// саме для цього — «щоб зміна хоста Privy не була правкою коду» (T009). Тут
-// піднімається сервіс, який відповідає на той самий запит тим самим тілом;
-// код автентифікації лишається рівно тим, що поїде в продакшн, і саме він
-// перевіряє підпис, аудиторію й строк. Обходу входу в api не з'явилось.
+// **Why the api does not change because of this.** `PRIVY_API_URL` was made
+// a variable for exactly this — "so that a change of Privy's host is not a
+// code change" (T009). Here a service comes up that answers the same request
+// with the same body; the authentication code stays exactly what will go to
+// production, and it is what verifies the signature, the audience and the
+// expiry. No bypass of login appeared in the api.
 import { createServer, type Server } from 'node:http'
 import { importPKCS8, SignJWT } from 'jose'
 
-/** Privy підписує токени доступу ES256 і тільки ним. */
+/** Privy signs access tokens with ES256 and nothing else. */
 const ALGORITHM = 'ES256'
 
-/** `iss` у токені Privy. Api звіряє його точним збігом. */
+/** `iss` in a Privy token. The api checks it by exact match. */
 const ISSUER = 'privy.io'
 
 export interface LoginFixtureOptions {
-  /** Приватна половина ключа, чия публічна частина стоїть у `PRIVY_VERIFICATION_KEY`. */
+  /** The private half of the key whose public half is in `PRIVY_VERIFICATION_KEY`. */
   readonly signingKeyPem: string
-  /** Аудиторія токена: те саме, що `PRIVY_APP_ID` у api. */
+  /** The token audience: the same as `PRIVY_APP_ID` in the api. */
   readonly appId: string
-  /** Порт, на який дивиться `PRIVY_API_URL`. */
+  /** The port `PRIVY_API_URL` points at. */
   readonly port: number
 }
 
 export interface LoginSession {
-  /** DID акаунта входу. Свій на кожен прогін, тож кеш api не має чого віддати. */
+  /** The login account's DID. New on every run, so the api cache has nothing to return. */
   readonly did: string
-  /** Токен доступу для заголовка `Authorization: Bearer`. */
+  /** The access token for the `Authorization: Bearer` header. */
   readonly accessToken: string
-  /** Зупиняє фікстуру. */
+  /** Stops the fixture. */
   close(): Promise<void>
 }
 
 /**
- * Піднімає фікстуру й видає токен для набору адрес.
+ * Brings up the fixture and issues a token for a set of addresses.
  *
- * Адреси передаються сюди, а не читаються з ланцюга: постачальник входу нічого
- * про ланцюг не знає й у продакшні теж — він лише каже, які адреси людина
- * довела. Що з них випливає, вирішує склад емітента в `role_assignments`.
+ * The addresses are passed in here rather than read from the chain: the
+ * login provider knows nothing about the chain, in production too — it only
+ * says which addresses the person proved. What follows from them is decided
+ * by the issuer's membership in `role_assignments`.
  */
 export async function startLogin(
   options: LoginFixtureOptions,
@@ -62,9 +66,9 @@ export async function startLogin(
   })
 
   const server = createServer((request, response) => {
-    // Шлях звіряється, а не ігнорується: фікстура, що відповідає на будь-який
-    // запит, приховала б зміну адреси ручки в api — і ми б дізнались про неї
-    // від живого Privy, а не тут.
+    // The path is checked, not ignored: a fixture answering any request would
+    // hide a change of the handler address in the api — and we would learn
+    // about it from a live Privy, not here.
     const url = new URL(request.url ?? '/', 'http://localhost')
     if (url.pathname !== `/api/v1/users/${encodeURIComponent(did)}`) {
       response.writeHead(404, { 'content-type': 'application/json' })
@@ -100,8 +104,8 @@ export async function startLogin(
 function listen(server: Server, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
     server.once('error', reject)
-    // Тільки петля: фікстура видає токени, і слухати на всіх інтерфейсах їй
-    // нема чого навіть на час прогону.
+    // Loopback only: the fixture issues tokens, and it has no business
+    // listening on all interfaces even for the duration of a run.
     server.listen(port, '127.0.0.1', () => {
       server.removeListener('error', reject)
       resolve()

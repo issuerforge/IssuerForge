@@ -1,9 +1,10 @@
-// Емісія понад атестований резерв — вимір SC-005 (частково, як його несе M1).
+// Issuance above the attested reserve — the SC-005 measurement (partial, as
+// M1 carries it).
 //
-// **Перевірка одна на всі шляхи появи токенів** (T055): і початковий випуск у
-// `create_token`, і майбутня `mint` проходять ту саму нерівність. На M1 існує
-// лише перший шлях, тож саме він і міряється: десять спроб випустити більше,
-// ніж атестовано, і жодна не має пройти.
+// **One check for every way tokens come into existence** (T055): both the
+// initial issuance in `create_token` and the future `mint` go through the
+// same inequality. On M1 only the first path exists, so it is what is
+// measured: ten attempts to issue more than is attested, and none may pass.
 import { buildTokenIssuance } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
 import type { PublicKey } from '@solana/web3.js'
@@ -17,13 +18,14 @@ export interface ReserveReport {
 }
 
 /**
- * Усі спроби беруть **той самий** номер токена — наступний вільний.
+ * Every attempt takes **the same** token number — the next free one.
  *
- * Спокуса дати кожній свій номер веде в хибний вимір: `create_token` виводить
- * seeds mint із `issuer_config.token_count`, а не з аргументу, тож друга спроба
- * з номером `2` падає на `ConstraintSeeds` — тобто на невідповідності адреси, а
- * не на резерві. Так перший прогін і дав дев'ять «відмов» не тієї природи.
- * Жодна спроба не проходить, лічильник не рухається, і номер лишається вільним.
+ * The temptation to give each its own number leads to a false measurement:
+ * `create_token` derives the mint seeds from `issuer_config.token_count`, not
+ * from an argument, so a second attempt with number `2` fails on
+ * `ConstraintSeeds` — i.e. on an address mismatch, not on the reserve. That
+ * is how the first run gave nine "refusals" of the wrong nature. No attempt
+ * passes, the counter does not move, and the number stays free.
  */
 export async function attemptOverReserve(
   context: DemoContext,
@@ -39,8 +41,9 @@ export async function attemptOverReserve(
   for (let index = 0; index < attempts; index += 1) {
     const now = await chainTime(connection)
     const reserveAmount = 1_000_000n
-    // Понад резерв рівно на одиницю: поруч видно лінію, а не два непов'язані
-    // числа (те саме правило, що в каталозі сценаріїв T021).
+    // Above the reserve by exactly one: the line is visible next to it rather
+    // than two unrelated numbers (the same rule as in the scenario catalogue,
+    // T021).
     const initialSupply = reserveAmount + 1n
 
     const plans = await buildTokenIssuance(program, {

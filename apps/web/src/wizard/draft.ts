@@ -1,13 +1,14 @@
-// Чернетка випуску: те, що людина набрала, і те, на що це перетворюється.
+// The issuance draft: what the person typed, and what it turns into.
 //
-// **Тут немає React і немає мережі.** Правило T010 лишається чинним: усе, що
-// варте перевірки, живе в чистих функціях і тестується без DOM. Кроки майстра —
-// це форма над цим модулем, а не навпаки.
+// **There is no React and no network here.** The T010 rule remains in force:
+// everything worth checking lives in pure functions and is tested without
+// the DOM. The wizard steps are a form over this module, not the other way
+// round.
 //
-// **Схему тіла запиту цей файл не переписує.** Вона приходить із
-// `@forge/api/contracts` — того самого модуля, який валідує запит на сервері.
-// Другий опис того самого тіла розійшовся б із першим мовчки, і розбіжність
-// коштувала б відмови після двох підписів.
+// **This file does not rewrite the request body schema.** It comes from
+// `@forge/api/contracts` — the same module that validates the request on the
+// server. A second description of the same body would diverge from the first
+// silently, and the divergence would cost a refusal after two signatures.
 import { type CreateTokenBody, createTokenBodySchema, MAX_DECIMALS } from '@forge/api/contracts'
 import {
   MAX_ATTESTATION_AGE_SECONDS,
@@ -21,40 +22,40 @@ import {
 } from '@forge/policy/model'
 
 export interface Draft {
-  // ─── 1. Токен ──────────────────────────────────────────────────────────────
+  // ─── 1. Token ──────────────────────────────────────────────────────────────
   name: string
   symbol: string
   uri: string
-  /** Текст, а не число: поле форми буває порожнім, а `0` — дійсна точність. */
+  /** Text, not a number: a form field can be empty, and `0` is valid decimals. */
   decimals: string
   initialSupply: string
-  /** Три незмінні параметри, які мусять бути підтверджені явно (FR-005). */
+  /** The three immutable parameters that must be confirmed explicitly (FR-005). */
   ackSymbol: boolean
   ackDecimals: boolean
   ackPolicy: boolean
 
-  // ─── 2. Хто може тримати ───────────────────────────────────────────────────
+  // ─── 2. Who may hold ───────────────────────────────────────────────────────
   sources: StatusSource[]
   minTier: number
   attestationAgeHours: string
   /**
-   * Країни списком через кому, як їх набирає людина.
+   * Countries as a comma-separated list, as a person types them.
    *
-   * Рядок, а не масив: чернетка — це форма, і розбір живе в чистій функції
-   * поруч. Порожній рядок означає «правила немає», тобто країни не
-   * перевіряються взагалі — і це не те саме, що порожній перелік, який модель
-   * відхиляє (`@forge/policy`: правила немає ≠ правило, що не дозволяє нікого).
+   * A string, not an array: the draft is a form, and parsing lives in a pure
+   * function beside it. An empty string means "no rule", i.e. countries are
+   * not checked at all — which is not the same as an empty list, which the
+   * model rejects (`@forge/policy`: no rule ≠ a rule that allows no one).
    */
   jurisdictions: string
   founderTier: number
   founderJurisdiction: string
 
-  // ─── 3. Ліміти ─────────────────────────────────────────────────────────────
+  // ─── 3. Limits ─────────────────────────────────────────────────────────────
   transferLimit: string
   periodLimit: string
   periodHours: string
 
-  // ─── 4. Резерв і комісія ───────────────────────────────────────────────────
+  // ─── 4. Reserve and fee ────────────────────────────────────────────────────
   reserveAmount: string
   reserveCurrency: string
   reserveAgeHours: string
@@ -75,12 +76,13 @@ export const STEPS = [
 export const LAST_STEP = STEPS.length
 
 /**
- * Порожня чернетка.
+ * The empty draft.
  *
- * Незмінні параметри не підтверджені, лімітів немає, джерела статусу — обидва.
- * Числа, які щось означають, тут не вигадуються: назва, символ і суми приходять
- * від людини, і підставлене «правдоподібне» значення в комплаєнс-формі — це
- * значення, яке хтось підпише не читаючи.
+ * The immutable parameters are unconfirmed, there are no limits, both status
+ * sources are on. Numbers that mean something are not invented here: the
+ * name, the symbol and the amounts come from the person, and a pre-filled
+ * "plausible" value in a compliance form is a value someone will sign without
+ * reading.
  */
 export const EMPTY_DRAFT: Draft = {
   name: '',
@@ -112,17 +114,19 @@ export const EMPTY_DRAFT: Draft = {
   treasury: '',
 }
 
-// ─── Числа ───────────────────────────────────────────────────────────────────
+// ─── Numbers ─────────────────────────────────────────────────────────────────
 
 /**
- * Сума в одиницях токена → найменші одиниці, **без чисел із рухомою комою**.
+ * An amount in token units → smallest units, **with no floating point**.
  *
- * `Number.parseFloat('25000000.07') * 100` дає 2500000006.9999995, і саме так
- * гроші втрачають копійку на порожньому місці. Тут усе рахується рядками.
+ * `Number.parseFloat('25000000.07') * 100` gives 2500000006.9999995, and that
+ * is exactly how money loses a cent for no reason. Everything here is
+ * computed on strings.
  *
- * `undefined` означає «це не сума». Зайва точність теж не сума, а помилка:
- * `1.234` при двох знаках — це або одруківка, або людина думає, що токен має
- * три знаки. Мовчки відкинути хвіст означало б підписати не те число.
+ * `undefined` means "this is not an amount". Excess precision is not an
+ * amount either but an error: `1.234` at two decimals is either a typo or a
+ * person who thinks the token has three. Silently dropping the tail would
+ * mean signing the wrong number.
  */
 export function toSmallestUnit(input: string, decimals: number): string | undefined {
   const cleaned = input.replace(/[\s,_]/g, '')
@@ -136,7 +140,7 @@ export function toSmallestUnit(input: string, decimals: number): string | undefi
   return digits === '' ? '0' : digits
 }
 
-/** Ціле число з поля форми. `undefined` — «не число», а не нуль. */
+/** An integer from a form field. `undefined` is "not a number", not zero. */
 export function toInteger(input: string): number | undefined {
   const cleaned = input.replace(/[\s,_]/g, '')
   if (!/^\d+$/.test(cleaned)) return undefined
@@ -145,11 +149,11 @@ export function toInteger(input: string): number | undefined {
 }
 
 /**
- * «ng, GH , ke» → `['NG', 'GH', 'KE']`.
+ * "ng, GH , ke" → `['NG', 'GH', 'KE']`.
  *
- * Порядок не нормалізується тут: його нормалізує сама модель правил, бо від
- * нього залежить `rules_hash` (T012). Дублікати теж лишаються — їх відхиляє
- * схема, і зробити це мовчки означало б прийняти помилку за намір.
+ * The order is not normalised here: the rule model itself normalises it,
+ * because `rules_hash` depends on it (T012). Duplicates stay too — the schema
+ * rejects them, and doing so silently would mean taking a mistake for intent.
  */
 export function parseJurisdictions(raw: string): string[] {
   return raw
@@ -163,14 +167,14 @@ const hoursToSeconds = (input: string): number | undefined => {
   return hours === undefined ? undefined : hours * 3600
 }
 
-// ─── Чернетка → політика ─────────────────────────────────────────────────────
+// ─── Draft → policy ──────────────────────────────────────────────────────────
 
 /**
- * Правила в тій формі, у якій їх приймає модель.
+ * The rules in the shape the model accepts.
  *
- * Порожнє поле — це **відсутнє правило**, а не нульове: домовленість
- * `@forge/policy` одна на всі поля, і саме тому нуль не є допустимою сумою
- * ліміту, а порожній перелік країн не є способом сказати «усі».
+ * An empty field is an **absent rule**, not a zero one: the `@forge/policy`
+ * convention is one for all fields, which is exactly why zero is not a valid
+ * limit amount and an empty list of countries is not a way to say "all".
  */
 export function draftPolicy(draft: Draft): unknown {
   const decimals = toInteger(draft.decimals) ?? 0
@@ -183,8 +187,8 @@ export function draftPolicy(draft: Draft): unknown {
     status: {
       sources: draft.sources,
       minTier: draft.minTier,
-      // Строк придатності атестації має сенс лише тоді, коли атестації взагалі
-      // приймаються; інакше поле не «нуль», а відсутнє.
+      // The attestation validity period makes sense only when attestations are
+      // accepted at all; otherwise the field is not "zero" but absent.
       ...(draft.sources.includes('provider')
         ? { maxAttestationAgeSeconds: hoursToSeconds(draft.attestationAgeHours) }
         : {}),
@@ -199,27 +203,27 @@ export function draftPolicy(draft: Draft): unknown {
   }
 }
 
-/** Розібрані правила або `undefined`, поки чернетка ще не політика. */
+/** The parsed rules, or `undefined` while the draft is not yet a policy. */
 export function parsedPolicy(draft: Draft): PolicyRules | undefined {
   const parsed = policyRulesSchema.safeParse(draftPolicy(draft))
   return parsed.success ? parsed.data : undefined
 }
 
-// ─── Чернетка → тіло запиту ──────────────────────────────────────────────────
+// ─── Draft → request body ────────────────────────────────────────────────────
 
 export interface DraftBody {
   ok: boolean
   body?: CreateTokenBody
-  /** Проблеми в тій формі, у якій їх показує форма: «поле: що не так». */
+  /** The problems in the shape the form shows them: "field: what is wrong". */
   problems: readonly string[]
 }
 
 /**
- * Чернетка → тіло `POST /api/tokens`, перевірене **тією самою схемою**, що на
- * сервері.
+ * Draft → the body of `POST /api/tokens`, checked with **the same schema** as
+ * on the server.
  *
- * `now` приходить аргументом: час атестації резерву рахується від нього, і
- * прихований `Date.now()` зробив би цю функцію неперевірюваною.
+ * `now` comes as an argument: the reserve attestation time is computed from
+ * it, and a hidden `Date.now()` would make this function untestable.
  */
 export function toCreateTokenBody(draft: Draft, now: number): DraftBody {
   const decimals = toInteger(draft.decimals)
@@ -262,20 +266,21 @@ export function toCreateTokenBody(draft: Draft, now: number): DraftBody {
   }
 }
 
-// ─── Готовність кроків ───────────────────────────────────────────────────────
+// ─── Step readiness ──────────────────────────────────────────────────────────
 
 const missing = (value: string, label: string): string[] =>
   value.trim() === '' ? [`${label} is required`] : []
 
 /**
- * Що заважає піти з цього кроку далі.
+ * What prevents moving on from this step.
  *
- * Порожній масив — «крок повний». Список, а не булеве значення: людині треба
- * сказати, чого бракує, а не пофарбувати кнопку сірим.
+ * An empty array is "the step is complete". A list, not a boolean: the
+ * person must be told what is missing, not shown a button painted grey.
  *
- * Крок доводить **свої** поля, і тільки їх. Наскрізні звірки (емісія проти
- * резерву, статус засновника проти політики) стоять на кроці, де видно обидва
- * числа, — інакше крок 1 відмовляв би через поле, якого на ньому ще немає.
+ * A step proves **its own** fields, and only them. Cross-cutting checks
+ * (issuance against reserve, the founder's status against the policy) sit on
+ * the step where both numbers are visible — otherwise step 1 would refuse
+ * over a field that is not on it yet.
  */
 export function problemsAt(step: number, draft: Draft): readonly string[] {
   const decimals = toInteger(draft.decimals)
@@ -350,19 +355,20 @@ export function problemsAt(step: number, draft: Draft): readonly string[] {
     return problems
   }
 
-  // Кроки 4 і 5 доводяться тим самим, чим доводить сервер: схемою тіла. Тут
-  // уперше видно всі поля разом, тож наскрізні правила (емісія ≤ резерв)
-  // перевіряються саме на них.
+  // Steps 4 and 5 are proven by the same thing the server proves with: the
+  // body schema. Here all the fields are visible together for the first time,
+  // so the cross-cutting rules (issuance ≤ reserve) are checked exactly on
+  // them.
   return toCreateTokenBody(draft, 0).problems
 }
 
 /**
- * Попередження — не те саме, що проблеми: вони нічого не блокують.
+ * Warnings are not the same as problems: they block nothing.
  *
- * Обидва нижче — про засновника, і жодне з них не перевіряє програма. Вона й не
- * має: політика стосується переказів, а не того, кому дістався початковий
- * випуск. Наслідок при цьому цілком реальний — токен, який нікуди не рухається,
- * — і побачити його треба до підпису, а не після.
+ * Both below are about the founder, and the program checks neither. Nor
+ * should it: the policy is about transfers, not about who received the
+ * initial issuance. The consequence is entirely real, though — a token that
+ * goes nowhere — and it must be seen before signing, not after.
  */
 export function warningsFor(draft: Draft): readonly string[] {
   const warnings: string[] = []

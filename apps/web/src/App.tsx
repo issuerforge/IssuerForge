@@ -1,8 +1,8 @@
-// Маршрути консолі.
+// The console routes.
 //
-// Список екранів тут не повторюється: він приходить із реєстру
-// (`console/screens.tsx`), і кожен пункт обгортається тим самим ґардом ролі.
-// Додати екран — це рядок у реєстрі, а не правка в трьох місцях.
+// The list of screens is not repeated here: it comes from the registry
+// (`console/screens.tsx`), and every entry is wrapped in the same role guard.
+// Adding a screen is a line in the registry, not an edit in three places.
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { RequireScreen, RequireSession, useConsoleSession } from '@/auth/guards'
 import ConsoleLayout from '@/console/ConsoleLayout'
@@ -12,11 +12,11 @@ import Notice from '@/pages/Notice'
 import PrototypeRoutes from '@/prototype/routes'
 
 /**
- * Корінь веде на перший екран, доступний цій ролі.
+ * The root leads to the first screen available to this role.
  *
- * Порожній результат неможливий для дійсної сесії — `/console` відкритий
- * будь-якій ролі, а маска сесії ніколи не порожня, — але припущення про це
- * коштувало б білого екрана, тож випадок названий.
+ * An empty result is impossible for a valid session — `/console` is open to
+ * any role, and the session mask is never empty — but assuming so would cost
+ * a blank screen, so the case is named.
  */
 function Landing() {
   const session = useConsoleSession()

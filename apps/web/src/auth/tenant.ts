@@ -1,32 +1,35 @@
-// Вибір орендаря, коли людина у складі кількох емітентів.
+// Choosing the tenant when a person is in several issuers' memberships.
 //
-// Це стан клієнта, а не право: api звіряє `X-Issuer-Id` з уже доведеними
-// членствами й уміє тільки звузити вибір (`apps/api/src/session.ts`). Тому
-// підроблене значення в сховищі браузера не дає нічого — воно або серед
-// членств, або відкидається.
+// This is client state, not a right: the api checks `X-Issuer-Id` against
+// memberships already proven and can only narrow the choice
+// (`apps/api/src/session.ts`). So a forged value in browser storage gives
+// nothing — it is either among the memberships or rejected.
 //
-// Складне тут одне: збережений емітент може зникнути зі складу між сеансами
-// (роль відкликали кворумом). Консоль мусить це помітити й сказати вголос, а не
-// показати порожній екран із заголовком, якому api відповідає 400.
+// Only one thing is hard here: the stored issuer may vanish from the
+// membership between sessions (the role was revoked by quorum). The console
+// must notice that and say so out loud, rather than show a blank screen with a
+// header the api answers 400 to.
 
-/** Ключ сховища. Один на застосунок; префікс — щоб не збігтися з чужим. */
+/** The storage key. One per app; the prefix is there to avoid colliding with someone else's. */
 export const TENANT_STORAGE_KEY = 'issuerforge.issuerId'
 
 export interface TenantChoice {
-  /** Емітент, від імені якого йдуть запити. `undefined` — треба обрати. */
+  /** The issuer on whose behalf requests go. `undefined` — a choice is needed. */
   issuerId: string | undefined
   /**
-   * Збережений вибір більше не серед членств: роль відкликали або запис у
-   * сховищі чужий. Консоль показує це один раз і чистить сховище.
+   * The stored choice is no longer among the memberships: the role was
+   * revoked or the storage entry is someone else's. The console shows this
+   * once and clears the storage.
    */
   dropped: string | undefined
 }
 
 /**
- * Зводить збережений вибір зі складом членств.
+ * Reconciles the stored choice with the set of memberships.
  *
- * Єдине членство перекриває збережене значення, а не звіряється з ним: людину,
- * у якої лишився один емітент, не має зупиняти запис про той, якого вже немає.
+ * A single membership overrides the stored value rather than being checked
+ * against it: a person left with one issuer must not be stopped by a record
+ * of one that is gone.
  */
 export function resolveTenant(
   issuerIds: readonly string[],
@@ -43,9 +46,10 @@ export function resolveTenant(
 }
 
 /**
- * Читання й запис сховища загорнуті, бо `localStorage` кидає в приватному
- * режимі й за вимкнених даних сайту. Впасти на цьому — значить не пустити в
- * консоль через налаштування браузера, яке до ролей не має стосунку.
+ * Storage reads and writes are wrapped because `localStorage` throws in
+ * private mode and with site data disabled. Failing on that would mean
+ * keeping someone out of the console over a browser setting that has nothing
+ * to do with roles.
  */
 export function readStoredTenant(storage: Storage | undefined = safeStorage()): string | null {
   try {
@@ -63,7 +67,7 @@ export function writeStoredTenant(
     if (issuerId === undefined) storage?.removeItem(TENANT_STORAGE_KEY)
     else storage?.setItem(TENANT_STORAGE_KEY, issuerId)
   } catch {
-    // Вибір лишається в пам'яті вкладки — цього достатньо, щоб працювати.
+    // The choice stays in the tab's memory — enough to work with.
   }
 }
 

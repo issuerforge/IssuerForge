@@ -19,8 +19,8 @@ describe('the screen registry', () => {
   })
 
   it('leaves an observer with something to open', () => {
-    // OBSERVER не має жодного повноваження, крім читання, і саме тому це
-    // найгостріший випадок: роль, яка нікуди не веде, — це білий екран.
+    // OBSERVER has no power other than reading, and that is exactly why it is
+    // the sharpest case: a role that leads nowhere is a blank screen.
     const open = screensFor(ROLE.OBSERVER)
     expect(open.length).toBeGreaterThan(0)
     expect(open.every((s) => permits(ROLE.OBSERVER, s))).toBe(true)

@@ -1,10 +1,12 @@
-// Випуск токена: три транзакції, як їх збирає майстер.
+// Token issuance: three transactions, as the wizard assembles them.
 //
-// **Проходить рівно тим шляхом, що й консоль** — тими самими білдерами T020,
-// у тому самому порядку й із тією самою залежністю: друга й третя транзакції
-// читають `TokenConfig`, якого до підтвердження першої не існує.
+// **Goes exactly the same way as the console** — the same T020 builders, in
+// the same order and with the same dependency: the second and the third
+// transactions read a `TokenConfig` that does not exist until the first is
+// confirmed.
 //
-// Час від першої підпису до підтвердження третьої — це і є SC-001.
+// The time from the first signature to the confirmation of the third is
+// SC-001.
 import { buildTokenIssuance, issuanceAddresses } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
 import type { PublicKey } from '@solana/web3.js'
@@ -30,7 +32,7 @@ export interface IssuanceInput {
 export interface IssuanceResult {
   readonly addresses: ReturnType<typeof issuanceAddresses>
   readonly steps: readonly Sent[]
-  /** Мілісекунди від першої відправки до підтвердження третьої (SC-001). */
+  /** Milliseconds from the first send to the confirmation of the third (SC-001). */
   readonly elapsedMs: number
 }
 
@@ -47,10 +49,11 @@ export async function issueToken(
     founder: keys.founder.publicKey,
     attestor: keys.attestor.publicKey,
     decimals: input.decimals,
-    // Акредитив і схема атестацій провайдера: у демо вони фікстурні, бо
-    // сервісу атестацій на локальному валідаторі немає, а політика M1 читає
-    // власний реєстр емітента. Адреси все одно мусять бути справжніми ключами —
-    // програма їх зберігає й хук виводить із них акаунт.
+    // The provider's attestation credential and schema: in the demo they are
+    // fixtures, because there is no attestation service on the local
+    // validator, and the M1 policy reads the issuer's own registry. The
+    // addresses must still be real keys — the program stores them and the
+    // hook derives an account from them.
     attestationCredential: keys.issuerId.publicKey,
     attestationSchema: keys.treasury.publicKey,
     treasury: keys.treasury.publicKey,
@@ -61,8 +64,8 @@ export async function issueToken(
     initialSupply: input.initialSupply,
     reserveAmount: input.reserveAmount,
     reserveAttestedAt: BigInt(now),
-    // Засновник отримує весь початковий випуск, тож його статус мусить
-    // задовольняти власну політику — інакше токен нікуди не рухається.
+    // The founder receives the whole initial issuance, so their status must
+    // satisfy their own policy — otherwise the token goes nowhere.
     founderStatus: {
       tier: 2,
       jurisdiction: 'NG',
@@ -78,14 +81,14 @@ export async function issueToken(
   const steps: Sent[] = []
 
   for (const plan of plans) {
-    // Послідовно й з очікуванням: `dependsOnPrevious` у плані — це не примітка,
-    // а заборона надіслати пачкою.
+    // Sequentially and with waiting: `dependsOnPrevious` in the plan is not a
+    // remark but a ban on sending as a batch.
     steps.push(
       await submitPlan(
         connection,
         plan,
-        // Підписанти виведені з інструкцій (T020); ключі добираються за
-        // адресою, а не за здогадом про порядок.
+        // The signers are derived from the instructions (T020); the keys are
+        // picked by address, not by a guess about the order.
         [keys.founder, keys.attestor].filter((keypair) =>
           plan.signers.some((signer) => signer.equals(keypair.publicKey)),
         ),

@@ -1,9 +1,10 @@
-// Що консоль про вас знає — і звідки.
+// What the console knows about you — and where from.
 //
-// Це не заглушка: до появи живих даних токена (T031, T034) це єдиний екран, на
-// якому видно весь ланцюг «гаманець → склад емітента → роль → набір екранів»
-// цілком. Він лишається й далі — у комплаєнс-продукті питання «чому мені видно
-// саме це» мусить мати екран із відповіддю, а не усне пояснення.
+// Not a stub: until live token data arrives (T031, T034) this is the only
+// screen where the whole chain "wallet → issuer membership → role → set of
+// screens" is visible in full. It stays afterwards too — in a compliance
+// product the question "why do I see exactly this" must have a screen with
+// the answer, not a verbal explanation.
 import { ROLE_NAMES, roleNames } from '@forge/shared/api'
 import { useConsoleSession } from '@/auth/guards'
 import { truncate } from '@/lib/format'

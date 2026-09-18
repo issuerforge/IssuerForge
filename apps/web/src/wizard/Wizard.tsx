@@ -1,9 +1,10 @@
-// Оболонка майстра: рейка кроків, поле форми, живий збірник правил поруч.
+// The wizard shell: the step rail, the form area, the live rulebook beside
+// it.
 //
-// Дві колонки не косметика: FR-004 вимагає показати наслідки правил **до**
-// підпису, і корисно це рівно тоді, коли правило й наслідок видно одночасно.
-// На останньому кроці колонки зливаються — там збірник читається як документ, а
-// не як підказка.
+// Two columns are not cosmetics: FR-004 requires showing the consequences of
+// the rules **before** signing, and that is useful exactly when the rule and
+// the consequence are visible at the same time. On the last step the columns
+// merge — there the rulebook reads as a document, not as a hint.
 import { problemsAt, STEPS } from './draft.ts'
 import Review from './Review.tsx'
 import Rulebook from './Rulebook.tsx'
@@ -18,8 +19,9 @@ function StepRail() {
       <ul className="flex flex-wrap items-center gap-x-5 gap-y-1 py-3 sm:gap-x-7">
         {STEPS.map((entry, index) => {
           const current = entry.n === step
-          // Уперед по недосягнутому рейка не пускає: крок 4 без кроку 1 — це
-          // форма, у якій половина полів порожня, а кнопка сіра без пояснення.
+          // The rail does not let you jump ahead past the unreached: step 4
+          // without step 1 is a form with half the fields empty and a grey
+          // button with no explanation.
           const open = entry.n <= reached
           return (
             <li key={entry.n} className="flex items-center gap-x-5 sm:gap-x-7">
@@ -76,8 +78,8 @@ function Body() {
         </div>
 
         {/*
-          Перелік, а не сіра кнопка: людині треба сказати, чого бракує. Кнопка,
-          яка мовчки не натискається, — це загадка, а не перевірка.
+          A list, not a grey button: the person must be told what is missing. A
+          button that silently will not click is a riddle, not a check.
         */}
         {problems.length > 0 && (
           <ul className="mt-8 border-t border-hairline pt-3">

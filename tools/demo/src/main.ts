@@ -1,18 +1,20 @@
-// Демо-сценарій US1 і вимір критеріїв M1 (T024).
+// The US1 demo scenario and the measurement of the M1 criteria (T024).
 //
-// **Не тест, а вимір.** Тести доводять, що код робить те, що написано; цей
-// скрипт доводить числа, які стоять у таблиці віхи: скільки часу займає випуск,
-// скільки коштує переказ і скільки спроб порушити правило пройшло (жодна).
+// **Not a test but a measurement.** Tests prove that the code does what is
+// written; this script proves the numbers in the milestone table: how long
+// an issuance takes, how much a transfer costs, and how many attempts to
+// violate the rule went through (none).
 //
-// Запуск (оточення читається з кореневого `.env`):
+// Running (the environment is read from the root `.env`):
 //   node --env-file=.env tools/demo/src/main.ts --rpc http://127.0.0.1:8899
 //   node --env-file=.env tools/demo/src/main.ts \
 //     --rpc https://api.devnet.solana.com --payer ~/.config/solana/id.json
 //
-// `--api http://127.0.0.1:8787` веде випуск і онбординг через api — тим самим
-// шляхом, яким іде майстер. Без нього демо збирає транзакції сама, і SC-001
-// міряє лише ончейн-половину. Атаки, звірка й вартість переказу прямі в обох
-// випадках: вони міряють правило, і http у цьому вимірі був би шумом.
+// `--api http://127.0.0.1:8787` routes issuance and onboarding through the
+// api — the same path the wizard takes. Without it the demo assembles the
+// transactions itself, and SC-001 measures only the on-chain half. The
+// attacks, the comparison and the transfer cost are direct in both cases:
+// they measure the rule, and http would be noise in that measurement.
 import { buildTransfer } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
 import { DELEGATION } from '@forge/shared/api'
@@ -38,19 +40,20 @@ import { attemptOverReserve } from './reserve.ts'
 import { closeDatabase, openDatabase, seedIssuer } from './seed.ts'
 import { submitPlan } from './send.ts'
 
-/** Програма-посередник для вектора CPI. Адреса та, що в `Anchor.toml`. */
+/** The relay program for the CPI vector. The address is the one in `Anchor.toml`. */
 const ATTACKER_PROGRAM = new PublicKey('9ZCmUGqkrtBrm83uiiMwBgRrV2cBPE9HGMgA25iRJGkQ')
 
 interface Options {
   readonly rpc: string
-  /** База api. Порожня — демо йде прямо в ланцюг, повз резервацію номера. */
+  /** The api base. Empty — the demo goes straight to the chain, bypassing the number reservation. */
   readonly api: string | undefined
   /**
-   * Файл ключа, з якого беруться гроші на прогін. Порожній — кран.
+   * The key file the run's money is taken from. Empty — the faucet.
    *
-   * На devnet кран дає 2 SOL за раз і не завжди, тож прогін залежав би від
-   * настрою крана, а не від коду. Гаманець деплою вже має гроші й на devnet
-   * потрібен однаково — це той самий ключ, яким програма туди покладена.
+   * On devnet the faucet gives 2 SOL at a time and not always, so the run
+   * would depend on the faucet's mood rather than the code. The deploy wallet
+   * already has funds and is needed on devnet anyway — it is the same key the
+   * program was put there with.
    */
   readonly payer: string | undefined
 }
@@ -68,23 +71,25 @@ function parseArgs(argv: readonly string[]): Options {
 }
 
 /**
- * Скільки наливається засновнику й операційному ключу.
+ * How much is poured into the founder and the operational key.
  *
- * З крана береться щедро: локально це нічого не коштує. З гаманця — рівно
- * стільки, скільки треба з запасом: прогін не прибирає за собою (борг №5), тож
- * усе, що налито понад витрачене, лишається на одноразовому ключі назавжди.
+ * From the faucet, generously: locally it costs nothing. From the wallet,
+ * exactly as much as needed with headroom: the run does not clean up after
+ * itself (debt #5), so everything poured in beyond what is spent stays on
+ * the one-off key forever.
  *
- * Числа зняті з виміру, а не назначені: повний прогін спалює **0,0475 SOL** на
- * засновнику (оренда емітента, mint, політики, атестації та семи ATA плюс
- * комісії ста тридцяти транзакцій) і соті цього на операційному ключі. Запас —
- * чотирикратний.
+ * The numbers are taken from measurement, not assigned: a full run burns
+ * **0.0475 SOL** on the founder (rent for the issuer, the mint, the policy,
+ * the attestation and seven ATAs, plus fees for a hundred and thirty
+ * transactions) and hundredths of that on the operational key. The headroom
+ * is fourfold.
  */
 const FUNDING = {
   faucet: { founder: 5, operational: 1 },
   wallet: { founder: 0.2, operational: 0.05 },
 } as const
 
-/** Змінна оточення, без якої шлях `--api` не почнеться. */
+/** The environment variable without which the `--api` path does not start. */
 function required(name: string): string {
   const value = process.env[name]
   if (value === undefined || value === '' || value.includes('REPLACE_ME')) {
@@ -94,12 +99,14 @@ function required(name: string): string {
 }
 
 /**
- * Усе, що потрібно, щоб демо ввійшла в api так само, як консоль.
+ * Everything needed for the demo to log into the api the same way the
+ * console does.
  *
- * Три кроки, і жоден із них не є обходом входу: склад пишеться в базу (це
- * робота індексатора T031, якого ще немає), фікстура відповідає на той самий
- * запит, що й Privy, а токен підписується ключем, чию публічну половину api
- * читає з оточення й перевіряє сама.
+ * Three steps, and none of them is a login bypass: the membership is written
+ * to the database (the job of indexer T031, which does not exist yet), the
+ * fixture answers the same request Privy does, and the token is signed with
+ * the key whose public half the api reads from the environment and verifies
+ * itself.
  */
 async function openApiSession(
   context: ReturnType<typeof createContext>,
@@ -117,8 +124,8 @@ async function openApiSession(
     slot: await connection.getSlot('confirmed'),
   })
 
-  // Порт береться з тієї самої адреси, яку читає api: два числа розійшлися б
-  // мовчки, і api ходив би в порожнечу.
+  // The port is taken from the same address the api reads: two numbers would
+  // diverge silently, and the api would call into the void.
   const fixtureUrl = new URL(required('PRIVY_API_URL'))
 
   const login = await startLogin(
@@ -127,8 +134,8 @@ async function openApiSession(
       appId: required('PRIVY_APP_ID'),
       port: Number(fixtureUrl.port || '80'),
     },
-    // Рівно ті адреси, які стоять у складі: фікстура не має права «довести»
-    // більше, ніж довів би Privy.
+    // Exactly the addresses in the membership: the fixture has no right to
+    // "prove" more than Privy would.
     [
       keys.founder.publicKey.toBase58(),
       keys.officer.publicKey.toBase58(),
@@ -145,8 +152,8 @@ async function openApiSession(
   return {
     api,
     login,
-    // Обидва ресурси тримають подієвий цикл: без них процес не завершується
-    // навіть тоді, коли всі числа вже надруковані.
+    // Both resources hold the event loop: without this the process does not
+    // exit even when all the numbers are already printed.
     close: async () => {
       await login.close()
       await closeDatabase(db)
@@ -155,12 +162,13 @@ async function openApiSession(
 }
 
 /**
- * Політика демо: власний реєстр емітента, рівень 2, дві країни, обидва ліміти.
+ * The demo policy: the issuer's own registry, tier 2, two countries, both
+ * limits.
  *
- * Джерело `provider` навмисно не приймається. Атестації провайдера живуть у
- * спільному сервісі атестацій, якого на локальному валідаторі немає; політика,
- * що їх приймає, дала б `*_STATUS_MISSING` на кожному переказі — тобто
- * вимірювала б відсутність сервісу, а не роботу правила.
+ * The `provider` source is deliberately not accepted. Provider attestations
+ * live in the shared attestation service, which the local validator does not
+ * have; a policy accepting them would give `*_STATUS_MISSING` on every
+ * transfer — i.e. measure the absence of the service, not the rule at work.
  */
 const DEMO_POLICY: PolicyRules = {
   status: { sources: ['register'], minTier: 2 },
@@ -171,9 +179,9 @@ const DEMO_POLICY: PolicyRules = {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
-  // Операційний ключ у шляху `--api` належить процесу api, а не демо: емітент
-  // створюється з **його** адресою, інакше делеговане розморожування відмовить
-  // на `require_routine`.
+  // On the `--api` path the operational key belongs to the api process, not
+  // the demo: the issuer is created with **its** address, otherwise a
+  // delegated thaw is refused at `require_routine`.
   const context = createContext(
     options.rpc,
     options.api === undefined
@@ -192,37 +200,39 @@ async function main() {
   if (payer !== undefined) {
     const available = solOf(await connection.getBalance(payer.publicKey))
     console.log(`payer:   ${payer.publicKey.toBase58()} · ${available} SOL`)
-    // Перевірка тут, а не «перша транзакція скаже»: порожній гаманець посеред
-    // прогону лишає позаду половину емітента й спалені комісії.
+    // The check is here, not "the first transaction will tell": an empty
+    // wallet mid-run leaves behind half an issuer and burnt fees.
     const needed = amounts.founder + amounts.operational
     if (available < needed) {
       throw new Error(`payer holds ${available} SOL, and the run needs at least ${needed}`)
     }
   }
 
-  // Засновник платить оренду за все: конфіг емітента, mint, політику,
-  // атестацію, два акаунти на кожного холдера.
+  // The founder pays rent for everything: the issuer config, the mint, the
+  // policy, the attestation, two accounts per holder.
   const funded = await fund(connection, keys.founder.publicKey, amounts.founder, payer)
-  // Операційний ключ платить за власні транзакції сам: `set_holder_status`
-  // платника окремо не має, тож комісію несе той, хто санкціонує (T020). Це не
-  // деталь демо, а економічний наслідок делегації — платформа платить за
-  // рутину, яку їй доручили.
+  // The operational key pays for its own transactions: `set_holder_status`
+  // has no separate payer, so the fee is borne by whoever authorises (T020).
+  // This is not a demo detail but an economic consequence of delegation —
+  // the platform pays for the routine entrusted to it.
   await fund(connection, keys.operational.publicKey, amounts.operational, payer)
   const balance = await connection.getBalance(keys.founder.publicKey)
   console.log(
     `balance: ${solOf(balance)} SOL${funded ? '' : ' (airdrop refused; using what is there)'}`,
   )
 
-  // Емітента створює сам засновник і в обох шляхах однаково: маршруту для
-  // цього немає й не буде — `initialize_issuer` це єдина дія без кворуму (T007),
-  // і робить її людина своїм ключем, а не платформа за неї.
+  // The founder creates the issuer themselves, the same way on both paths:
+  // there is no route for this and there will be none — `initialize_issuer`
+  // is the only action without a quorum (T007), and a person does it with
+  // their own key, not the platform on their behalf.
   const issuer = await createIssuer(context)
   console.log(`issuer:  ${issuer.issuerId.toBase58()} · ${issuer.sent.computeUnits ?? '?'} CU`)
 
-  // ── Шлях через api ────────────────────────────────────────────────────────
-  // Далі розгалуження рівно в одному місці: випуск і онбординг. Атаки, звірка
-  // й вимір вартості лишаються прямими навмисно — вони міряють **правило**, і
-  // проводити їх через http означало б міряти http.
+  // ── The api path ──────────────────────────────────────────────────────────
+  // From here the branching is in exactly one place: issuance and onboarding.
+  // The attacks, the comparison and the cost measurement stay direct on
+  // purpose — they measure the **rule**, and running them through http would
+  // mean measuring http.
   const session =
     options.api === undefined
       ? undefined
@@ -235,23 +245,24 @@ async function main() {
   try {
     await measure(context, session?.api, issuer)
   } finally {
-    // Фікстура тримає порт, і без цього процес не завершився б навіть після
-    // успішного прогону.
+    // The fixture holds the port, and without this the process would not exit
+    // even after a successful run.
     await session?.close()
   }
 }
 
 /**
- * Онбординг через api: заявка, потім розморожування.
+ * Onboarding through the api: the application, then the thaw.
  *
- * **ATA все одно створює демо.** Маршрут його не створює й не має: рахунок
- * належить холдеру, і платить за нього той, хто його заводить. У продукті це
- * робить гаманець власника; тут — засновник, бо холдери демо своїх грошей не
- * мають.
+ * **The demo still creates the ATA.** The route does not create it, nor
+ * should it: the account belongs to the holder, and whoever opens it pays
+ * for it. In the product the owner's wallet does that; here the founder,
+ * because the demo holders have no money of their own.
  *
- * CU назад не повертається: делегований шлях віддає підпис, а не вимір. Число
- * для звіту тут не потрібне — його вже дав прямий прогін, а `--api` міряє час
- * шляху, а не вартість інструкції.
+ * No CU comes back: the delegated path returns a signature, not a
+ * measurement. The report does not need a number here — the direct run
+ * already gave it, and `--api` measures the path's time, not the
+ * instruction's cost.
  */
 async function onboardViaApi(
   context: DemoContext,
@@ -268,14 +279,14 @@ async function onboardViaApi(
     expiresAt: null,
   })
   const thawed = await api.thawHolder(mint.toBase58(), wallet.toBase58())
-  // Непідписаний шлях означав би, що делегація не діє, — а вона є суттю T022.
+  // An unsigned path would mean the delegation is not in effect — and it is the essence of T022.
   if (thawed.mode !== 'delegated') {
     throw new Error(`expected the operational key to sign the thaw, got mode=${thawed.mode}`)
   }
   return undefined
 }
 
-/** Сам вимір. Шлях до токена вже обраний: `api` є або його немає. */
+/** The measurement itself. The path to the token is already chosen: `api` either exists or not. */
 async function measure(
   context: DemoContext,
   api: ApiClient | undefined,
@@ -318,9 +329,9 @@ async function measure(
       ('apiMs' in issuance ? ` (api ${(issuance.apiMs / 1000).toFixed(1)} s of it)` : ''),
   )
 
-  // Двоє холдерів, обидва в дозволеній юрисдикції й з потрібним рівнем: усе,
-  // що далі відмовляє, відмовляє через **правило**, а не через незаповнений
-  // статус.
+  // Two holders, both in an allowed jurisdiction and with the required tier:
+  // everything that refuses from here on refuses because of the **rule**, not
+  // because of an unfilled status.
   const onboardOne = async (holder: Keypair, jurisdiction: string) =>
     api === undefined
       ? (
@@ -337,9 +348,10 @@ async function measure(
   const bobCu = await onboardOne(keys.bob, 'GH')
   console.log(`holders: alice ${aliceCu ?? '?'} CU · bob ${bobCu ?? '?'} CU`)
 
-  // Засновник тримає весь випуск: перший переказ іде від нього. Його рахунок
-  // уже розморожений самим випуском (`founderStatus`), тож повторна спроба
-  // законно відмовляє — і саме тому вона не є помилкою прогону.
+  // The founder holds the whole issuance: the first transfer comes from them.
+  // Their account is already thawed by the issuance itself (`founderStatus`),
+  // so a repeat attempt legitimately refuses — which is exactly why it is not
+  // a run error.
   await onboardOne(keys.founder, 'NG').catch(() => undefined)
 
   const transfer = await buildTransfer(context.connection, {
@@ -362,9 +374,10 @@ async function measure(
   })
   console.log(`status:  ${restated.computeUnits} CU`)
 
-  // ── SC-008: симуляція проти мережі ────────────────────────────────────────
-  // Стоїть **перед** спробами порушення: ті вичерпують ліміт за період, і
-  // після них кожен сценарій відмовляв би однією й тією ж причиною.
+  // ── SC-008: the simulation against the network ────────────────────────────
+  // Comes **before** the violation attempts: those exhaust the per-period
+  // limit, and after them every scenario would refuse for one and the same
+  // reason.
   const carol = await onboard(context, mint, issuer.issuerId, keys.carol, {
     tier: 2,
     jurisdiction: 'PL',
@@ -433,7 +446,7 @@ async function measure(
     )
   }
 
-  // ── SC-003: скільки коштує правило ────────────────────────────────────────
+  // ── SC-003: what the rule costs ───────────────────────────────────────────
   const cost = await measureCost(context, moved, 2, keys.alice.publicKey)
   console.log(
     `cost:    with rule ${cost.withRule.computeUnits} CU / ${cost.withRule.feeLamports} lamports` +
@@ -444,7 +457,7 @@ async function measure(
       `${cost.feeRatio?.toFixed(2) ?? '?'}× in lamports`,
   )
 
-  // ── SC-002: спроби порушити правило ───────────────────────────────────────
+  // ── SC-002: attempts to violate the rule ──────────────────────────────────
   const attacks = await runAttacks(context, {
     mint,
     decimals: 2,
@@ -467,7 +480,7 @@ async function measure(
   }
   for (const [code, count] of codes) console.log(`  ${code}: ${count}`)
 
-  // ── SC-005 (частково): випуск понад атестований резерв ────────────────────
+  // ── SC-005 (partial): issuance above the attested reserve ─────────────────
   const reserve = await attemptOverReserve(context, issuer.issuerId, DEMO_POLICY, 10, 1)
   console.log(`reserve: ${reserve.refused} refused of ${reserve.attempts}`)
   console.log(`  ${[...new Set(reserve.codes)].join(', ')}`)

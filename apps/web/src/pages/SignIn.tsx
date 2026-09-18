@@ -1,8 +1,9 @@
-// Вхід. Один екран, одна дія.
+// Sign-in. One screen, one action.
 //
-// Текст називає правило прямо: ключ від консолі — адреса гаманця, а не спосіб
-// входу (FR-034a). Людина, що вчора заходила поштою, а сьогодні гаманцем, має
-// розуміти, чому повноваження ті самі — і чому інша адреса їх не дає.
+// The text names the rule directly: the key to the console is the wallet
+// address, not the login method (FR-034a). A person who logged in by email
+// yesterday and with a wallet today must understand why the powers are the
+// same — and why a different address does not grant them.
 import { usePrivy } from '@privy-io/react-auth'
 
 export default function SignIn() {

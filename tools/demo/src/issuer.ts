@@ -1,7 +1,9 @@
-// Емітент: склад, кворум і межі, у яких діє операційний ключ платформи.
+// The issuer: the membership, the quorum and the bounds within which the
+// platform's operational key acts.
 //
-// Це єдина дія, що не проходить кворум, — бо до неї кворуму ще немає (T007).
-// Далі все, що вона задає, змінюється тільки кворумом.
+// This is the only action that does not go through the quorum — because
+// before it there is no quorum yet (T007). From then on everything it sets is
+// changed only by quorum.
 import { issuerConfigPda } from '@forge/chain'
 import { DELEGATION, ROLE } from '@forge/shared/api'
 import type { PublicKey } from '@solana/web3.js'
@@ -17,11 +19,11 @@ export interface IssuerSetup {
 }
 
 /**
- * Склад демо — рівно той, який потрібен, щоб пройти шлях US1.
+ * The demo membership — exactly what is needed to walk the US1 path.
  *
- * Атестатор окремим гаманцем: FR-024 забороняє йому будь-які інші
- * повноваження, тож поєднати його з засновником не можна навіть у демо — і
- * саме на цьому тримається другий підпис у транзакції випуску.
+ * The attestor is a separate wallet: FR-024 forbids them any other powers,
+ * so they cannot be merged with the founder even in a demo — and that is
+ * what the second signature in the issuance transaction rests on.
  */
 export async function createIssuer(context: DemoContext): Promise<IssuerSetup> {
   const { keys, connection, program } = context
@@ -35,12 +37,13 @@ export async function createIssuer(context: DemoContext): Promise<IssuerSetup> {
         { wallet: keys.officer.publicKey, roles: ROLE.COMPLIANCE },
         { wallet: keys.attestor.publicKey, roles: ROLE.ATTESTOR },
       ],
-      // Двоє: адміністратор і офіцер. Атестатор до кворуму не входить, тож
-      // порогу вище за 2 у цьому складі немає, а нижче програма не приймає.
+      // Two: the admin and the officer. The attestor is not part of the
+      // quorum, so there is no threshold above 2 in this membership, and the
+      // program does not accept one below.
       quorumN: 2,
       operationalKey: keys.operational.publicKey,
-      // Обидва повноваження, які потрібні US1: розморозити рахунок і змінити
-      // статус. Емісії й вилучення в масці немає й бути не може (FR-035a).
+      // Both powers US1 needs: thaw an account and change a status. Issuance
+      // and seizure are not in the mask and cannot be (FR-035a).
       delegationMask: DELEGATION.THAW_HOLDER | DELEGATION.SET_HOLDER_STATUS,
     })
     .accountsPartial({

@@ -1,17 +1,21 @@
-// Дзеркало складу емітента в базі — те, що в продукті пише індексатор.
+// The mirror of the issuer's membership in the database — what the indexer
+// writes in the product.
 //
-// **Це найбільша частина шляху `--api`, і її не видно з опису задачі.**
-// Повноваження в api дає не токен входу, а рядок у `role_assignments`
-// (`apps/api/src/directory.ts`): сесія бере `issuer_id` і ролі звідти. Ці
-// рядки — дзеркало ончейн-`IssuerConfig.members`, і наповнює його **T031**,
-// якого ще немає: він у M2. Тож демо пише їх сама, і робить це рівно так, як
-// робив би індексатор — з тих самих значень і з тим самим слотом.
+// **This is the largest part of the `--api` path, and it is not visible from
+// the task description.** Powers in the api come not from the login token
+// but from a row in `role_assignments` (`apps/api/src/directory.ts`): the
+// session takes `issuer_id` and the roles from there. Those rows mirror the
+// on-chain `IssuerConfig.members`, and they are filled by **T031**, which
+// does not exist yet: it is in M2. So the demo writes them itself, and does
+// so exactly as the indexer would — from the same values and with the same
+// slot.
 //
-// Рядок `issuers` потрібен не api (він його не читає взагалі), а зовнішньому
-// ключу з `tokens`: без емітента резервація номера впала б на FK.
+// The `issuers` row is needed not by the api (it does not read it at all)
+// but by the foreign key from `tokens`: without the issuer the number
+// reservation would fail on the FK.
 //
-// **Коли з'явиться T031, цей файл має зникнути**, а не лишитись «швидким
-// шляхом для демо»: два джерела дзеркала розійдуться мовчки.
+// **When T031 arrives, this file must disappear**, not stay as "a quick path
+// for the demo": two sources of the mirror would diverge silently.
 import { createDatabase, type Database, issuers, roleAssignments } from '@forge/db'
 import { ROLE } from '@forge/shared/api'
 import type { PublicKey } from '@solana/web3.js'
@@ -22,16 +26,17 @@ export interface SeedInput {
   readonly keys: DemoKeys
   readonly quorumN: number
   readonly delegationMask: number
-  /** Слот, у якому склад став таким. Індексатор пише той, що прочитав. */
+  /** The slot at which the membership became this. The indexer writes the one it read. */
   readonly slot: number
 }
 
 /**
- * Склад демо в базі: три рядки в тому ж порядку, що й у `initialize_issuer`.
+ * The demo membership in the database: three rows in the same order as in
+ * `initialize_issuer`.
  *
- * `member_index` — це не порядковий номер рядка, а **слот складу**: за ним
- * кворум читає бітмапу підписів (T025). Розійтись із ланцюгом він не може, тож
- * береться з того самого переліку, з якого будувалась інструкція.
+ * `member_index` is not the row's ordinal but the **membership slot**: the
+ * quorum reads the signature bitmap by it (T025). It cannot diverge from the
+ * chain, so it is taken from the same list the instruction was built from.
  */
 export async function seedIssuer(db: Database, input: SeedInput): Promise<void> {
   const { keys, issuerId } = input
@@ -79,11 +84,12 @@ export function openDatabase(url: string): Database {
 }
 
 /**
- * Закриває пул з'єднань.
+ * Closes the connection pool.
  *
- * Без цього процес демо не завершується **після успішного прогону**: `postgres`
- * тримає сокет відкритим, і подієвий цикл не порожніє. Симптом підступний тим,
- * що всі числа вже надруковані, — прогін виглядає зробленим і просто висить.
+ * Without this the demo process does not exit **after a successful run**:
+ * `postgres` keeps the socket open, and the event loop never drains. The
+ * symptom is insidious because all the numbers are already printed — the run
+ * looks done and simply hangs.
  */
 export async function closeDatabase(db: Database): Promise<void> {
   await db.$client.end({ timeout: 5 })

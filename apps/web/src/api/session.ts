@@ -1,16 +1,18 @@
-// Сесія в консолі — читання, а не обчислення.
+// The session in the console is a read, not a computation.
 //
-// Роль виводить сервер зі складу емітента за адресами гаманців (FR-034a), і
-// консоль не має ані даних, ані права вивести її сама. Тут лише запит,
-// перевірка відповіді схемою з `@forge/shared/api` і ключ кешу.
+// The server derives the role from the issuer's membership by wallet
+// addresses (FR-034a), and the console has neither the data nor the right to
+// derive it itself. Here there is only the request, a check of the response
+// against the schema from `@forge/shared/api`, and the cache key.
 import { type Session, sessionSchema } from '@forge/shared/api'
 import { usePrivy } from '@privy-io/react-auth'
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
 import { useApi, useTenant } from '@/auth/providers'
 
 /**
- * Обраний емітент входить у ключ кешу: перемикання орендаря — це інша сесія з
- * іншою маскою ролей, і показувати попередню, поки їде нова, не можна.
+ * The chosen issuer is part of the cache key: switching the tenant is a
+ * different session with a different role mask, and the previous one must not
+ * be shown while the new one is loading.
  */
 export const sessionQueryKey = (issuerId: string | undefined) =>
   ['session', issuerId ?? null] as const
@@ -23,8 +25,9 @@ export function useSession(): UseQueryResult<Session, Error> {
   return useQuery({
     queryKey: sessionQueryKey(issuerId),
     queryFn: () => api.get('/api/session', sessionSchema),
-    // До завершення входу запит не має сенсу: токена ще немає, і клієнт
-    // відповів би `UNAUTHORIZED` на кожен рендер, поки Privy піднімається.
+    // Before login completes the request makes no sense: there is no token
+    // yet, and the client would answer `UNAUTHORIZED` on every render while
+    // Privy comes up.
     enabled: ready && authenticated,
   })
 }

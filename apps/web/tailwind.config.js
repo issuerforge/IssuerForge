@@ -1,4 +1,4 @@
-/** Кольори — псевдоніми токенів з `src/index.css`, щоб палітра жила в одному місці. */
+/** Colours are aliases of the tokens in `src/index.css`, so the palette lives in one place. */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {

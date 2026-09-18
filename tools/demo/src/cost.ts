@@ -1,9 +1,11 @@
-// Вартість переказу з правилом і без нього — вимір SC-003.
+// The cost of a transfer with the rule and without it — the SC-003
+// measurement.
 //
-// **База порівняння — другий mint Token-2022 без хука.** Не класичний
-// SPL-токен: різниця з ним включала б вартість самих розширень Token-2022, і
-// наше правило виглядало б дорожчим, ніж воно є. Тут відрізняється рівно одна
-// річ — наявність `TransferHook`, — і саме її ціна й міряється.
+// **The baseline is a second Token-2022 mint without a hook.** Not a classic
+// SPL token: the difference against that would include the cost of the
+// Token-2022 extensions themselves, and our rule would look more expensive
+// than it is. Here exactly one thing differs — the presence of
+// `TransferHook` — and its price is what is measured.
 import {
   createAssociatedTokenAccountInstruction,
   createInitializeMint2Instruction,
@@ -21,19 +23,19 @@ import { submit } from './send.ts'
 export interface CostReport {
   readonly withRule: Sent
   readonly withoutRule: Sent
-  /** У скільки разів дорожче в одиницях обчислення. */
+  /** How many times more expensive in compute units. */
   readonly computeRatio: number | undefined
-  /** У скільки разів дорожче в лампортах — тобто в грошах. */
+  /** How many times more expensive in lamports — i.e. in money. */
   readonly feeRatio: number | undefined
   readonly measuredAt: string
 }
 
 /**
- * Той самий токен без жодного розширення, крім потрібних для порівняння.
+ * The same token with no extension except those needed for the comparison.
  *
- * Ані `TransferHook`, ані `DefaultAccountState`: рахунок відкривається вже
- * розмороженим, і переказ між двома ATA не проходить ніяких перевірок. Це і є
- * «переказ без правила» у чистому вигляді.
+ * Neither `TransferHook` nor `DefaultAccountState`: the account opens already
+ * thawed, and a transfer between two ATAs goes through no checks at all.
+ * That is "a transfer without the rule" in its pure form.
  */
 async function plainToken(
   context: DemoContext,

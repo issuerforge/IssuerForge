@@ -1,9 +1,9 @@
-// Роль не відкриває цей екран.
+// The role does not open this screen.
 //
-// Не 404 і не мовчазний редірект. Екран існує, і сказати «такої сторінки немає»
-// в продукті, чия суть — названа причина відмови, було б тим самим, що відмова
-// в переказі без коду правила. Тому тут стоїть і те, чого бракує, і те, що
-// натомість відкрито.
+// Not a 404 and not a silent redirect. The screen exists, and saying "no such
+// page" in a product whose essence is a named refusal reason would be the
+// same as refusing a transfer without a rule code. So here stands both what
+// is missing and what is open instead.
 import { roleNames } from '@forge/shared/api'
 import { Link } from 'react-router-dom'
 import { rolesOpening, type Screen, screensFor } from '@/console/screens'

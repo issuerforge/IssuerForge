@@ -1,13 +1,14 @@
-// П'ять кроків майстра. Форма — і тільки форма: жодного рішення тут не
-// ухвалюється, усе зважене живе в `draft.ts` і перевіряється без DOM.
+// The wizard's five steps. The form — and only the form: no decision is made
+// here, everything weighed lives in `draft.ts` and is tested without the DOM.
 //
-// **Складу кроків більше немає в прототипі M0.** Там четвертим кроком стояли
-// «повноваження» — заморозка, вилучення, пауза, кворум і делегація, — але
-// нічого з цього випуск не задає: кворум і склад належать емітенту, а делегація
-// має власний екран (T035). Показувати перемикачі, які нічого не змінюють,
-// означало б повторити рівно ту помилку, через яку в T020 записаний борг «екран
-// показує один підпис замість трьох». Замість них четвертим кроком стоїть
-// резерв: без нього випуск не збереться взагалі.
+// **The step line-up is no longer that of the M0 prototype.** There the
+// fourth step was "powers" — freeze, seizure, pause, quorum and delegation —
+// but an issuance sets none of that: the quorum and the membership belong to
+// the issuer, and delegation has its own screen (T035). Showing toggles that
+// change nothing would repeat exactly the mistake for which debt "the screen
+// shows one signature instead of three" is recorded in T020. In their place
+// the fourth step is the reserve: without it the issuance does not assemble
+// at all.
 import { MAX_DECIMALS, MAX_FEE_BPS } from '@forge/api/contracts'
 import { STATUS_SOURCES, type StatusSource } from '@forge/policy/model'
 import { Block, Field, Segmented, Tick, Toggle } from '@/components/controls'
@@ -80,8 +81,8 @@ export function Step2Holders() {
   const codes = parseJurisdictions(draft.jurisdictions)
 
   const toggle = (source: StatusSource, on: boolean) => {
-    // Порядок нормалізує сама модель (він впливає на `rules_hash`), тож тут
-    // важливий тільки склад множини.
+    // The model itself normalises the order (it affects `rules_hash`), so
+    // only the set's contents matter here.
     set(
       'sources',
       on ? [...draft.sources, source] : draft.sources.filter((kept) => kept !== source),

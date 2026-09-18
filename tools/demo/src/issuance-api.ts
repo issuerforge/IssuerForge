@@ -1,13 +1,15 @@
-// Випуск через api — той самий шлях, яким іде майстер у браузері.
+// Issuance through the api — the same path the wizard takes in the browser.
 //
-// Різниця з `issuance.ts` не в результаті, а в тому, **що саме міряється**.
-// Прямий шлях збирає три транзакції в цьому ж процесі; тут їх збирає сервер,
-// і в час SC-001 входить усе, що між: вхід, склад, резервація номера в базі,
-// відповідь, і аж потім три підписи й три підтвердження.
+// The difference from `issuance.ts` is not in the result but in **what
+// exactly is measured**. The direct path assembles the three transactions in
+// this very process; here the server assembles them, and the SC-001 time
+// includes everything in between: login, membership, reserving a number in
+// the database, the response, and only then three signatures and three
+// confirmations.
 //
-// Транзакції приходять непідписаними (SC-012), а blockhash — один на всі три:
-// людина підписує їх однією дією майстра, і три строки життя означали б, що
-// третя протухає в черзі (рішення T021).
+// The transactions arrive unsigned (SC-012), and the blockhash is one for all
+// three: a person signs them in one wizard action, and three lifetimes would
+// mean the third goes stale in the queue (decision T021).
 import type { CreateTokenBody } from '@forge/api/contracts'
 import { fromBase64 } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
@@ -33,9 +35,9 @@ export interface ApiIssuanceResult {
   readonly mint: PublicKey
   readonly tokenIndex: number
   readonly steps: readonly Sent[]
-  /** Мілісекунди від запиту до api до підтвердження третьої транзакції. */
+  /** Milliseconds from the api request to the confirmation of the third transaction. */
   readonly elapsedMs: number
-  /** Скільки з них пішло на саму відповідь api — решта це мережа. */
+  /** How much of that went on the api response itself — the rest is the network. */
   readonly apiMs: number
 }
 
@@ -46,9 +48,10 @@ export async function issueViaApi(
 ): Promise<ApiIssuanceResult> {
   const { connection, keys } = context
 
-  // Час береться з ланцюга, а не з годинника хоста: `Clock::unix_timestamp`
-  // виводиться зі слотів і відстає, а атестацію «з майбутнього» відхиляють і
-  // маршрут, і програма (борг T021 №6).
+  // The time is taken from the chain, not from the host clock:
+  // `Clock::unix_timestamp` is derived from slots and lags, and an
+  // attestation "from the future" is rejected by both the route and the
+  // program (debt T021 #6).
   const attestedAt = await chainTime(connection)
 
   const body: CreateTokenBody = {
@@ -64,8 +67,8 @@ export async function issueViaApi(
       attestedAt,
     },
     attestation: {
-      // Фікстурні акредитив і схема — ті самі, що в прямому шляху: сервісу
-      // атестацій немає, але адреси мусять бути справжніми ключами.
+      // The fixture credential and schema are the same as on the direct path:
+      // there is no attestation service, but the addresses must be real keys.
       credential: keys.issuerId.publicKey.toBase58(),
       schema: keys.treasury.publicKey.toBase58(),
       maxAgeSeconds: input.attestationMaxAge,
@@ -83,13 +86,14 @@ export async function issueViaApi(
 
   for (const unsigned of plan.transactions) {
     const transaction = fromBase64(unsigned.base64)
-    // Ключі добираються за адресами, які назвав сервер, а не за здогадом про
-    // порядок: `signers` виведені з інструкцій (T020), і другий перелік тут
-    // розійшовся б рівно тоді, коли інструкція отримає нового підписанта.
+    // The keys are picked by the addresses the server named, not by a guess
+    // about the order: `signers` are derived from the instructions (T020),
+    // and a second list here would diverge exactly when an instruction gains
+    // a new signer.
     transaction.sign(
       signable.filter((keypair) => unsigned.signers.includes(keypair.publicKey.toBase58())),
     )
-    // Послідовно: `dependsOnPrevious` — заборона надіслати пачкою.
+    // Sequentially: `dependsOnPrevious` is a ban on sending as a batch.
     steps.push(await send(connection, transaction))
   }
 

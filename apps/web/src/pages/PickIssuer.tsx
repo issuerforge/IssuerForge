@@ -1,11 +1,11 @@
-// Вибір емітента, коли ця адреса стоїть у складі кількох.
+// Choosing the issuer when this address is in several memberships.
 //
-// Випадок не екзотичний: аудитор або юрист законно обслуговує двох емітентів
-// однією адресою, і саме двома орендарями вимірюється SC-011.
+// The case is not exotic: an auditor or a lawyer legitimately serves two
+// issuers with one address, and SC-011 is measured with exactly two tenants.
 //
-// Перелік узятий із відмови api (`details.issuerIds`), а не з окремого запиту:
-// сервер уже назвав, серед чого вибирати, і другого джерела правди про
-// членства в консолі немає.
+// The list is taken from the api's refusal (`details.issuerIds`), not from a
+// separate request: the server has already named what to choose from, and
+// the console has no second source of truth about memberships.
 import { truncate } from '@/lib/format'
 
 export default function PickIssuer({
@@ -14,7 +14,7 @@ export default function PickIssuer({
   onPick,
 }: {
   issuerIds: readonly string[]
-  /** Раніше обраний емітент, який більше не називає цей гаманець у складі. */
+  /** The previously chosen issuer that no longer names this wallet in its membership. */
   dropped?: string | undefined
   onPick: (issuerId: string) => void
 }) {

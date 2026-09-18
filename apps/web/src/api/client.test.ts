@@ -128,8 +128,8 @@ describe('createApiClient', () => {
     })
   })
 
-  // Мовчазне «поле не намалювалось» у комплаєнс-продукті читається як нуль,
-  // тож відповідь поза контрактом мусить бути гучною.
+  // A silent "the field did not draw" reads as zero in a compliance product,
+  // so a response outside the contract must be loud.
   it('rejects a successful answer that does not match the contract', async () => {
     const { fetch } = harness(() => json({ ok: 'yes' }))
 

@@ -214,8 +214,9 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
   const [policy, setPolicy] = useState<PolicyState>(INITIAL_POLICY)
   const [maxStep, setMaxStep] = useState(1)
 
-  // Стабільні між рендерами: крок кличе `visit` з useEffect, і якби функція
-  // мінялась разом із політикою, ефект спрацьовував би на кожну правку поля.
+  // Stable across renders: a step calls `visit` from a useEffect, and if the
+  // function changed along with the policy, the effect would fire on every
+  // field edit.
   const set = useCallback(<K extends keyof PolicyState>(key: K, value: PolicyState[K]) => {
     setPolicy((prev) => ({ ...prev, [key]: value }))
   }, [])

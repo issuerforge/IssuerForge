@@ -1,12 +1,13 @@
-// Оточення прогону: мережа, ключі, гроші на оренду.
+// The run environment: the network, the keys, the money for rent.
 //
-// **Ключі генеруються на кожен прогін і нікуди не зберігаються.** Демо
-// створює власного емітента з нуля — саме це й міряє SC-001 («на чистому
-// акаунті»). Постійний ключ зробив би другий прогін дешевшим за перший, тобто
-// зіпсував би вимір, заради якого все й робиться.
+// **The keys are generated on every run and stored nowhere.** The demo
+// creates its own issuer from scratch — that is exactly what SC-001 measures
+// ("on a clean account"). A persistent key would make the second run cheaper
+// than the first, i.e. spoil the measurement everything is done for.
 //
-// `--payer` цього не міняє: гаманець деплою лише **доливає** свіжим ключам
-// замість крана, а підписують і володіють усім усе ті самі одноразові ключі.
+// `--payer` does not change that: the deploy wallet only **tops up** the
+// fresh keys instead of the faucet, while the same one-off keys still sign
+// and own everything.
 import { readFileSync } from 'node:fs'
 import { createForgeProgram, decodeBase58, type ForgeProgram } from '@forge/chain'
 import {
@@ -20,32 +21,33 @@ import {
 import { submit } from './send.ts'
 
 export interface DemoKeys {
-  /** Платник оренди й комісій. Він же засновник-адміністратор. */
+  /** The payer of rent and fees. Also the founder-admin. */
   readonly founder: Keypair
   /**
-   * Офіцер комплаєнсу: другий підпис кворуму.
+   * The compliance officer: the second signature of the quorum.
    *
-   * Не декорація складу: `quorum_n = 2` вимагає **двох** уповноважених, а
-   * атестатор до них не належить — FR-024 не дає йому жодних інших повноважень.
-   * Емітент із самим лише засновником програма не створює взагалі.
+   * Not a decoration of the membership: `quorum_n = 2` requires **two**
+   * authorised members, and the attestor is not one of them — FR-024 gives
+   * them no other powers. The program does not create an issuer with only a
+   * founder at all.
    */
   readonly officer: Keypair
-  /** Роль атестатора: підписує атестацію резерву поруч із засновником. */
+  /** The attestor role: signs the reserve attestation alongside the founder. */
   readonly attestor: Keypair
-  /** Операційний ключ платформи. У демо він живе тут, у продукті — в api. */
+  /** The platform's operational key. In the demo it lives here, in the product in the api. */
   readonly operational: Keypair
-  /** Ідентифікатор емітента: seed його PDA, нічого не підписує. */
+  /** The issuer identifier: the seed of its PDA, signs nothing. */
   readonly issuerId: Keypair
-  /** Скарбниця платформи: сюди йде комісія з емісії. */
+  /** The platform treasury: the issuance fee goes here. */
   readonly treasury: Keypair
-  /** Два холдери: між ними йдуть перекази, і на них міряються відмови. */
+  /** Two holders: transfers go between them, and refusals are measured on them. */
   readonly alice: Keypair
   readonly bob: Keypair
-  /** Юрисдикція поза дозволеними. */
+  /** A jurisdiction outside the allowed ones. */
   readonly carol: Keypair
-  /** Заборонений у власному реєстрі емітента. */
+  /** Denied in the issuer's own registry. */
   readonly dave: Keypair
-  /** Той, кого емітент не впускав: жоден його переказ не має пройти. */
+  /** The one the issuer never let in: none of their transfers may pass. */
   readonly stranger: Keypair
 }
 
@@ -73,23 +75,25 @@ export function newKeys(): DemoKeys {
 }
 
 /**
- * Ліміт звертань до вузла: сплеск і темп поповнення.
+ * The node request limit: burst and refill rate.
  *
- * Публічний devnet ріже двома лічильниками — ~100 запитів за 10 секунд разом і
- * ~40 за 10 секунд на **один метод**, — а повний прогін це понад сотня
- * транзакцій і стільки ж читань. Без ліміту вимір показував би не роботу
- * правила, а `429`: він приходить замість відмови програми й лягає у звіт як
- * «спроба не зібралась».
+ * Public devnet cuts with two counters — ~100 requests per 10 seconds in
+ * total and ~40 per 10 seconds per **single method** — while a full run is
+ * over a hundred transactions and as many reads. Without a limit the
+ * measurement would show not the rule at work but `429`: it arrives instead
+ * of the program's refusal and lands in the report as "the attempt did not
+ * assemble".
  *
- * **Чому відро, а не рівний проміжок.** Рівний проміжок обкладає податком і
- * випуск теж, а випуск — це SC-001, тобто число, заради якого демо існує.
- * Перший прогін на devnet із проміжком 120 мс дав 10,0 с замість 1,2 с
- * локальних, і майже вся різниця — відкоти після `429`, а не ланцюг. Відро
- * пропускає перші тридцять запитів без затримки (випуск вкладається цілком) і
- * притримує тільки довгі цикли атак і звірки, де час нічого не міряє.
+ * **Why a bucket and not an even interval.** An even interval taxes the
+ * issuance too, and the issuance is SC-001, i.e. the number the demo exists
+ * for. The first devnet run with a 120 ms interval gave 10.0 s instead of
+ * the 1.2 s local, and almost all the difference was back-offs after `429`,
+ * not the chain. The bucket lets the first thirty requests through with no
+ * delay (the issuance fits in entirely) and holds back only the long attack
+ * and comparison loops, where time measures nothing.
  *
- * Три запити за секунду — це 30 за десять, тобто нижче за менший із двох
- * лічильників навіть у найгіршому випадку, коли всі запити одного методу.
+ * Three requests per second is 30 per ten, i.e. below the smaller of the two
+ * counters even in the worst case, when all requests are of one method.
  */
 const NODE_LIMIT = { burst: 30, perSecond: 3 } as const
 
@@ -97,11 +101,12 @@ const isLocal = (rpcUrl: string): boolean =>
   rpcUrl.includes('127.0.0.1') || rpcUrl.includes('localhost')
 
 /**
- * `fetch` із відром токенів. `limit === undefined` — без обмежень.
+ * `fetch` with a token bucket. `limit === undefined` — no limit.
  *
- * Черга потрібна, щоб два одночасні запити не забрали один токен двічі.
- * Повтор на `429` робить сам web3.js (`Retry-After`), і ці повтори теж беруть
- * токени — інакше відкат розганяв би саме те, від чого тікає.
+ * The queue is needed so that two concurrent requests do not take one token
+ * twice. The retry on `429` is done by web3.js itself (`Retry-After`), and
+ * those retries take tokens too — otherwise the back-off would accelerate
+ * exactly what it is running from.
  */
 function pacedFetch(limit: { burst: number; perSecond: number } | undefined): FetchFn {
   let queue: Promise<void> = Promise.resolve()
@@ -128,8 +133,9 @@ function pacedFetch(limit: { burst: number; perSecond: number } | undefined): Fe
     return await fetch(input as string, init as RequestInit)
   }
 
-  // `FetchFn` описаний типами node-fetch, а в рантаймі це глобальний `fetch`
-  // Node. Каст стоїть рівно на цій межі й більше ніде.
+  // `FetchFn` is described with node-fetch's types, while at runtime it is
+  // Node's global `fetch`. The cast sits exactly on this boundary and nowhere
+  // else.
   return paced as unknown as FetchFn
 }
 
@@ -141,25 +147,26 @@ export function createContext(rpcUrl: string, overrides: Partial<DemoKeys> = {})
   return {
     connection,
     program: createForgeProgram(connection),
-    // Перекриття існує рівно для одного ключа й однієї причини: у шляху `--api`
-    // операційним ключем володіє процес api, а не демо. Згенерований тут ключ
-    // не збігся б із `operational_key`, який перевіряє програма, і кожне
-    // делеговане розморожування відмовляло б.
+    // The override exists for exactly one key and one reason: on the `--api`
+    // path the operational key is owned by the api process, not the demo. A
+    // key generated here would not match the `operational_key` the program
+    // checks, and every delegated thaw would be refused.
     keys: { ...newKeys(), ...overrides },
     cluster: rpcUrl,
   }
 }
 
-/** Секретний ключ ed25519 у base58 (формат `OPERATIONAL_SECRET_KEY`) → `Keypair`. */
+/** An ed25519 secret key in base58 (the `OPERATIONAL_SECRET_KEY` format) → `Keypair`. */
 export function keypairFromBase58(secret: string): Keypair {
   return Keypair.fromSecretKey(decodeBase58(secret))
 }
 
 /**
- * Ключ із файла `solana-keygen`: масив із 64 байтів у JSON.
+ * A key from a `solana-keygen` file: an array of 64 bytes in JSON.
  *
- * Формат перевіряється тут, а не першою транзакцією: «невірний підпис» через
- * п'ять хвилин прогону не каже, що не так із файлом.
+ * The format is checked here, not by the first transaction: "invalid
+ * signature" five minutes into the run does not say what is wrong with the
+ * file.
  */
 export function loadKeypair(path: string): Keypair {
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
@@ -170,16 +177,18 @@ export function loadKeypair(path: string): Keypair {
 }
 
 /**
- * Наливає SOL: переказом із гаманця, якщо він названий, інакше з крана.
+ * Pours in SOL: by transfer from the wallet if one is named, otherwise from
+ * the faucet.
  *
- * На локальному валідаторі airdrop безкоштовний і миттєвий. На devnet він
- * обмежений, і саме тому існує `--payer`: гаманець деплою вже має гроші, і
- * прогін бере їх звідти, а не стає в чергу до крана.
+ * On the local validator an airdrop is free and instant. On devnet it is
+ * rate-limited, which is exactly why `--payer` exists: the deploy wallet
+ * already has funds, and the run takes them from there instead of queuing at
+ * the faucet.
  *
- * Невдалий airdrop **не** зупиняє прогін: він лише не додає грошей, а бракує
- * їх чи ні, скаже перша ж транзакція. Невдалий переказ із гаманця — навпаки,
- * зупиняє: названий гаманець, з якого не вийшло взяти, — це помилка запуску,
- * а не властивість мережі.
+ * A failed airdrop does **not** stop the run: it merely adds no money, and
+ * whether it is short will be said by the very first transaction. A failed
+ * transfer from the wallet, on the contrary, stops it: a named wallet that
+ * could not be drawn from is a launch error, not a property of the network.
  */
 export async function fund(
   connection: Connection,
@@ -216,16 +225,16 @@ export async function fund(
 export const solOf = (lamports: number): number => lamports / LAMPORTS_PER_SOL
 
 /**
- * Час так, як його бачить **програма**, а не хост.
+ * Time as the **program** sees it, not the host.
  *
- * `Clock::unix_timestamp` не дорівнює годиннику машини: він виводиться зі
- * слотів і відстає, коли валідатор працює довше за один прогін. Різниця в
- * секунди достатня, щоб `create_token` відхилив атестацію резерву як
- * «датовану майбутнім» — і саме це сталося на першому ж прогоні (борг T021 №6,
- * тепер підтверджений).
+ * `Clock::unix_timestamp` is not equal to the machine clock: it is derived
+ * from slots and lags when the validator runs longer than one run. A
+ * difference of seconds is enough for `create_token` to reject the reserve
+ * attestation as "dated in the future" — and that is exactly what happened
+ * on the very first run (debt T021 #6, now confirmed).
  *
- * `getBlockTime` повертає `null` на слоті, який ще не має часу; тоді береться
- * годинник хоста — це гірше, але краще за зупинку виміру.
+ * `getBlockTime` returns `null` for a slot that has no time yet; then the
+ * host clock is taken — worse, but better than stopping the measurement.
  */
 export async function chainTime(connection: Connection): Promise<number> {
   const slot = await connection.getSlot('confirmed')

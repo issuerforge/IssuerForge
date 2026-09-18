@@ -1,8 +1,9 @@
-// Оболонка консолі: емітент, перемикач орендарів, навігація, вихід.
+// The console shell: the issuer, the tenant switcher, navigation, sign-out.
 //
-// Навігація будується з реєстру екранів, відфільтрованого маскою ролей із
-// сесії. Через це «пункт є, а зайти не можна» неможливе: список у шапці й
-// перевірка в ґарді читають один і той самий вираз (`permits`).
+// Navigation is built from the screen registry filtered by the session's
+// role mask. That makes "the item is there but cannot be opened" impossible:
+// the list in the header and the check in the guard read one and the same
+// expression (`permits`).
 import { roleNames } from '@forge/shared/api'
 import { usePrivy } from '@privy-io/react-auth'
 import { NavLink, Outlet } from 'react-router-dom'
@@ -15,8 +16,8 @@ function TenantSwitcher() {
   const session = useConsoleSession()
   const { select } = useTenant()
 
-  // Один емітент — перемикача немає взагалі: список з одного пункту навчає
-  // натискати на нього дарма.
+  // One issuer — no switcher at all: a one-item list teaches people to click
+  // it for nothing.
   if (session.memberships.length < 2) {
     return <span className="mono12 muted break-all">{truncate(session.issuerId)}</span>
   }
@@ -67,8 +68,8 @@ export default function ConsoleLayout() {
             <li key={screen.path}>
               <NavLink
                 to={screen.path}
-                // `end` на кожному пункті: без нього «This issuer» лишався б
-                // підсвіченим на всіх дочірніх шляхах `/console/*`.
+                // `end` on every item: without it "This issuer" would stay
+                // highlighted on every child path under `/console/*`.
                 end
                 className="smallcaps inline-block pb-[3px]"
                 style={({ isActive }) => ({

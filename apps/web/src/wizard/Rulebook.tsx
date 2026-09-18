@@ -1,15 +1,15 @@
-// Збірник правил: політика словами плюс те, що вона зробить.
+// The rulebook: the policy in words plus what it will do.
 //
-// Дві половини одного питання. Верхня — речення, які людина підпише
-// (`clauses.ts`); нижня — вердикти симуляції на п'яти сценаріях FR-004, тобто
-// та сама політика, прогнана оцінювачем. Разом вони й дають «показати наслідки
-// правил до підпису»: текст без наслідків читається як намір, наслідки без
-// тексту — як магія.
+// Two halves of one question. The upper one is the sentences the person will
+// sign (`clauses.ts`); the lower one is the simulation verdicts on the five
+// FR-004 scenarios, i.e. the same policy run through the evaluator. Together
+// they deliver "show the consequences of the rules before signing": text
+// without consequences reads as intent, consequences without text as magic.
 import type { SimulatePolicyResponse } from '@forge/api/contracts'
 import { buildClauses } from './clauses.ts'
 import { useWizard } from './WizardContext.tsx'
 
-/** Людські назви сценаріїв каталогу. Порядок — той, у якому їх шле сервер. */
+/** Human names of the catalogue scenarios. The order is the one the server sends them in. */
 const SCENARIO_LABEL: Record<string, string> = {
   verified: 'A verified holder sends exactly the limit',
   unverified: 'An unverified account receives',
@@ -32,9 +32,9 @@ function Verdicts({ data }: { data: SimulatePolicyResponse }) {
             <span className="text-[13px]">
               {SCENARIO_LABEL[scenario.name] ?? scenario.name}
               {/*
-                Незастосовний сценарій лишається видимим рядком, а не зникає.
-                Чотири рядки замість п'яти прочитались би як «усе гаразд», хоча
-                означали б «цього правила в політиці немає» (рішення T021).
+                An inapplicable scenario stays a visible line rather than vanishing.
+                Four lines instead of five would read as "all fine", while they
+                would mean "this rule is not in the policy" (decision T021).
               */}
               {!scenario.applicable && (
                 <span className="muted"> — no such rule in this policy</span>
@@ -88,9 +88,9 @@ export default function Rulebook({ documentMode = false }: { documentMode?: bool
         </p>
       )}
       {!simulation.isError && simulation.data === undefined && (
-        // Це не «завантаження»: політика ще не зібралася, тобто симулювати нема
-        // чого. Сказати треба саме це, інакше порожнє місце читається як «нічого
-        // не станеться».
+        // This is not "loading": the policy has not come together yet, so there
+        // is nothing to simulate. That is exactly what must be said, otherwise
+        // the empty space reads as "nothing will happen".
         <p className="muted mt-3 text-[12px]">
           {simulation.isFetching
             ? 'Simulating…'

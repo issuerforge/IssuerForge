@@ -1,19 +1,20 @@
-// Політика словами: чернетка → пронумеровані речення збірника правил.
+// The policy in words: draft → numbered sentences of the rulebook.
 //
-// Це не оздоблення екрана. Правило, яке людина ввімкнула перемикачем, вона
-// підписує реченням, і між тим і тим не має бути перекладу: збірник будується
-// з **тієї самої** чернетки, з якої збирається тіло запиту, а не з окремого
-// опису поруч.
+// This is not screen decoration. A rule the person switched on with a toggle
+// they sign as a sentence, and there must be no translation between the two:
+// the rulebook is built from **the same** draft the request body is
+// assembled from, not from a separate description beside it.
 //
-// Чиста функція — і саме тому вона перевіряється без DOM: у прототипі M0 те
-// саме жило всередині компонента, і перевірити його можна було тільки очима.
+// A pure function — and that is exactly why it is tested without the DOM: in
+// the M0 prototype the same thing lived inside a component, and could be
+// checked only by eye.
 import type { Draft } from './draft.ts'
 import { parseJurisdictions, toInteger, toSmallestUnit } from './draft.ts'
 
 export interface Clause {
-  /** Номер, за яким на речення посилаються: «пункт 2.3». */
+  /** The number a sentence is referred to by: "clause 2.3". */
   readonly id: string
-  /** Крок, який ним керує. Клік у збірнику веде саме туди. */
+  /** The step that controls it. A click in the rulebook leads exactly there. */
   readonly step: number
   readonly text: string
 }
@@ -25,7 +26,7 @@ const listWords = (items: readonly string[]): string => {
   return `${items.slice(0, -1).join(', ')} or ${last}`
 }
 
-/** Сума в одиницях токена, як її пишуть у документі. */
+/** An amount in token units, as written in a document. */
 const shown = (raw: string, symbol: string, decimals: number): string => {
   const smallest = toSmallestUnit(raw, decimals)
   if (smallest === undefined) return `— ${symbol}`
@@ -66,9 +67,10 @@ export function buildClauses(draft: Draft): Clause[] {
     sources =
       'Only an account carried in this issuer’s own register may receive this token. Attestations from an external verification provider are not accepted.'
   } else {
-    // Не описка й не порожній стан: політика без жодного джерела статусу
-    // відмовляє в кожному переказі, і сказати це треба тим самим реченням, яким
-    // описано решту, — інакше помилку видно тільки по відсутності тексту.
+    // Neither a typo nor an empty state: a policy with no status source at
+    // all refuses every transfer, and that must be said in the same kind of
+    // sentence the rest is described with — otherwise the mistake is visible
+    // only by the absence of text.
     sources = 'No source of verification is accepted, so no account may receive this token.'
   }
 

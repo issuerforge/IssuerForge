@@ -1,45 +1,48 @@
-// Реєстр екранів консолі: шлях, назва, потрібна роль, вміст.
+// The console screen registry: path, name, required role, content.
 //
-// Це **єдине** місце, де сказано, яка роль що відкриває. Навігація в шапці,
-// ґард маршруту й екран відмови читають один і той самий список, тож «пункт
-// меню є, а зайти не можна» неможливе за побудовою.
+// This is the **only** place that says which role opens what. The header
+// navigation, the route guard and the refusal screen read one and the same
+// list, so "the menu item is there but cannot be opened" is impossible by
+// construction.
 //
-// Роль сюди приходить із сесії (`GET /api/session`) і виводиться сервером зі
-// складу емітента за адресами гаманців (FR-034a). Консоль її не обчислює й не
-// зберігає: тут вона тільки читається.
+// The role arrives here from the session (`GET /api/session`) and is derived
+// by the server from the issuer's membership by wallet addresses (FR-034a).
+// The console neither computes nor stores it: here it is only read.
 //
-// Екрани, яких ще немає, стоять у списку із заглушкою, що називає свою задачу.
-// Порожній пункт меню з чесним написом кращий за відсутній: на екрані видно
-// повну форму повноважень, а не ту її частину, яку встигли написати.
+// Screens that do not exist yet are in the list with a stub naming their
+// task. An empty menu item with an honest label is better than a missing one:
+// the screen shows the full shape of the powers, not the part that has been
+// written so far.
 import { ROLE, ROLE_ALL, type RoleName, roleNames } from '@forge/shared/api'
 import { lazy, type ReactElement, Suspense } from 'react'
 import Overview from './Overview'
 import Stub from './Stub'
 
 /**
- * Майстер випуску вантажиться окремим шматком, і це не тільки про розмір.
+ * The issuance wizard is loaded as a separate chunk, and that is not only
+ * about size.
  *
- * Він тягне за собою solana-частину Privy — підпис транзакцій, — а реєстр
- * екранів мусить лишатися тим, чим є: списком, який читається без жодного
- * гаманця. Статичний імпорт зробив би цей файл (і його тест) залежним від
- * бібліотеки підпису заради рядка в меню.
+ * It pulls in the Solana part of Privy — transaction signing — while the
+ * screen registry must stay what it is: a list readable without any wallet.
+ * A static import would make this file (and its test) depend on the signing
+ * library for the sake of a menu line.
  */
 const Wizard = lazy(() => import('@/wizard/Wizard'))
 
-/** Ролі, підпис яких рахується в кворум: обидві бачать комплаєнс-роботу. */
+/** The roles whose signature counts towards the quorum: both see compliance work. */
 const AUTHORISING = ROLE.ADMIN | ROLE.COMPLIANCE
 
 export interface Screen {
-  /** Абсолютний шлях. Збігається з тим, що стоїть у `<Route path>`. */
+  /** The absolute path. Matches what is in `<Route path>`. */
   path: string
-  /** Назва в навігації. Іменник, як у політиці, а не дієслово. */
+  /** The name in navigation. A noun, as in the policy, not a verb. */
   label: string
   /**
-   * Маска ролей, будь-який біт якої відкриває екран.
+   * The role mask any bit of which opens the screen.
    *
-   * `ROLE_ALL` — «будь-яка відома роль»: маска сесії ніколи не порожня
-   * (`roleMaskSchema` вимагає ≥ 1 біта), тож окремого значення «для всіх» не
-   * потрібно, і правило доступу лишається одним виразом на весь застосунок.
+   * `ROLE_ALL` is "any known role": the session mask is never empty
+   * (`roleMaskSchema` requires ≥ 1 bit), so no separate "for everyone" value
+   * is needed, and the access rule stays one expression for the whole app.
    */
   requires: number
   element: ReactElement
@@ -122,33 +125,33 @@ export const SCREENS: readonly Screen[] = [
   },
 ]
 
-/** Чи відкриває маска ролей цей екран. Одне правило на весь застосунок. */
+/** Whether the role mask opens this screen. One rule for the whole app. */
 export function permits(roles: number, screen: Screen): boolean {
   return (roles & screen.requires) !== 0
 }
 
-/** Екрани, доступні цій масці, у порядку реєстру. */
+/** The screens available to this mask, in registry order. */
 export function screensFor(roles: number): Screen[] {
   return SCREENS.filter((screen) => permits(roles, screen))
 }
 
-/** Екран за точним шляхом. `undefined` означає «такого шляху немає» — 404. */
+/** The screen at an exact path. `undefined` means "no such path" — a 404. */
 export function screenAt(path: string): Screen | undefined {
   return SCREENS.find((screen) => screen.path === path)
 }
 
 /**
- * Перший доступний екран — куди веде корінь.
+ * The first available screen — where the root leads.
  *
- * `undefined` неможливе для дійсної сесії (`/console` відкритий будь-якій
- * ролі), але тип цього не знає, і мовчазний `!` тут був би найгіршим місцем
- * для припущення.
+ * `undefined` is impossible for a valid session (`/console` is open to any
+ * role), but the type does not know that, and a silent `!` here would be the
+ * worst place for an assumption.
  */
 export function landingFor(roles: number): Screen | undefined {
   return screensFor(roles)[0]
 }
 
-/** Імена ролей, будь-яка з яких відкриває екран. Для екрана відмови. */
+/** The names of the roles any of which opens the screen. For the refusal screen. */
 export function rolesOpening(screen: Screen): RoleName[] {
   return roleNames(screen.requires)
 }

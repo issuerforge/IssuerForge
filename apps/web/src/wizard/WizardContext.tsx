@@ -1,15 +1,17 @@
-// Стан майстра: чернетка, крок і жива симуляція правил.
+// The wizard state: the draft, the step and the live rule simulation.
 //
-// **Симуляція живе тут, а не на екрані Review.** FR-004 вимагає показати
-// наслідки правил **до** підпису, і корисно це рівно тоді, коли людина ще може
-// передумати: вердикти стоять поруч із самими правилами й переписуються на
-// кожній зміні. Ручка `POST /api/policy/simulate` у мережу не ходить і ролей не
-// питає (T021), тож ціна виклику — один запит.
+// **The simulation lives here, not on the Review screen.** FR-004 requires
+// showing the consequences of the rules **before** signing, and that is
+// useful exactly while the person can still change their mind: the verdicts
+// stand next to the rules themselves and are rewritten on every change. The
+// `POST /api/policy/simulate` handler goes neither to the network nor asks
+// for a role (T021), so the cost of a call is one request.
 //
-// **Крок живе в адресі, а не в стані компонента.** Інакше кнопка «назад» у
-// браузері викидала б людину з форми, заповненої наполовину. Параметром запиту,
-// а не шляхом: реєстр екранів (T010) зіставляє шляхи точно, і `/issue/limits`
-// довелося б заводити туди окремим рядком із власною роллю.
+// **The step lives in the address, not in component state.** Otherwise the
+// browser's back button would throw the person out of a half-filled form. A
+// query parameter, not a path: the screen registry (T010) matches paths
+// exactly, and `/issue/limits` would have to be added there as a separate
+// line with its own role.
 import { simulatePolicyResponseSchema } from '@forge/api/contracts'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -26,10 +28,11 @@ import { useApi } from '@/auth/providers'
 import { type Draft, EMPTY_DRAFT, LAST_STEP, parsedPolicy } from './draft.ts'
 
 /**
- * Скільки чекати після останнього натискання клавіші.
+ * How long to wait after the last keystroke.
  *
- * Триста мілісекунд — це пауза між словами, а не між літерами: симуляція на
- * кожен символ давала б блимання вердиктів там, де людина ще друкує число.
+ * Three hundred milliseconds is the pause between words, not between
+ * letters: a simulation on every character would give flickering verdicts
+ * while the person is still typing a number.
  */
 export const SIMULATE_DEBOUNCE_MS = 300
 
@@ -38,7 +41,7 @@ interface WizardValue {
   set: <K extends keyof Draft>(key: K, value: Draft[K]) => void
   step: number
   goTo: (step: number) => void
-  /** Найдальший крок, якого дійшли: рейка не пускає вперед по недосягнутому. */
+  /** The furthest step reached: the rail does not let you jump ahead past the unreached. */
   reached: number
   simulation: ReturnType<typeof useSimulation>
 }
@@ -52,15 +55,16 @@ export function useWizard(): WizardValue {
 }
 
 /**
- * Симуляція чинної чернетки.
+ * The simulation of the current draft.
  *
- * Гонка відповідей гаситься не таймером, а ключем кеша: `react-query` показує
- * дані того запиту, чий ключ чинний **зараз**, тож відповідь, яка приїхала
- * після наступної правки, не має куди потрапити на екран.
+ * The response race is settled not by a timer but by the cache key:
+ * `react-query` shows the data of the request whose key is current **now**,
+ * so a response that arrived after the next edit has nowhere to land on the
+ * screen.
  *
- * Політика, яка ще не збирається (порожні поля, ліміт нулем), запиту не робить
- * узагалі: показувати вердикти для правил, яких немає, означало б показувати
- * наслідки чогось іншого.
+ * A policy that does not come together yet (empty fields, a limit of zero)
+ * makes no request at all: showing verdicts for rules that do not exist
+ * would mean showing the consequences of something else.
  */
 function useSimulation(draft: Draft) {
   const api = useApi()
@@ -77,9 +81,9 @@ function useSimulation(draft: Draft) {
   return useQuery({
     queryKey: ['policy-simulate', key],
     enabled: key !== null,
-    // Одна й та сама політика дає один і той самий вердикт, і рахує його чиста
-    // функція на сервері: повертатись на крок назад і назад уперед не має
-    // коштувати запиту.
+    // The same policy gives the same verdict, and a pure function on the
+    // server computes it: going a step back and forward again must not cost a
+    // request.
     staleTime: 5 * 60_000,
     queryFn: () =>
       api.post('/api/policy/simulate', { policy: settled }, simulatePolicyResponseSchema),
@@ -104,8 +108,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
 
   const goTo = useCallback(
     (next: number) => {
-      // `replace: false` — кроки лишаються в історії браузера, і «назад» веде на
-      // попередній крок, а не з майстра геть.
+      // `replace: false` — the steps stay in the browser history, and "back"
+      // leads to the previous step, not out of the wizard.
       setParams({ step: String(next) })
       window.scrollTo(0, 0)
     },

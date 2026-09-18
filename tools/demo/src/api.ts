@@ -1,14 +1,16 @@
-// Клієнт api: те саме, що робить консоль, тільки без браузера.
+// The api client: the same thing the console does, only without a browser.
 //
-// **Шлях `--api` існує заради одного числа.** Без нього SC-001 міряє
-// ончейн-половину: три транзакції, зібрані в процесі демо. Насправді ж людина
-// в майстрі проходить довший шлях — вхід, склад, симуляція, резервація номера
-// в базі, і аж потім підпис. Саме його й треба міряти, бо саме він стоїть у
-// критерії («майстер → працюючий токен»).
+// **The `--api` path exists for the sake of one number.** Without it SC-001
+// measures the on-chain half: three transactions assembled inside the demo
+// process. In reality a person in the wizard walks a longer path — login,
+// membership, simulation, reserving a number in the database, and only then
+// signing. That is what has to be measured, because that is what the
+// criterion says ("wizard → working token").
 //
-// Тіла й відповіді описані в `@forge/api/contracts` — тому ж файлі, який
-// валідує сервер. Другий опис тут розійшовся б із першим рівно тоді, коли
-// контракт зміниться (T023 виніс його з маршруту саме для цього).
+// The bodies and responses are described in `@forge/api/contracts` — the
+// same file the server validates with. A second description here would
+// diverge from the first exactly when the contract changes (T023 moved it
+// out of the route for precisely this).
 import type {
   CreateTokenBody,
   CreateTokenResponse,
@@ -21,16 +23,17 @@ import { ISSUER_HEADER } from '@forge/shared/api'
 export interface ApiClientOptions {
   readonly baseUrl: string
   readonly accessToken: string
-  /** Емітент. Потрібен лише коли членств кілька, але ставиться завжди. */
+  /** The issuer. Needed only when there are several memberships, but always set. */
   readonly issuerId: string
 }
 
 /**
- * Відмова api — окремий тип, а не рядок.
+ * An api refusal is a separate type, not a string.
  *
- * Код помилки продукту (`{ error: { code, message, details } }`) несе більше,
- * ніж статус: «інша емісія тримає наступний номер» і «немає атестатора в
- * складі» — обидва 400, і в звіті вони мають читатись різними реченнями.
+ * The product's error code (`{ error: { code, message, details } }`) carries
+ * more than the status: "another issuance holds the next number" and "no
+ * attestor in the membership" are both 400, and in the report they must read
+ * as different sentences.
  */
 export class ApiRefused extends Error {
   readonly status: number
@@ -61,7 +64,7 @@ export interface QueueHolderBody {
 }
 
 export interface ThawResult {
-  /** `delegated` — підписав операційний ключ; `member` — віддано непідписаним. */
+  /** `delegated` — the operational key signed; `member` — returned unsigned. */
   readonly mode: string
   readonly signature?: string | undefined
 }
@@ -119,11 +122,13 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 }
 
 /**
- * Розбирає `{ error: { code, message, details } }`, не падаючи на іншій формі.
+ * Parses `{ error: { code, message, details } }` without failing on another
+ * shape.
  *
- * Відповідь, яка не є нашою помилкою (проксі, шлюз, порожнє тіло), усе одно
- * мусить дати читабельне речення: інакше збій інфраструктури виглядав би як
- * відмова програми — рівно та підміна, від якої T024 уже раз постраждав.
+ * A response that is not our error (a proxy, a gateway, an empty body) must
+ * still yield a readable sentence: otherwise an infrastructure failure would
+ * look like a program refusal — exactly the substitution T024 already
+ * suffered from once.
  */
 function errorOf(payload: unknown): { code: string; message: string; details: unknown } {
   if (typeof payload === 'object' && payload !== null && 'error' in payload) {

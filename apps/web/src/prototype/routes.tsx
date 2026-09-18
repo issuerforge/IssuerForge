@@ -1,9 +1,12 @@
-// M0-прототип: екрани на вигаданих числах, живі тільки як форма продукту.
+// The M0 prototype: screens on invented numbers, alive only as the shape of
+// the product.
 //
-// Живуть під `/prototype/*` і входу не вимагають — це демонстрація форми, а не
-// екран емітента. Кожне число тут вигадане, і футер кожного екрана це каже вголос.
+// They live under `/prototype/*` and require no login — they are a demo of the
+// product's shape, not an issuer's screen. Every number here is invented, and
+// the footer of every screen says so out loud.
 //
-// Зникають зі своїми задачами: майстер — у T023, екран офіцера — у T034.
+// They disappear with their tasks: the wizard in T023, the officer's screen
+// in T034.
 import { Route, Routes } from 'react-router-dom'
 import ConsoleCase from './ConsoleCase'
 import ConsoleToken from './ConsoleToken'

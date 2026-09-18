@@ -16,7 +16,7 @@ const TREASURY = 'SysvarRent111111111111111111111111111111111'
 const SCHEMA = 'So11111111111111111111111111111111111111112'
 const NOW = 1_780_000_000
 
-/** Повна чернетка, яку приймає схема. Тести псують по одному полю. */
+/** A complete draft the schema accepts. The tests corrupt one field at a time. */
 const complete = (overrides: Partial<Draft> = {}): Draft => ({
   ...EMPTY_DRAFT,
   name: 'Vantara Naira',
@@ -38,8 +38,9 @@ const complete = (overrides: Partial<Draft> = {}): Draft => ({
 })
 
 describe('amounts', () => {
-  // Найдорожча помилка цього файла була б тихою: `25000000.07 * 100` дає
-  // 2500000006.9999995, і копійка зникає без жодного повідомлення.
+  // The costliest mistake in this file would be a quiet one:
+  // `25000000.07 * 100` gives 2500000006.9999995, and a cent vanishes with no
+  // message at all.
   it('counts in strings, not floating-point numbers', () => {
     expect(toSmallestUnit('25000000.07', 2)).toBe('2500000007')
     expect(toSmallestUnit('0.07', 2)).toBe('7')
@@ -51,14 +52,14 @@ describe('amounts', () => {
     expect(toSmallestUnit('25 000 000', 2)).toBe('2500000000')
   })
 
-  // Зайва точність — це або одруківка, або людина думає, що знаків більше.
-  // Обрізати хвіст мовчки означало б підписати не те число.
+  // Excess precision is either a typo or a person who thinks there are more
+  // decimals. Trimming the tail silently would mean signing the wrong number.
   it('rejects more decimals than the token has', () => {
     expect(toSmallestUnit('1.234', 2)).toBeUndefined()
     expect(toSmallestUnit('1.5', 0)).toBeUndefined()
   })
 
-  it.each(['', '—', '1.2.3', '-5', 'abc', '1e3'])('«%s» не є сумою', (input) => {
+  it.each(['', '—', '1.2.3', '-5', 'abc', '1e3'])('"%s" is not an amount', (input) => {
     expect(toSmallestUnit(input, 2)).toBeUndefined()
   })
 
@@ -106,9 +107,9 @@ describe('draft → policy', () => {
     expect(policy?.periodLimit).toEqual({ amount: '200000000', windowSeconds: 24 * 3600 })
   })
 
-  // Політика, яка приймає атестації провайдера й не називає їх строку, — це
-  // верифікація, чинна назавжди (FR-008a2). Модель це відхиляє; майстер не має
-  // навіть дати такий стан зібрати.
+  // A policy that accepts provider attestations and does not name their
+  // validity period is a verification valid forever (FR-008a2). The model
+  // rejects it; the wizard must not even let such a state be assembled.
   it('the attestation term disappears with its source rather than staying zero', () => {
     const policy = parsedPolicy(complete({ sources: ['register'] }))
 
@@ -128,8 +129,9 @@ describe('step readiness', () => {
     }
   })
 
-  // FR-005: три незмінні параметри підтверджуються явно, і без цього крок 1 не
-  // закінчується. Це не оздоблення — це те, чого не можна змінити потім.
+  // FR-005: the three immutable parameters are confirmed explicitly, and
+  // without that step 1 does not finish. This is not decoration — it is what
+  // cannot be changed later.
   it('step 1 does not finish without the three confirmations', () => {
     expect(problemsAt(1, complete({ ackDecimals: false }))).toContain(
       'all three fixed parameters must be acknowledged',
@@ -144,8 +146,9 @@ describe('step readiness', () => {
     expect(problemsAt(3, complete({ transferLimit: '0' }))[0]).toContain('stops every transfer')
   })
 
-  // Наскрізне правило: обіг нульовий, тож уся емісія мусить уміститись у
-  // резерв. Перевіряє його схема тіла — та сама, що на сервері.
+  // A cross-cutting rule: circulation is zero, so the whole issuance must fit
+  // into the reserve. The body schema checks it — the same one as on the
+  // server.
   it('issuance above the reserve is caught before signing', () => {
     const problems = problemsAt(5, complete({ reserveAmount: '1.00' }))
 
@@ -177,9 +180,9 @@ describe('draft → request body', () => {
 })
 
 describe('founder warnings', () => {
-  // Програма цього не перевіряє й не має: політика стосується переказів, а не
-  // того, кому дістався початковий випуск. Наслідок при цьому реальний — токен,
-  // який нікуди не рухається.
+  // The program does not check this, nor should it: the policy is about
+  // transfers, not about who received the initial issuance. The consequence
+  // is real, though — a token that goes nowhere.
   it('a founder jurisdiction outside the allowed ones is a warning, not a refusal', () => {
     const draft = complete({ founderJurisdiction: 'PL' })
 

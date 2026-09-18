@@ -1,15 +1,17 @@
-// Три транзакції випуску: зібрати, підписати, відправити, дочекатись.
+// The three issuance transactions: assemble, sign, send, await.
 //
-// **Підписує браузер, відправляє браузер.** Ключів емітента api не має, і
-// маршруту-ретранслятора в контракті немає теж: підписані байти йдуть просто у
-// вузол, адресу якого консоль читає з власного оточення. Вузол там публічний і
-// без ключа — саме тому, що цю адресу видно кожному, хто відкрив сторінку.
+// **The browser signs, the browser sends.** The api has no issuer keys, and
+// the contract has no relay route either: the signed bytes go straight to the
+// node whose address the console reads from its own environment. That node
+// is public and keyless — precisely because the address is visible to
+// everyone who opens the page.
 //
-// **Порядок не декоративний.** `set_token_metadata` і
-// `initialize_extra_account_meta_list` читають `TokenConfig`, якого до
-// підтвердження `create_token` не існує (T018, T020), тож кожна наступна
-// відправляється тільки після підтвердження попередньої. Без цього друга
-// транзакція падає на акаунті, якого ще немає, і виглядає це як помилка збірки.
+// **The order is not decorative.** `set_token_metadata` and
+// `initialize_extra_account_meta_list` read a `TokenConfig` that does not
+// exist until `create_token` is confirmed (T018, T020), so each next one is
+// sent only after the previous is confirmed. Without that the second
+// transaction fails on an account that does not exist yet, and it looks like
+// an assembly error.
 import {
   type CreateTokenBody,
   type CreateTokenResponse,
@@ -32,7 +34,7 @@ export interface TxProgress {
 }
 
 export interface IssueState {
-  /** Зібране, але ще не підписане: три транзакції й адреси, відомі наперед. */
+  /** Assembled but not yet signed: three transactions and the addresses known in advance. */
   assembled: CreateTokenResponse | undefined
   plans: SigningPlan[]
   progress: readonly TxProgress[]
@@ -40,7 +42,7 @@ export interface IssueState {
   error: string | undefined
   assemble: (body: CreateTokenBody) => Promise<void>
   submit: () => Promise<void>
-  /** Повернутись до правки: зібране скидається, номер токена звільниться сам. */
+  /** Back to editing: the assembled result is dropped, the token number frees itself. */
   reset: () => void
 }
 
@@ -96,9 +98,10 @@ export function useIssue(rpcUrl: string): IssueState {
       for (const [index, plan] of plans.entries()) {
         advance(index, { phase: 'signing' })
 
-        // Підписи ставляться по черзі на **ті самі байти**: кожен гаманець
-        // дописує свій у власний слот, і зібрати транзакцію вдруге між
-        // підписами не можна — підпис стосується конкретних байтів (T020).
+        // The signatures are put on in turn over **the same bytes**: each wallet
+        // adds its own into its own slot, and the transaction cannot be
+        // assembled a second time between signatures — a signature is over
+        // specific bytes (T020).
         let bytes = bytesFromBase64(plan.base64)
         for (const signer of plan.signers) {
           const wallet = wallets.find((candidate) => candidate.address === signer.address)
@@ -141,11 +144,11 @@ export function useIssue(rpcUrl: string): IssueState {
 }
 
 /**
- * Яку транзакцію позначити невдалою.
+ * Which transaction to mark as failed.
  *
- * Ту, що не дійшла до `confirmed`, — тобто першу незавершену. Позначати
- * останню було б неправдою: випуск зупиняється на першій, що не пройшла, а
- * решта навіть не відправлялась.
+ * The one that did not reach `confirmed` — i.e. the first unfinished one.
+ * Marking the last would be a lie: the issuance stops at the first that did
+ * not pass, and the rest were never even sent.
  */
 const progressIndexOf =
   (total: number) =>

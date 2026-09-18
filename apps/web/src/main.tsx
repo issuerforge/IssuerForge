@@ -1,9 +1,10 @@
-// Точка входу: прочитати оточення, зібрати провайдери, змонтувати.
+// The entry point: read the environment, assemble the providers, mount.
 //
-// Оточення читається тут і тільки тут — далі воно їде вниз як залежність. Якщо
-// його бракує, консоль не монтується взагалі й каже, чого саме бракує: біла
-// сторінка з помилкою в консолі браузера — найдорожчий спосіб дізнатись, що в
-// панелі хостингу забули змінну.
+// The environment is read here and only here — from then on it travels down
+// as a dependency. If it is missing, the console does not mount at all and
+// says what exactly is missing: a blank page with an error in the browser
+// console is the costliest way to learn that a variable was forgotten in the
+// hosting panel.
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
@@ -19,9 +20,10 @@ const root = createRoot(rootElement)
 try {
   const env = readWebEnv(import.meta.env)
   root.render(
-    // Прапорці v7 увімкнені явно: інакше router друкує попередження в консоль.
-    // `basename` — це `base` з vite.config.ts: на GitHub Pages консоль живе під
-    // `/<repo>/`, і без нього жоден маршрут не збігся б із адресою.
+    // The v7 flags are enabled explicitly: otherwise the router prints warnings
+    // to the console. `basename` is `base` from vite.config.ts: on GitHub Pages
+    // the console lives under `/<repo>/`, and without it no route would match
+    // the address.
     <BrowserRouter
       basename={import.meta.env.BASE_URL}
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}

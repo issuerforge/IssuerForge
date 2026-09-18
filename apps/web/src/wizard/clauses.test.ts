@@ -23,9 +23,9 @@ describe('the rulebook', () => {
     expect(textOf(draft({ decimals: '0', initialSupply: '1000' }), '1.3')).toContain('1,000 vNGN')
   })
 
-  // Політика без жодного джерела статусу відмовляє в кожному переказі. Це
-  // мусить бути реченням, а не порожнім місцем: відсутність тексту читається
-  // як «нічого особливого», хоча означає протилежне.
+  // A policy with no status source at all refuses every transfer. That must
+  // be a sentence, not an empty space: the absence of text reads as "nothing
+  // special", while it means the opposite.
   it('an empty source list is spelled out, not skipped', () => {
     expect(textOf(draft({ sources: [] }), '2.1')).toContain('no account may receive this token')
   })
@@ -38,8 +38,8 @@ describe('the rulebook', () => {
     expect(withoutProvider.some((c) => c.text.includes('counts as absent'))).toBe(false)
   })
 
-  // «Ліміту немає» — теж правило, і його треба прочитати. Зникнення рядка
-  // читалося б як «ліміт є, просто його не показали».
+  // "No limit" is a rule too, and it has to be read. A vanished line would
+  // read as "there is a limit, it just was not shown".
   it('a missing limit remains a sentence', () => {
     expect(textOf(draft(), '3.1')).toContain('not capped')
     expect(textOf(draft({ transferLimit: '500000' }), '3.1')).toContain('500,000.00 vNGN')

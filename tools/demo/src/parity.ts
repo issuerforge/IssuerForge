@@ -1,14 +1,15 @@
-// Симуляція проти мережі — вимір SC-008 у рантаймі.
+// Simulation against the network — the SC-008 measurement at runtime.
 //
-// **T019 звірив модель із моделлю; тут модель звіряється з тим, що справді
-// відповідає ланцюг.** Різниця істотна: диференційні тести доводять, що дві
-// реалізації однакові, а цей прохід доводить, що вони обидві відповідають
-// **токен-програмі й хуку в рантаймі** — з реальними акаунтами, реальним
-// `Clock` і реальним лічильником вікна.
+// **T019 compared the model with the model; here the model is compared with
+// what the chain actually answers.** The difference matters: the differential
+// tests prove that two implementations are the same, while this pass proves
+// that both match **the token program and the hook at runtime** — with real
+// accounts, a real `Clock` and a real window counter.
 //
-// Кожен сценарій виконується двічі: `simulateTransfer` у TS і справжній переказ
-// у мережі. Розбіжність — це або хибна симуляція в майстрі (людина підписала б
-// не те, що бачила), або зайва відмова в мережі.
+// Every scenario runs twice: `simulateTransfer` in TS and a real transfer on
+// the network. A divergence is either a false simulation in the wizard (the
+// person would have signed something other than what they saw) or a spurious
+// refusal on the network.
 import { buildTransfer, velocityCounterPda } from '@forge/chain'
 import {
   type PolicyRules,
@@ -21,13 +22,13 @@ import type { Keypair, PublicKey } from '@solana/web3.js'
 import { chainTime, type DemoContext } from './context.ts'
 import { expectRefusal, PassedThrough, submitPlan } from './send.ts'
 
-/** Сторона переказу так, як її бачить і симуляція, і мережа. */
+/** A party to the transfer as both the simulation and the network see it. */
 export interface Party {
   readonly wallet: Keypair
   readonly tier: number
   readonly jurisdiction: string
   readonly denied: boolean
-  /** Рахунок заведений, але не розморожений: статусу в реєстрі немає. */
+  /** The account is created but not thawed: there is no status in the registry. */
   readonly unregistered: boolean
 }
 
@@ -42,7 +43,7 @@ export interface ParityRow {
   readonly simulated: TransferVerdict
   readonly onChain: TransferVerdict
   readonly agrees: boolean
-  /** Номер помилки, якщо мережа відмовила не нашим кодом. */
+  /** The error number, if the network refused with a code that is not ours. */
   readonly foreignCode: number | undefined
 }
 
@@ -53,10 +54,11 @@ export interface ParityReport {
 }
 
 /**
- * Стан однієї сторони для симуляції.
+ * The state of one party for the simulation.
  *
- * Джерело `provider` завжди `absent`: політика демо його не приймає, і
- * підставляти туди запис означало б симулювати правило, якого немає.
+ * The `provider` source is always `absent`: the demo policy does not accept
+ * it, and putting a record there would mean simulating a rule that does not
+ * exist.
  */
 const partyContext = (party: Party) => ({
   provider: { kind: 'absent' as const },
@@ -89,10 +91,11 @@ export async function checkParity(context: DemoContext, input: ParityInput): Pro
   for (const scenario of input.scenarios) {
     const now = await chainTime(connection)
 
-    // Лічильник вікна читається **з ланцюга** перед кожним сценарієм, а не
-    // ведеться поруч. Інакше звірка доводила б, що модель збігається з нашим
-    // же уявленням про стан, а не з тим, що бачить хук: дозволений переказ
-    // рухає лічильник, і друга спроба в тому ж вікні вже інша.
+    // The window counter is read **from the chain** before every scenario,
+    // not tracked alongside. Otherwise the comparison would prove that the
+    // model matches our own idea of the state rather than what the hook sees:
+    // an allowed transfer moves the counter, and a second attempt in the same
+    // window is already different.
     const counter = await context.program.account.velocityCounter.fetchNullable(
       velocityCounterPda(input.mint, input.sender.wallet.publicKey),
     )
@@ -113,8 +116,9 @@ export async function checkParity(context: DemoContext, input: ParityInput): Pro
       now,
     }
 
-    // Токен не на паузі й рахунок відправника розморожений; заморожений
-    // рахунок отримувача — окремий стан, і саме його несе `unregistered`.
+    // The token is not paused and the sender's account is thawed; a frozen
+    // recipient account is a separate state, and `unregistered` is what
+    // carries it.
     const simulated = simulateTransfer(input.policy, transferContext, {
       paused: false,
       senderFrozen: false,
@@ -127,8 +131,8 @@ export async function checkParity(context: DemoContext, input: ParityInput): Pro
       name: scenario.name,
       simulated,
       onChain: onChain.verdict,
-      // Збіг — це і той самий вердикт, і той самий **код**: «відмовлено з
-      // іншої причини» — це розбіжність, а не половина успіху.
+      // A match is both the same verdict and the same **code**: "refused for
+      // a different reason" is a divergence, not half a success.
       agrees: sameVerdict(simulated, onChain.verdict),
       foreignCode: onChain.foreignCode,
     })
@@ -140,7 +144,7 @@ export async function checkParity(context: DemoContext, input: ParityInput): Pro
 const sameVerdict = (left: TransferVerdict, right: TransferVerdict): boolean =>
   left.allowed === right.allowed && (left.allowed || right.allowed || left.code === right.code)
 
-/** Той самий переказ у мережі; вердикт зводиться до тієї ж форми. */
+/** The same transfer on the network; the verdict is reduced to the same shape. */
 async function run(
   context: DemoContext,
   input: ParityInput,
@@ -156,8 +160,8 @@ async function run(
     decimals: input.decimals,
   })
 
-  // Дозволений переказ треба **виконати**, а не лише спробувати: інакше
-  // «дозволено» доводиться відсутністю відмови, а не результатом.
+  // An allowed transfer must be **executed**, not merely attempted: otherwise
+  // "allowed" is proven by the absence of a refusal, not by the result.
   try {
     const refusal = await expectRefusal(
       connection,
@@ -168,8 +172,8 @@ async function run(
     const code = refusal.code === undefined ? null : refusalCodeFromAnchorError(refusal.code)
 
     return code === null
-      ? // Відмова не нашим кодом: рахунок заморожений (`0x11`) — це перший гейт
-        // FR-008b, і в моделі йому відповідає `ACCOUNT_FROZEN`.
+      ? // A refusal with a code that is not ours: a frozen account (`0x11`) is
+        // the first gate of FR-008b, and in the model it maps to `ACCOUNT_FROZEN`.
         {
           verdict: { allowed: false, code: 'ACCOUNT_FROZEN' },
           foreignCode: refusal.code,
@@ -183,7 +187,7 @@ async function run(
   }
 }
 
-/** Переказ, який справді має пройти: виконується, а не лише перевіряється. */
+/** A transfer that really must go through: it is executed, not merely checked. */
 export async function moveOnce(
   context: DemoContext,
   mint: PublicKey,

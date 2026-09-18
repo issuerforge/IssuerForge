@@ -1,17 +1,17 @@
-// Оточення збірки консолі.
+// The console build environment.
 //
-// Vite підставляє ці значення у бандл під час збірки, тож секрету тут бути не
-// може ніколи: `VITE_PRIVY_APP_ID` — публічний ідентифікатор застосунку, а не
-// ключ. Секрети Privy читає тільки `apps/api` (`PRIVY_APP_SECRET`).
+// Vite bakes these values into the bundle at build time, so there can never
+// be a secret here: `VITE_PRIVY_APP_ID` is the app's public identifier, not a
+// key. Privy secrets are read only by `apps/api` (`PRIVY_APP_SECRET`).
 //
-// Розбір лежить окремою чистою функцією, а не виконується при завантаженні
-// модуля: інакше кожен тест, який просто торкнувся б цього файла, падав би на
-// відсутньому оточенні. Оточення читає `main.tsx` — один раз, на старті, і далі
-// віддає готове значення вниз як залежність (той самий підхід, що
-// `createServer(deps)` в api).
+// Parsing is a separate pure function rather than running on module load:
+// otherwise every test that merely touched this file would fail on a missing
+// environment. `main.tsx` reads the environment — once, at start-up — and
+// then passes the ready value down as a dependency (the same approach as
+// `createServer(deps)` in the api).
 import { z } from 'zod'
 
-/** Те саме значення, що відхиляє `apps/api/src/config.ts`. */
+/** The same value that `apps/api/src/config.ts` rejects. */
 const PLACEHOLDER = 'REPLACE_ME'
 
 const filled = (label: string) =>
@@ -22,25 +22,28 @@ const filled = (label: string) =>
 
 export const webEnvSchema = z.object({
   /**
-   * Базовий URL api. Кінцевий слеш зрізається тут, бо шляхи склеюються
-   * рядками: `http://host/` + `/api/session` дало б `//api/session`, і CORS
-   * відмовив би на походженні, яке візуально не відрізняється від дозволеного.
+   * The api base URL. The trailing slash is stripped here because paths are
+   * joined as strings: `http://host/` + `/api/session` would give
+   * `//api/session`, and CORS would refuse an origin visually
+   * indistinguishable from the allowed one.
    */
   VITE_API_URL: filled('VITE_API_URL')
-    // Протокол перевіряється явно: `z.url()` спирається на `new URL()`, а той
-    // приймає `localhost:8787` як дійсний URL зі схемою `localhost:`. Бандл із
-    // таким значенням зібрався б, і кожен запит падав би вже в браузері.
+    // The protocol is checked explicitly: `z.url()` relies on `new URL()`,
+    // which accepts `localhost:8787` as a valid URL with the scheme
+    // `localhost:`. A bundle with that value would build, and every request
+    // would fail in the browser.
     .pipe(z.url({ protocol: /^https?$/ }))
     .transform((v) => v.replace(/\/+$/, '')),
   VITE_PRIVY_APP_ID: filled('VITE_PRIVY_APP_ID'),
   /**
-   * Вузол, у який консоль **сама** відправляє підписані транзакції.
+   * The node the console **itself** sends signed transactions to.
    *
-   * Змінна окрема від серверної `DEVNET_RPC_URL`, і це не дублювання: api
-   * ходить через платний вузол із ключем у рядку запиту, а бандл читає кожен,
-   * хто відкрив сторінку. Сюди йде публічний devnet-вузол, який ключа не
-   * потребує, — тож єдиний спосіб «випадково» опублікувати ключ Helius це
-   * вписати його руками в цю змінну.
+   * The variable is separate from the server's `DEVNET_RPC_URL`, and that is
+   * not duplication: the api goes through a paid node with a key in the query
+   * string, while the bundle is read by everyone who opens the page. The
+   * public devnet node, which needs no key, goes here — so the only way to
+   * "accidentally" publish the Helius key is to write it into this variable
+   * by hand.
    */
   VITE_DEVNET_RPC_URL: filled('VITE_DEVNET_RPC_URL')
     .pipe(z.url({ protocol: /^https?$/ }))
@@ -60,10 +63,10 @@ export class WebEnvError extends Error {
 }
 
 /**
- * Читає оточення й називає **всі** проблеми одразу.
+ * Reads the environment and names **all** the problems at once.
  *
- * Правити змінні по одній, перезбираючи бандл на кожну, — найдорожчий спосіб
- * дізнатись, що їх бракує двох.
+ * Fixing variables one at a time, rebuilding the bundle for each, is the
+ * costliest way to learn that two are missing.
  */
 export function readWebEnv(source: unknown): WebEnv {
   const parsed = webEnvSchema.safeParse(source)

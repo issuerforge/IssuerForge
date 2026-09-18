@@ -38,8 +38,8 @@ const transactions: UnsignedTransactionView[] = [
 ]
 
 describe('the signing plan', () => {
-  // Головне число цього екрана: підписів три транзакції й чотири підписи, а не
-  // одна кнопка «підписати» (борг T020).
+  // The main number of this screen: three transactions and four signatures,
+  // not one "sign" button (debt T020).
   it('counts signatures per transaction, not per button', () => {
     const plans = planSignatures(transactions, [FOUNDER, ATTESTOR])
 
@@ -50,7 +50,7 @@ describe('the signing plan', () => {
   it('keeps the signer order the api named', () => {
     const [first] = planSignatures(transactions, [FOUNDER, ATTESTOR])
 
-    // Платник перший — саме в цьому порядку консоль питає підписи.
+    // The payer first — that is the order the console asks for signatures in.
     expect(first?.signers.map((s) => s.address)).toEqual([FOUNDER, ATTESTOR])
   })
 
@@ -63,8 +63,9 @@ describe('the signing plan', () => {
     ])
   })
 
-  // Найчастіший випадок не помилка, а робота: атестатор стоїть у складі
-  // окремим гаманцем і в консоль не входить (FR-024).
+  // The commonest case is not a mistake but work: the attestor is in the
+  // membership as a separate wallet and does not log into the console
+  // (FR-024).
   it('names a missing signer once', () => {
     const plans = planSignatures(transactions, [FOUNDER])
 
@@ -125,9 +126,10 @@ describe('awaiting confirmation', () => {
   })
 
   /**
-   * Строк — не «не вдалося»: транзакція могла пройти й після нього. Різниця
-   * важлива, бо повторна відправка тієї самої випускної транзакції отримає
-   * «акаунт уже існує», і сказати людині треба саме це.
+   * A timeout is not "failed": the transaction may have gone through after
+   * it too. The difference matters, because re-sending the same issuance
+   * transaction gets "account already exists", and that is exactly what the
+   * person must be told.
    */
   it('a timeout says the transaction may still land', async () => {
     const source = reader([null])

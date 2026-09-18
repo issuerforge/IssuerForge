@@ -1,10 +1,10 @@
-// Заглушка екрана, який ще не написаний.
+// A stub for a screen not written yet.
 //
-// Порожня сторінка з написом «скоро» бреше двічі: не каже, що саме буде, і не
-// каже, коли. Тут стоїть номер задачі з `docs/TASKS.md` — того самого списку,
-// за яким приймається робота, — і одне речення про те, що на цьому екрані
-// з'явиться. Роль людину сюди пустила: вона має бачити, що повноваження є, а
-// екрана ще немає.
+// A blank page saying "coming soon" lies twice: it says neither what exactly
+// will be here nor when. Here stands the task number from `docs/TASKS.md` —
+// the same list the work is accepted against — and one sentence about what
+// will appear on this screen. The role let the person in here: they must see
+// that the power exists and the screen does not yet.
 export default function Stub({ task, what }: { task: string; what: string }) {
   return (
     <div className="max-w-[620px] py-10">

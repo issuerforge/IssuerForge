@@ -1,16 +1,17 @@
-// Спроби порушити правило — вимір SC-002.
+// Attempts to violate the rule — the SC-002 measurement.
 //
-// **Успіх тут — це відмова.** Кожен випадок нижче будується так, щоб пройти,
-// якби правило жило в застосунку; те, що він не проходить, і є твердженням
-// проєкту: правило виконує сам токен (FR-002).
+// **Success here is a refusal.** Every case below is built so that it would
+// pass if the rule lived in the app; that it does not pass is the project's
+// claim: the token itself enforces the rule (FR-002).
 //
-// Чотири вектори, і жоден із них не є варіацією одного:
-//   1. **сторонній клієнт** — переказ зібраний повз наші білдери, напряму
-//      `spl-token`;
-//   2. **CPI** — виклик із чужої програми на ланцюгу (`programs/attacker`);
-//   3. **делегат** — `approve` й переказ чужими руками;
-//   4. **дроблення** — кожна сума під лімітом на переказ, разом понад ліміт за
-//      період.
+// Four vectors, and none of them is a variation of another:
+//   1. **a third-party client** — a transfer assembled bypassing our
+//      builders, straight with `spl-token`;
+//   2. **CPI** — a call from a foreign program on chain
+//      (`programs/attacker`);
+//   3. **a delegate** — `approve` and a transfer by someone else's hands;
+//   4. **splitting** — every amount under the per-transfer limit, together
+//      over the per-period limit.
 import { buildTransfer } from '@forge/chain'
 import { refusalCodeFromAnchorError } from '@forge/shared/refusal'
 import {
@@ -28,14 +29,15 @@ export interface Attempt {
   readonly name: string
   readonly refused: boolean
   readonly code: number | undefined
-  /** Наш код відмови, якщо номер належить хуку. */
+  /** Our refusal code, if the number belongs to the hook. */
   readonly refusalCode: string | null
   /**
-   * Хто відмовив, коли код не наш.
+   * Who refused, when the code is not ours.
    *
-   * Відмова токен-програми («рахунок заморожений», «бракує акаунта») — це теж
-   * виконана вимога, але вимога **інша**: FR-008b тримає два гейти, і звіт, у
-   * якому вони злиті в «unknown», не показує, який із них спрацював.
+   * A token program refusal ("account frozen", "missing account") is a
+   * requirement enforced too, but a **different** one: FR-008b holds two
+   * gates, and a report that merges them into "unknown" does not show which
+   * of them fired.
    */
   readonly refusedBy: string | undefined
 }
@@ -48,9 +50,10 @@ export interface AttackReport {
 }
 
 /**
- * Останній рядок лога, у якому мережа сказала, чому відмовила.
+ * The last log line in which the network said why it refused.
  *
- * Беремо `Program … failed: …` — саме він називає програму, а не наслідок.
+ * We take `Program … failed: …` — it is what names the program, not the
+ * consequence.
  */
 const refusedBy = (refusal: Refused | undefined): string | undefined => {
   const failure = [...(refusal?.logs ?? [])].reverse().find((line) => line.includes(' failed: '))
@@ -72,11 +75,12 @@ const record = (
 })
 
 /**
- * Спроба, від якої чекають відмови; `undefined` означає, що вона **пройшла**.
+ * An attempt expected to be refused; `undefined` means it **went through**.
  *
- * Ловиться рівно `PassedThrough`. Усе інше — зламаний вимір (не резолвиться
- * акаунт, не збирається інструкція), і воно мусить зупинити прогін, а не
- * лягти в звіт рядком «правило не спрацювало».
+ * Exactly `PassedThrough` is caught. Everything else is a broken measurement
+ * (an account does not resolve, an instruction does not assemble), and it
+ * must stop the run rather than land in the report as "the rule did not
+ * fire".
  */
 async function attempt(run: () => Promise<Refused>): Promise<Refused | undefined> {
   try {
@@ -90,26 +94,27 @@ async function attempt(run: () => Promise<Refused>): Promise<Refused | undefined
 export interface AttackInput {
   readonly mint: PublicKey
   readonly decimals: number
-  /** Гаманець, який тримає токен і має чинний статус. */
+  /** A wallet that holds the token and has a current status. */
   readonly holder: Keypair
-  /** Той, кого емітент не впускав: ані ATA, ані статусу. */
+  /** The one the issuer never let in: neither an ATA nor a status. */
   readonly stranger: Keypair
-  /** Впущений холдер у дозволеній юрисдикції. */
+  /** An admitted holder in an allowed jurisdiction. */
   readonly allowed: PublicKey
-  /** Ліміт на один переказ у найменших одиницях. */
+  /** The per-transfer limit in the smallest unit. */
   readonly transferLimit: bigint
-  /** Скільки разів повторити кожен випадок: 50 спроб набираються повторами. */
+  /** How many times to repeat each case: the 50 attempts are reached by repetition. */
   readonly repeats: number
-  /** Адреса програми-посередника. */
+  /** The address of the relay program. */
   readonly attackerProgram: PublicKey
 }
 
 /**
- * Переказ, зібраний **не нашими** білдерами.
+ * A transfer assembled by builders that are **not ours**.
  *
- * Саме так виглядає обхід застосунку: клієнт бере `spl-token` і складає
- * `transfer_checked` сам. Додаткових акаунтів хука він не додає — і не може
- * знати, що вони потрібні, якщо не читав `ExtraAccountMetaList`.
+ * This is exactly what bypassing the app looks like: the client takes
+ * `spl-token` and composes `transfer_checked` itself. It adds no extra hook
+ * accounts — and cannot know they are needed unless it read
+ * `ExtraAccountMetaList`.
  */
 function rawTransfer(
   mint: PublicKey,
@@ -137,7 +142,7 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
   for (let round = 0; round < input.repeats; round += 1) {
     const amount = 1_000n + BigInt(round)
 
-    // ── 1. Сторонній клієнт ────────────────────────────────────────────────
+    // ── 1. A third-party client ────────────────────────────────────────────
     attempts.push(
       record(
         'third-party',
@@ -207,7 +212,7 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
       ),
     )
 
-    // ── 2. CPI з чужої програми ────────────────────────────────────────────
+    // ── 2. CPI from a foreign program ──────────────────────────────────────
     attempts.push(
       record(
         'cpi',
@@ -238,7 +243,7 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
       ),
     )
 
-    // ── 3. Делегат ─────────────────────────────────────────────────────────
+    // ── 3. A delegate ──────────────────────────────────────────────────────
     attempts.push(
       record(
         'delegate',
@@ -259,9 +264,9 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
             amount,
             decimals: input.decimals,
           })
-          // Делегат підписує замість власника: акаунт джерела той самий, а
-          // повноваження — чужі. Політика читає **власника**, і саме тому
-          // делегування нічого не відкриває.
+          // The delegate signs instead of the owner: the source account is the
+          // same, the authority is someone else's. The policy reads the
+          // **owner**, which is exactly why delegation opens nothing.
           const delegated = transfer.instructions.map((instruction) =>
             withAuthority(instruction, input.holder.publicKey, keys.operational.publicKey),
           )
@@ -276,9 +281,9 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
     )
   }
 
-  // ── 4. Дроблення ─────────────────────────────────────────────────────────
-  // Кожна сума під лімітом на переказ; разом вони переростають ліміт за період,
-  // і відмова приходить на тому переказі, який його перетнув.
+  // ── 4. Splitting ─────────────────────────────────────────────────────────
+  // Every amount is under the per-transfer limit; together they outgrow the
+  // per-period limit, and the refusal comes on the transfer that crossed it.
   const slice = input.transferLimit
   for (let index = 0; index < input.repeats * 2; index += 1) {
     const refusal = await attempt(async () =>
@@ -297,8 +302,9 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
         [input.holder],
       ),
     )
-    // Перші кілька переказів законні: ліміт за період ще не вичерпаний. У звіт
-    // потрапляють лише ті, що мали б порушити його, — тобто після перетину.
+    // The first few transfers are legitimate: the per-period limit is not yet
+    // exhausted. Only those that should violate it — i.e. after the crossing
+    // — go into the report.
     if (refusal !== undefined) {
       attempts.push(record('splitting', `slice ${index + 1} over the period limit`, refusal))
     }
@@ -321,11 +327,12 @@ export async function runAttacks(context: DemoContext, input: AttackInput): Prom
 }
 
 /**
- * Інструкція чужої програми: ті самі акаунти, що й у прямого переказу, плюс
- * акаунти хука в хвості.
+ * The foreign program's instruction: the same accounts as a direct transfer,
+ * plus the hook accounts in the tail.
  *
- * Хвіст обов'язковий: токен-програма підкладає хуку рівно те, що прийшло, і
- * без нього відмова була б «бракує акаунта», а не «правило не дозволяє».
+ * The tail is mandatory: the token program hands the hook exactly what
+ * arrived, and without it the refusal would be "missing account", not "the
+ * rule does not allow".
  */
 async function relayInstruction(
   context: DemoContext,
@@ -344,9 +351,9 @@ async function relayInstruction(
   const inner = direct.instructions[0]
   if (inner === undefined) throw new Error('the transfer builder produced no instruction')
 
-  // Перші чотири акаунти — джерело, mint, отримувач, власник; далі йде
-  // токен-програма (її наша інструкція приймає окремим акаунтом), а хвіст —
-  // усе, що резолвив хук.
+  // The first four accounts are the source, the mint, the destination and
+  // the owner; then the token program (our instruction takes it as a separate
+  // account), and the tail is everything the hook resolved.
   const [source, mint, destination, authority, ...rest] = inner.keys
 
   if (
@@ -373,12 +380,14 @@ async function relayInstruction(
 }
 
 /**
- * Тіло інструкції `relay_transfer`: дискримінатор Anchor плюс два аргументи.
+ * The body of the `relay_transfer` instruction: the Anchor discriminator
+ * plus two arguments.
  *
- * Дискримінатор рахується як `sha256("global:relay_transfer")[0..8]` — те саме
- * робить Anchor. Клієнта програми-атаки тут немає навмисно: вона існує рівно
- * для одного виклику, і генерувати під неї IDL-клієнт означало б завести в
- * репозиторії другий ончейн-клієнт заради восьми байтів.
+ * The discriminator is computed as `sha256("global:relay_transfer")[0..8]` —
+ * the same thing Anchor does. There is deliberately no client for the attack
+ * program here: it exists for exactly one call, and generating an IDL client
+ * for it would mean a second on-chain client in the repository for the sake
+ * of eight bytes.
  */
 function relayData(amount: bigint, decimals: number): Buffer {
   const discriminator = Buffer.from([0x21, 0x6b, 0x97, 0xb4, 0xb0, 0xbb, 0xa2, 0xb6])
@@ -388,7 +397,7 @@ function relayData(amount: bigint, decimals: number): Buffer {
   return Buffer.concat([discriminator, body])
 }
 
-/** Той самий переказ, але санкціонує його інша адреса. */
+/** The same transfer, but a different address authorises it. */
 function withAuthority(
   instruction: TransactionInstruction,
   owner: PublicKey,

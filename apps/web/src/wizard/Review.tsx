@@ -1,14 +1,17 @@
-// Крок 5: що саме буде підписано, ким і скількома підписами.
+// Step 5: what exactly will be signed, by whom, and with how many
+// signatures.
 //
-// **Три підписи, а не один.** Випуск — це три транзакції, і першу підписують
-// двоє: засновник-адміністратор і атестатор резерву. Прототип M0 показував одну
-// кнопку «підписати», і борг T020 записаний саме про це. Тут перелік підписів
-// стоїть перед кнопкою, а не після неї.
+// **Three signatures, not one.** An issuance is three transactions, and the
+// first is signed by two: the founder-admin and the reserve attestor. The M0
+// prototype showed a single "sign" button, and debt T020 is recorded about
+// exactly that. Here the list of signatures stands before the button, not
+// after it.
 //
-// **Кворум і делегація тут не задаються.** Вони належать емітенту, а не
-// випуску: змінити їх ця форма не може, і показувати їх значенням, яке нібито
-// обирається, було б брехнею (борг T010 — «прибрати з майстра кворум 1»).
-// Замість числа стоїть речення про те, чого випуск не робить.
+// **Quorum and delegation are not set here.** They belong to the issuer, not
+// to the issuance: this form cannot change them, and showing them as a value
+// that is supposedly being chosen would be a lie (debt T010 — "remove quorum
+// 1 from the wizard"). Instead of a number there is a sentence about what the
+// issuance does not do.
 
 import { useWebEnv } from '@/auth/providers'
 import { truncate } from '@/lib/format'
@@ -52,9 +55,9 @@ export default function Review() {
     issue.progress.length > 0 && issue.progress.every((entry) => entry.phase === 'confirmed')
 
   const prepare = async () => {
-    // Час береться тут, а не всередині чистої функції: атестація резерву
-    // датується моментом запиту, і прихований годинник зробив би збірку
-    // невідтворюваною.
+    // The time is taken here, not inside the pure function: the reserve
+    // attestation is dated at the moment of the request, and a hidden clock
+    // would make the assembly unreproducible.
     const built = toCreateTokenBody(draft, Math.floor(Date.now() / 1000))
     if (built.body !== undefined) await issue.assemble(built.body)
   }

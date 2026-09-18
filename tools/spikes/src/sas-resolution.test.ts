@@ -14,16 +14,16 @@ import {
   tokenConfigExtraAccountMeta,
 } from './sas-resolution.ts'
 
-// Розкладка акаунтів у виклику хука: 0 source, 1 mint, 2 destination, 3 owner,
-// 4 extra-account-metas, далі — розвʼязані додаткові акаунти.
+// The account layout in a hook call: 0 source, 1 mint, 2 destination, 3 owner,
+// 4 extra-account-metas, then the resolved extra accounts.
 const SAS_PROGRAM_INDEX = 5
 const TOKEN_CONFIG_INDEX = 6
 const DESTINATION_INDEX = 2
 
-// Запропонована розкладка TokenConfig: 8 discriminator + issuer + mint, далі два ключі.
+// The proposed TokenConfig layout: 8 discriminator + issuer + mint, then the two keys.
 const CREDENTIAL_OFFSET = 72
 const SCHEMA_OFFSET = 104
-// SPL-токен-акаунт: mint(32), owner(32).
+// An SPL token account: mint(32), owner(32).
 const TOKEN_ACCOUNT_OWNER_OFFSET = 32
 
 function stubConnection(accounts: Map<string, Buffer>): Connection {
@@ -125,13 +125,13 @@ describe('resolving the SAS attestation account through ExtraAccountMetaList see
     ])
 
     expect(packed.length).toBe(ADDRESS_CONFIG_SIZE)
-    // 13 (літерал) + 4 + 4 + 4; решта — нулі, які зупиняють розбір seeds
+    // 13 (the literal) + 4 + 4 + 4; the rest are zeros, which stop seed parsing
     expect(packed.subarray(25).every((byte) => byte === 0)).toBe(true)
   })
 
   it('the naive path — credential and schema as literals — does not fit in 32 bytes', () => {
     expect(() => naiveAttestationAddressConfig(credential, schema)).toThrow(
-      /34 байт|не вкладається/,
+      /34 needed|does not fit/,
     )
   })
 })
