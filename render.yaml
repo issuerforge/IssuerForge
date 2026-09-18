@@ -18,7 +18,11 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    # Not `corepack enable`: the Node 26 image ships its own pnpm in a read-only
+    # /usr/bin, and `enable` fails trying to replace it with a symlink — and Node
+    # 25+ no longer bundles corepack at all. npx pins the exact version from
+    # package.json → packageManager without touching the system pnpm.
+    buildCommand: npx -y pnpm@9.15.0 install --frozen-lockfile
     # Node runs .ts directly (type stripping); the api is written for it and
     # provides no build step. Render provides PORT itself; the config reads it.
     startCommand: node apps/api/src/index.ts
