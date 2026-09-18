@@ -18,41 +18,45 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
-# token_interface: mint і токен-акаунти Token-2022, без них немає жодного
-# розширення, на якому побудований проєкт.
+# token_interface: Token-2022 mints and token accounts; without them there is
+# no extension the project is built on.
 anchor-spl = { version = "0.32.1", features = ["token_2022"] }
-# Рівно 0.10.0. anchor-spl 0.32.1 тягне spl-token-2022 ^8, а той — саме цю гілку.
-# Версії 2.x сидять на solana-* 3.x і дають два різні Pubkey в одному крейті.
+# Exactly 0.10.0. anchor-spl 0.32.1 pulls spl-token-2022 ^8, and that pulls
+# exactly this branch. The 2.x versions sit on solana-* 3.x and yield two
+# different Pubkeys in one crate.
 spl-transfer-hook-interface = "=0.10.0"
 spl-tlv-account-resolution = "=0.10.0"
 spl-pod = "=0.5.1"
-# Дискримінатор інструкції `Execute` задає інтерфейс, а не Anchor. Версія та, що
-# вже в дереві через spl-transfer-hook-interface 0.10.0.
+# The `Execute` instruction discriminator is set by the interface, not by
+# Anchor. The version is the one already in the tree through
+# spl-transfer-hook-interface 0.10.0.
 spl-discriminator = "=0.4.1"
-# Правила читаються з акаунта на кожному переказі — zero_copy без алокацій.
+# The rules are read from the account on every transfer — zero_copy, no allocations.
 bytemuck = { version = "1.25", features = ["derive"] }
-# sha256 для `rules_hash`. Окремою залежністю, бо anchor-lang 0.32.1 не
-# ре-експортує `solana_program::hash` — у нього `solana_program` зібраний із
-# розділених крейтів, і хешера серед них немає. Рівно 2.3.0: mollusk тягне
-# гілку 3.1.0 (agave 4.x), і два різні `Hash` в одному крейті — та сама історія,
-# що з `Pubkey` у spl-transfer-hook-interface 2.x.
+# sha256 for `rules_hash`. A separate dependency because anchor-lang 0.32.1
+# does not re-export `solana_program::hash` — its `solana_program` is
+# assembled from the split crates, and the hasher is not among them. Exactly
+# 2.3.0: mollusk pulls the 3.1.0 branch (agave 4.x), and two different
+# `Hash`es in one crate is the same story as `Pubkey` in
+# spl-transfer-hook-interface 2.x.
 solana-sha256-hasher = "=2.3.0"
 
 [dev-dependencies]
-# Фікстури диференційного тесту (T019) лежать у JSON, бо їх читає й TS-половина.
-# Версія та, що вже в дереві через anchor: власного дерева solana-* serde_json
-# не має й привнести не може.
+# The differential test fixtures (T019) are JSON, because the TS half reads
+# them too. The version is the one already in the tree through anchor:
+# serde_json has no solana-* tree of its own and cannot bring one in.
 serde_json = "1.0.151"
-# Хук викликається токен-програмою, а не нашим кодом: без справжнього рантайму
-# і ELF Token-2022 жоден тест не доходить до перевірки правила.
-# litesvm тут не збирається з anchor 0.32.1 (E0027 на touched_flags).
+# The hook is called by the token program, not by our code: without a real
+# runtime and the Token-2022 ELF no test gets as far as the rule check.
+# litesvm does not compile here against anchor 0.32.1 (E0027 on touched_flags).
 mollusk-svm = "0.15.0"
 mollusk-svm-programs-token = { version = "0.15.0", default-features = false, features = [
   "token-2022",
   "associated-token",
 ] }
-# Гілка типів у mollusk (agave 4.x) не та, у якій живе anchor-lang 0.32.1
-# (solana-program 2.3). Це два різні Pubkey, міст між ними — to_bytes().
+# The type branch in mollusk (agave 4.x) is not the one anchor-lang 0.32.1
+# lives in (solana-program 2.3). These are two different Pubkeys; the bridge
+# between them is to_bytes().
 solana-account = "4.3"
 solana-instruction = "3.4"
 solana-pubkey = "4.2"

@@ -1,23 +1,29 @@
-//! Диференційна звірка оцінювача правил із TS-половиною (SC-008, T019).
+//! The differential comparison of the rule evaluator with the TS half
+//! (SC-008, T019).
 //!
-//! Читає ті самі файли `fixtures/rules/*.json`, що й
-//! `packages/policy/src/evaluate.test.ts`. Спільними є **вхід і очікуваний
-//! вердикт**; жодна з двох реалізацій не є еталоном для другої.
+//! Reads the same `fixtures/rules/*.json` files as
+//! `packages/policy/src/evaluate.test.ts`. What is shared is **the input and
+//! the expected verdict**; neither of the two implementations is the
+//! reference for the other.
 //!
-//! **Очікуваний вердикт написаний рукою з вимоги, а не знятий із реалізації.**
-//! Тому тест ловить не тільки розходження двох реалізацій, а й згоду обох на
-//! неправильному — а це саме та помилка, яку дубль моделі створює найлегше.
+//! **The expected verdict is written by hand from the requirement, not taken
+//! from the implementation.** So the test catches not only a divergence
+//! between the two implementations but also both agreeing on the wrong
+//! thing — and that is exactly the mistake a duplicated model creates most
+//! easily.
 //!
-//! **Звіряється чистий оцінювач `rules::evaluate`, а не хук у рантаймі.** Це
-//! межа, і її треба знати: читання акаунтів, прапорець `transferring` і парсер
-//! атестації SAS цим тестом не покриті — їх покриває T024 на devnet. Тут
-//! звіряється модель проти моделі, тобто рівно те місце, де дві реалізації
-//! розходяться найтихіше.
+//! **What is compared is the pure evaluator `rules::evaluate`, not the hook
+//! at runtime.** That is a boundary, and it has to be known: reading
+//! accounts, the `transferring` flag and the SAS attestation parser are not
+//! covered by this test — T024 covers them on devnet. Here the model is
+//! compared with the model, i.e. exactly the place where two implementations
+//! diverge most quietly.
 //!
-//! **Назви кодів не мають третього дзеркала.** Очікуване порівнюється з іменем
-//! варіанта `ForgeError`, переведеним із `PascalCase` у `SCREAMING_SNAKE_CASE`.
-//! Таблиця «рядок → варіант» тут була б третім переліком тих самих кодів (після
-//! `refusal.ts` і `ForgeError`), і розійшовся б саме він.
+//! **The code names have no third mirror.** The expected value is compared
+//! with the `ForgeError` variant name converted from `PascalCase` to
+//! `SCREAMING_SNAKE_CASE`. A "string → variant" table here would be a third
+//! list of the same codes (after `refusal.ts` and `ForgeError`), and it is
+//! the one that would diverge.
 use std::fs;
 use std::path::PathBuf;
 
@@ -30,8 +36,8 @@ use issuer_forge::rules::layout::{RuleSlot, MAX_RULE_SLOTS, RULES_BYTES};
 use serde_json::Value;
 
 fn fixture_dir() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` — `programs/issuer-forge`; фікстури лежать у корені
-    // репо, бо належать обом сторонам однаково.
+    // `CARGO_MANIFEST_DIR` is `programs/issuer-forge`; the fixtures live at
+    // the repository root because they belong to both sides equally.
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/rules")
 }
 
@@ -54,14 +60,15 @@ fn screaming(pascal: &str) -> String {
     out
 }
 
-// ─── Розбір фікстури ─────────────────────────────────────────────────────────
+// ─── Fixture parsing ─────────────────────────────────────────────────────────
 
 fn i64_at(value: &Value, key: &str) -> i64 {
     value[key].as_i64().unwrap_or_else(|| panic!("`{key}` must be an integer"))
 }
 
-/// Суми їдуть через JSON **рядком**: u64 не влазить у double, і мовчазне
-/// округлення тут зробило б фікстуру про іншу суму, ніж написано.
+/// Amounts travel through JSON as a **string**: a u64 does not fit in a
+/// double, and silent rounding here would make the fixture about a different
+/// amount than written.
 fn u64_at(value: &Value, key: &str) -> u64 {
     value[key]
         .as_str()
@@ -82,8 +89,8 @@ fn record(value: &Value) -> StatusRecord {
         denied: value["denied"].as_bool().expect("denied is a bool"),
         tier: u8::try_from(i64_at(value, "tier")).expect("tier fits in u8"),
         jurisdiction: jurisdiction(value),
-        // `null` — «без строку», а не «протерміновано». Та сама домовленість,
-        // що в TS-схемі.
+        // `null` is "no expiry", not "expired". The same convention as in the
+        // TS schema.
         expires_at: value["expiresAt"].as_i64(),
     }
 }
@@ -127,12 +134,13 @@ fn context(value: &Value) -> TransferContext {
 fn slots(hex: &str) -> Vec<RuleSlot> {
     let bytes = hex_bytes(hex);
     assert_eq!(bytes.len(), RULES_BYTES, "policy is exactly {RULES_BYTES} bytes");
-    // Вирівнювання одиничне (`repr(C)` з самих `u8`), тож зріз байтів читається
-    // слотами на місці — так само, як його читає хук із даних акаунта.
+    // The alignment is one (`repr(C)` of nothing but `u8`), so the byte slice
+    // is read as slots in place — the same way the hook reads it from the
+    // account data.
     bytemuck::cast_slice::<u8, RuleSlot>(&bytes).to_vec()
 }
 
-/// Вердикт у тій самій формі, у якій його записано у фікстурі.
+/// The verdict in the same shape it is written in the fixture.
 fn verdict(slots: &[RuleSlot], ctx: &TransferContext) -> String {
     match evaluate(slots, ctx) {
         Ok(()) => "ALLOWED".to_string(),
@@ -159,12 +167,12 @@ fn fixtures() -> Vec<(String, Value)> {
         .collect()
 }
 
-// ─── Тести ───────────────────────────────────────────────────────────────────
+// ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[test]
 fn every_fixture_yields_the_verdict_written_in_it() {
     let cases = fixtures();
-    // Та сама підлога, що й на боці TS: SC-008 просить ≥15 сценаріїв.
+    // The same floor as on the TS side: SC-008 asks for ≥15 scenarios.
     assert!(cases.len() >= 15, "only {} fixtures found", cases.len());
 
     for (name, fixture) in cases {
@@ -173,8 +181,8 @@ fn every_fixture_yields_the_verdict_written_in_it() {
             Some(name.as_str()),
             "fixture `{name}` names itself differently"
         );
-        // Пояснення обов'язкове: фікстура без нього — це число, яке ніхто не
-        // зможе перевірити, коли модель зміниться.
+        // The explanation is mandatory: a fixture without one is a number
+        // nobody will be able to verify when the model changes.
         assert!(
             fixture["why"].as_str().is_some_and(|why| !why.is_empty()),
             "fixture `{name}` says nothing about why"
@@ -187,9 +195,9 @@ fn every_fixture_yields_the_verdict_written_in_it() {
     }
 }
 
-/// Фікстура, якої **не** виражає модель TS, мусить бути в наборі: хук повертає
-/// `UNKNOWN_RULE_KIND`, і саме ця половина його й перевіряє. TS-сторона в тому
-/// самому файлі стверджує, що `decodeRules` на цих байтах кидає.
+/// A fixture the TS model does **not** express must be in the set: the hook
+/// returns `UNKNOWN_RULE_KIND`, and this half is the one that checks it. The
+/// TS side asserts in the same file that `decodeRules` throws on these bytes.
 #[test]
 fn the_unknown_rule_kind_is_covered_here_because_typescript_cannot_express_it() {
     let covered = fixtures().into_iter().any(|(_, fixture)| {
@@ -198,9 +206,10 @@ fn the_unknown_rule_kind_is_covered_here_because_typescript_cannot_express_it() 
     assert!(covered, "no fixture covers UNKNOWN_RULE_KIND");
 }
 
-/// Переведення імені варіанта в код фікстури — єдине місце, де форма назви має
-/// значення. Помилка тут виглядала б як розходження реалізацій, тому вона
-/// перевіряється окремо й на відомих іменах.
+/// Converting a variant name into a fixture code is the only place where the
+/// shape of the name matters. A mistake here would look like an
+/// implementation divergence, so it is checked separately and on known
+/// names.
 #[test]
 fn error_names_convert_to_the_shared_spelling() {
     assert_eq!(
@@ -221,8 +230,8 @@ fn error_names_convert_to_the_shared_spelling() {
     );
 }
 
-/// Кожна фікстура зі структурованою політикою мусить нести й свої 384 байти —
-/// а кожна без структури мусить пояснити, чому її там немає.
+/// Every fixture with a structured policy must also carry its 384 bytes —
+/// and every one without a structure must explain why it is absent.
 #[test]
 fn fixtures_carry_the_policy_in_both_forms() {
     for (name, fixture) in fixtures() {
@@ -239,9 +248,9 @@ fn fixtures_carry_the_policy_in_both_forms() {
     }
 }
 
-/// Зріз байтів читається рівно шістнадцятьма слотами — так само, як хук читає
-/// дані акаунта. Розбіжність тут означала б, що фікстура описує іншу політику,
-/// ніж та, яку перевіряє програма.
+/// The byte slice is read as exactly sixteen slots — the same way the hook
+/// reads the account data. A mismatch here would mean the fixture describes
+/// a different policy from the one the program checks.
 #[test]
 fn the_policy_hex_maps_onto_the_slot_array() {
     let (_, fixture) = fixtures().into_iter().next().expect("at least one fixture");

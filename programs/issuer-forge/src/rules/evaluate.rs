@@ -1,60 +1,65 @@
-//! Оцінювач правил: політика + контекст переказу → перша перевірка, що не
-//! пройшла (FR-007, FR-008, FR-008a1, FR-008a2).
+//! The rule evaluator: policy + transfer context → the first check that
+//! failed (FR-007, FR-008, FR-008a1, FR-008a2).
 //!
-//! Друга половина пари, першу написано в `packages/policy/src/evaluate.ts`.
-//! Дві реалізації однієї моделі звіряються диференційними тестами на спільних
-//! фікстурах (SC-008, T019); без них дубль мовчки розійдеться.
+//! The second half of the pair; the first is written in
+//! `packages/policy/src/evaluate.ts`. Two implementations of one model are
+//! compared by differential tests on shared fixtures (SC-008, T019); without
+//! them the duplicate drifts apart silently.
 //!
-//! **Вхід дзеркалить те, що бачить хук**, а не зведений статус сторін: кожне
-//! джерело кожної сторони приходить окремо, у трьох станах. Злиття двох джерел
-//! і протермінування відбуваються **тут**, тобто потрапляють під звірку — це
-//! рішення T013, і воно тут дотримане дослівно.
+//! **The input mirrors what the hook sees**, not a merged status of the
+//! parties: every source of every party arrives separately, in three states.
+//! Merging the two sources and expiry happen **here**, i.e. fall under the
+//! comparison — that is decision T013, and it is followed here to the
+//! letter.
 //!
-//! **Порядок перевірок оголошений один раз** — у `REFUSAL_CODES`
-//! (`packages/shared/src/refusal.ts`), дзеркало якого є секцією 1 `ForgeError`.
-//! `CHECKS` нижче йде тим самим порядком, і тест `checks_follow_the_declared_order`
-//! доводить це числами: коди в масиві мусять зростати від 6000 щільно.
+//! **The order of checks is declared once** — in `REFUSAL_CODES`
+//! (`packages/shared/src/refusal.ts`), whose mirror is section 1 of
+//! `ForgeError`. `CHECKS` below follows the same order, and the test
+//! `checks_follow_the_declared_order` proves it numerically: the codes in the
+//! array must ascend densely from 6000.
 //!
-//! **Алокацій немає**: зріз слотів читається на місці, погляди на сторони —
-//! два `Option` на стек. Хук викликається на кожному переказі, і CU-бюджет тут
-//! є вимогою (SC-003), а не побажанням.
+//! **No allocations**: the slot slice is read in place, the party views are
+//! two `Option`s on the stack. The hook is called on every transfer, and the
+//! CU budget here is a requirement (SC-003), not a wish.
 use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
 use crate::rules::layout::{rule_kind, status_source, RuleSlot, RULE_PARAMS_BYTES};
 
-// ─── Контекст переказу ───────────────────────────────────────────────────────
+// ─── Transfer context ────────────────────────────────────────────────────────
 
-/// Запис про адресу з одного джерела.
+/// A record about an address from one source.
 ///
-/// `expires_at` — власний строк запису (`HolderStatus.expires_at`,
-/// `Attestation.expiry`). `None` — «без строку», а не «протерміновано»: запис
-/// без строку є дійсним станом обох джерел.
+/// `expires_at` is the record's own expiry (`HolderStatus.expires_at`,
+/// `Attestation.expiry`). `None` is "no expiry", not "expired": a record
+/// without an expiry is a valid state of both sources.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StatusRecord {
     pub denied: bool,
     pub tier: u8,
-    /// Код ISO 3166-1 alpha-2 у верхньому регістрі.
+    /// An upper-case ISO 3166-1 alpha-2 code.
     pub jurisdiction: [u8; 2],
     pub expires_at: Option<i64>,
 }
 
-/// Атестація провайдера.
+/// A provider attestation.
 ///
-/// `issued_at` є тільки тут: строк `max_attestation_age` із правила (FR-008a2) —
-/// це **вік** атестації, а віку без моменту видачі не буває. У `HolderStatus`
-/// такого поля немає, тож спільна форма змусила б хук вигадувати значення.
+/// `issued_at` exists only here: the `max_attestation_age` in the rule
+/// (FR-008a2) is the **age** of the attestation, and there is no age without
+/// a moment of issue. `HolderStatus` has no such field, so a shared shape
+/// would force the hook to invent a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProviderStatus {
     pub record: StatusRecord,
     pub issued_at: i64,
 }
 
-/// Стан одного джерела для однієї сторони. Станів три, і третій — найважливіший.
+/// The state of one source for one party. There are three states, and the
+/// third is the most important.
 ///
-/// `Unavailable` — акаунт не переданий у переказ або переданий не той. Це **не**
-/// «запису немає»: ми не знаємо, є він чи ні, а недоступність джерела не має
-/// послаблювати політику (FR-013).
+/// `Unavailable` — the account was not passed into the transfer, or the
+/// wrong one was. This is **not** "no record": we do not know whether one
+/// exists, and source unavailability must not weaken the policy (FR-013).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceState<T> {
     Unavailable,
@@ -62,25 +67,27 @@ pub enum SourceState<T> {
     Record(T),
 }
 
-/// Обидва джерела для однієї сторони переказу.
+/// Both sources for one party to the transfer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PartyContext {
     pub provider: SourceState<ProviderStatus>,
     pub register: SourceState<StatusRecord>,
 }
 
-/// `VelocityCounter` відправника, як його читає хук.
+/// The sender's `VelocityCounter`, as the hook reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VelocityCounterView {
     pub window_start: i64,
     pub spent_in_window: u64,
 }
 
-/// Усе, що хук має в руках у момент переказу.
+/// Everything the hook has in hand at the moment of transfer.
 ///
-/// `mint_policy_version` — версія, на яку налаштований mint; `policy_version` —
-/// версія переданого `PolicyConfig`. Дві різні речі, і саме їх порівнює перша
-/// перевірка: політика, підсунута замість чинної, інакше виконалася б замість неї.
+/// `mint_policy_version` is the version the mint is configured with;
+/// `policy_version` is the version of the `PolicyConfig` passed in. Two
+/// different things, and they are what the first check compares: a policy
+/// slipped in instead of the current one would otherwise be executed in its
+/// place.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TransferContext {
     pub sender: PartyContext,
@@ -89,22 +96,23 @@ pub struct TransferContext {
     pub velocity: Option<VelocityCounterView>,
     pub mint_policy_version: u32,
     pub policy_version: u32,
-    /// Час блоку, unix-секунди.
+    /// The block time, unix seconds.
     pub now: i64,
 }
 
-// ─── Політика, прочитана зі слотів ───────────────────────────────────────────
+// ─── The policy as read from the slots ───────────────────────────────────────
 
-/// Правила, зведені до того, що з них читають перевірки.
+/// The rules reduced to what the checks read from them.
 ///
-/// Читання не переперевіряє канонічність: її перевірив `set_policy` при записі
-/// (T014). Тут потрібна лише стійкість до того, чого запис пропустити не міг, —
-/// а на невідомий вид правила є власний код відмови.
+/// Reading does not re-check canonicity: `set_policy` checked it at write
+/// time (T014). All that is needed here is resilience to what the write
+/// could not have let through — and an unknown rule kind has its own refusal
+/// code.
 #[derive(Clone, Copy, Default)]
 struct PolicyView {
-    /// Джерела, які можуть **дозволити**. Нуль означає «правила статусу немає»,
-    /// і тоді дозволити не може жодне джерело: статус обов'язковий, тож його
-    /// відсутність — це не «перевірки немає», а політика, якої не буває.
+    /// The sources that may **allow**. Zero means "no status rule", and then
+    /// no source can allow: the status is mandatory, so its absence is not
+    /// "no check" but a policy that does not exist.
     source_mask: u8,
     min_tier: u8,
     max_attestation_age: Option<u32>,
@@ -129,16 +137,17 @@ impl PolicyView {
     fn read(slots: &[RuleSlot]) -> Self {
         let mut view = Self::default();
 
-        // Обходяться **всі** слоти, а не до першого порожнього. Дірка в масиві
-        // не записується (T014), але зупинятись на ній означало б мовчки
-        // пропустити правила за нею — тобто послабити політику через ваду її
-        // байтів.
+        // **All** slots are walked, not up to the first empty one. A gap in the
+        // array cannot be written (T014), but stopping at one would mean
+        // silently skipping the rules after it — i.e. weakening the policy
+        // through a flaw in its bytes.
         for slot in slots {
             match slot.kind {
                 rule_kind::EMPTY => {}
                 rule_kind::STATUS => {
-                    // Перший виграє: дубль виду правила не записується, а
-                    // недетермінованість тут коштувала б розбіжності з TS.
+                    // The first wins: a duplicate rule kind cannot be written,
+                    // and non-determinism here would cost a divergence from
+                    // TS.
                     if view.status_seen {
                         continue;
                     }
@@ -166,7 +175,7 @@ impl PolicyView {
     }
 }
 
-/// Чи є код країни в переліку правила. Перелік закінчується парою нулів.
+/// Whether the country code is in the rule's list. The list ends with a pair of zeros.
 fn jurisdiction_listed(params: &[u8; RULE_PARAMS_BYTES], code: [u8; 2]) -> bool {
     params
         .chunks_exact(2)
@@ -174,9 +183,9 @@ fn jurisdiction_listed(params: &[u8; RULE_PARAMS_BYTES], code: [u8; 2]) -> bool 
         .any(|pair| pair == code)
 }
 
-// ─── Злиття двох джерел ──────────────────────────────────────────────────────
+// ─── Merging the two sources ─────────────────────────────────────────────────
 
-/// Чинний запис, зведений до того, що з нього читають перевірки.
+/// A current record, reduced to what the checks read from it.
 #[derive(Clone, Copy)]
 struct StatusFact {
     source: u8,
@@ -185,12 +194,13 @@ struct StatusFact {
     jurisdiction: [u8; 2],
 }
 
-/// Сторона переказу очима правил.
+/// A party to the transfer through the eyes of the rules.
 ///
-/// `unavailable` рахується по **обох** джерелах, а не лише по прийнятих: якщо
-/// заборона діє з будь-якого джерела, то й недоступність будь-якого джерела може
-/// ховати заборону. Пропустити переказ, не подивившись у джерело, яке могло
-/// сказати «ні», — це рівно те послаблення політики, яке забороняє FR-013.
+/// `unavailable` is counted over **both** sources, not only the accepted
+/// ones: if a denial applies from any source, then the unavailability of any
+/// source may be hiding a denial. Letting a transfer through without looking
+/// into a source that could have said "no" is exactly the weakening of
+/// policy that FR-013 forbids.
 #[derive(Clone, Copy, Default)]
 struct PartyView {
     provider: Option<StatusFact>,
@@ -207,12 +217,12 @@ impl PartyView {
         self.fresh().filter(move |fact| fact.source & mask != 0)
     }
 
-    /// Про сторону не відомо нічого: обидва джерела доступні й обидва мовчать.
+    /// Nothing is known about the party: both sources are available and both are silent.
     fn nothing_known(&self) -> bool {
         !self.unavailable && self.fresh().next().is_none()
     }
 
-    /// Статус є, але жодне з джерел, що його дали, правило не приймає.
+    /// A status exists, but the rule accepts none of the sources that gave it.
     fn only_unaccepted(&self, mask: u8) -> bool {
         self.fresh().next().is_some() && self.accepted(mask).next().is_none()
     }
@@ -221,34 +231,34 @@ impl PartyView {
         self.fresh().any(|fact| fact.denied)
     }
 
-    /// Рівень — **найнижчий** серед прийнятих джерел: при розбіжності діє
-    /// суворіше (FR-008a1), і друге джерело може тільки звузити коло, дозволене
-    /// першим.
+    /// The tier is the **lowest** among the accepted sources: on a
+    /// disagreement the stricter one applies (FR-008a1), and the second
+    /// source can only narrow the circle allowed by the first.
     ///
-    /// Нуль на порожньому переліку недосяжний — до цієї перевірки доходять лише
-    /// сторони з прийнятим записом, — але він і безпечний: сторона без статусу
-    /// не пройде `min_tier`, більший за нуль.
+    /// Zero on an empty list is unreachable — only parties with an accepted
+    /// record get as far as this check — but it is also safe: a party without
+    /// a status will not pass a `min_tier` greater than zero.
     fn merged_tier(&self, mask: u8) -> u8 {
         self.accepted(mask).map(|fact| fact.tier).min().unwrap_or(0)
     }
 }
 
 fn is_current(expires_at: Option<i64>, now: i64) -> bool {
-    // Порівняння суворе: у секунду `expires_at` запис уже протермінований. Ту
-    // саму межу тримає TS-половина.
+    // The comparison is strict: at the second of `expires_at` the record is
+    // already expired. The TS half holds the same boundary.
     match expires_at {
         None => true,
         Some(at) => now < at,
     }
 }
 
-/// Атестація провайдера чинна, поки не настав її строк **і** поки її вік не
-/// перевищив дозволений політикою (FR-008a2).
+/// A provider attestation is current until its expiry arrives **and** until
+/// its age exceeds what the policy allows (FR-008a2).
 ///
-/// Протермінована прирівнюється до відсутньої, а не до заборони: далі рішення
-/// ухвалює те саме правило статусу, тож на виході буде `*_STATUS_MISSING` або
-/// дозвіл із другого джерела. Наслідок, який легко втратити: вибуваючи з чинних
-/// записів, вона забирає з собою і свій `denied`.
+/// An expired one is treated as absent, not as a denial: the same status
+/// rule then makes the decision, so the outcome is `*_STATUS_MISSING` or an
+/// allow from the second source. A consequence that is easy to lose:
+/// dropping out of the current records, it takes its `denied` with it.
 fn provider_current(status: &ProviderStatus, max_age: Option<u32>, now: i64) -> bool {
     if !is_current(status.record.expires_at, now) {
         return false;
@@ -294,9 +304,9 @@ fn view_party(party: &PartyContext, policy: &PolicyView, now: i64) -> PartyView 
     view
 }
 
-// ─── Перевірки ───────────────────────────────────────────────────────────────
+// ─── Checks ──────────────────────────────────────────────────────────────────
 
-/// Усе, на що дивляться перевірки. Збирається один раз на переказ.
+/// Everything the checks look at. Assembled once per transfer.
 struct Subject {
     policy: PolicyView,
     ctx: TransferContext,
@@ -306,11 +316,11 @@ struct Subject {
 
 type Check = fn(&Subject) -> bool;
 
-/// Код відмови й перевірка, що його вмикає, у порядку перевірки.
+/// A refusal code and the check that triggers it, in check order.
 ///
-/// Порядок повторює секцію 1 `ForgeError`, тобто `REFUSAL_CODES`. Тримає його не
-/// дисципліна, а тест: коди в цьому масиві мусять іти від 6000 щільно й за
-/// зростанням, тож переставлені перевірки падають збіркою тестів.
+/// The order repeats section 1 of `ForgeError`, i.e. `REFUSAL_CODES`. It is
+/// held not by discipline but by a test: the codes in this array must run
+/// densely and ascending from 6000, so reordered checks fail the test build.
 const CHECKS: [(ForgeError, Check); 13] = [
     (ForgeError::PolicyVersionMismatch, |s| {
         s.ctx.policy_version != s.ctx.mint_policy_version
@@ -336,8 +346,8 @@ const CHECKS: [(ForgeError, Check); 13] = [
     (ForgeError::RecipientJurisdictionNotAllowed, |s| {
         match s.policy.jurisdictions {
             None => false,
-            // Суворіше перемагає: збіг одного джерела не перекриває
-            // розбіжність другого.
+            // The stricter wins: a match from one source does not override a
+            // mismatch from the other.
             Some(allowed) => s
                 .recipient
                 .accepted(s.policy.source_mask)
@@ -354,43 +364,46 @@ const CHECKS: [(ForgeError, Check); 13] = [
     (ForgeError::UnknownRuleKind, |s| s.policy.unknown_kind),
 ];
 
-/// Витрачене у вікні плюс сума переказу перевищує ліміт за період.
+/// What was spent in the window plus the transfer amount exceeds the period
+/// limit.
 ///
-/// Вікно, яке вже закінчилось, дає нуль витраченого: `VelocityCounter`
-/// скидається на межі вікна, і хук робить це в тій самій інструкції. Читати
-/// витрачене без порівняння з початком вікна означало б рахувати позаминулий
-/// тиждень у поточному ліміті.
+/// A window that has already ended yields zero spent: `VelocityCounter`
+/// resets at the window boundary, and the hook does that in the same
+/// instruction. Reading the spent amount without comparing against the
+/// window start would mean counting the week before last into the current
+/// limit.
 fn period_exceeded(s: &Subject) -> bool {
     let Some((limit, window)) = s.policy.period_limit else {
         return false;
     };
-    // Відсутній лічильник — це вже відмова кодом вище.
+    // A missing counter is already a refusal with the code above.
     let Some(velocity) = s.ctx.velocity else {
         return false;
     };
     let window_open = s.ctx.now < velocity.window_start.saturating_add(i64::from(window));
     let spent = if window_open { velocity.spent_in_window } else { 0 };
-    // Насичення замість переповнення: сума, що не влазить у u64, безумовно
-    // перевищує будь-який ліміт, і паніка в хуку була б відмовою без коду.
+    // Saturation instead of overflow: a sum that does not fit in a u64
+    // unconditionally exceeds any limit, and a panic in the hook would be a
+    // refusal without a code.
     spent.saturating_add(s.ctx.amount) > limit
 }
 
-/// Вікно ліміту за період, якщо політика його має.
+/// The period limit window, if the policy has one.
 ///
-/// Потрібне хуку **після** дозволу: він оновлює лічильник у тій самій
-/// інструкції, а без вікна не можна відрізнити «додати до витраченого» від
-/// «почати нове». Окрема функція, а не поле вердикту: вердикт несе код відмови
-/// й нічого більше, і додавати в нього те, чого TS-половина не має, означало б
-/// зробити його незвірюваним.
+/// Needed by the hook **after** an allow: it updates the counter in the same
+/// instruction, and without the window "add to the spent amount" cannot be
+/// told from "start a new one". A separate function, not a verdict field:
+/// the verdict carries the refusal code and nothing else, and adding to it
+/// what the TS half does not have would make it uncomparable.
 pub fn period_window_seconds(slots: &[RuleSlot]) -> Option<u32> {
     PolicyView::read(slots).period_limit.map(|(_, window)| window)
 }
 
-/// Політика + контекст → перша перевірка, що не пройшла.
+/// Policy + context → the first check that failed.
 ///
-/// Відмова — це **перша** перевірка, що не пройшла, а не набір усіх, що не
-/// пройшли: дві реалізації, які відхилили той самий переказ із різних причин,
-/// розійшлися, навіть якщо обидві сказали «ні» (SC-008).
+/// A refusal is the **first** check that failed, not the set of all that
+/// failed: two implementations that rejected the same transfer for different
+/// reasons have diverged, even if both said "no" (SC-008).
 pub fn evaluate(slots: &[RuleSlot], ctx: &TransferContext) -> Result<()> {
     let policy = PolicyView::read(slots);
     let subject = Subject {
@@ -456,7 +469,7 @@ mod tests {
         params
     }
 
-    /// Обидва джерела, рівень не перевіряється, найдовший допустимий строк.
+    /// Both sources, the tier is not checked, the longest allowed validity.
     fn open_policy() -> [RuleSlot; MAX_RULE_SLOTS] {
         let mut slots = empty_slots();
         slots[0] = slot(
@@ -496,7 +509,7 @@ mod tests {
         register: SourceState::Absent,
     };
 
-    /// За замовчуванням сторона має чинний запис у реєстрі й нічого в провайдера.
+    /// By default a party has a current record in the registry and nothing at the provider.
     fn party() -> PartyContext {
         PartyContext {
             provider: SourceState::Absent,
@@ -528,8 +541,8 @@ mod tests {
         Some(u32::from(error))
     }
 
-    /// Порядок не написаний в оцінювачі — він узятий із секції 1 `ForgeError`.
-    /// Цей тест тримає обидві властивості: щільність і зростання.
+    /// The order is not written in the evaluator — it is taken from section 1
+    /// of `ForgeError`. This test holds both properties: density and ascent.
     #[test]
     fn checks_follow_the_declared_order() {
         for (index, (error, _)) in CHECKS.iter().enumerate() {
@@ -568,8 +581,8 @@ mod tests {
 
     #[test]
     fn reaches_every_code_it_declares() {
-        // Перевірка, яку жоден переказ не вмикає, — це або мертвий код, або
-        // зайвий код відмови в спільній таблиці.
+        // A check that no transfer triggers is either dead code or a redundant
+        // refusal code in the shared table.
         let mut version = context();
         version.policy_version = 2;
         assert_eq!(
@@ -693,8 +706,8 @@ mod tests {
         assert_eq!(verdict(&unknown, &context()), code(ForgeError::UnknownRuleKind));
     }
 
-    /// Невідомий вид правила відмовляє **останнім**: точніша причина, якщо вона
-    /// є, називається першою.
+    /// An unknown rule kind refuses **last**: a more precise reason, if there
+    /// is one, is named first.
     #[test]
     fn an_unknown_rule_kind_yields_to_a_reason_that_is_more_precise() {
         let mut slots = open_policy();
@@ -707,8 +720,8 @@ mod tests {
         );
     }
 
-    /// Політика без правила статусу не буває — і якщо все ж трапилась, дозволити
-    /// не може жодне джерело.
+    /// A policy without a status rule does not exist — and if one turns up
+    /// anyway, no source can allow.
     #[test]
     fn a_policy_without_a_status_rule_allows_nobody() {
         assert_eq!(
@@ -719,8 +732,8 @@ mod tests {
 
     #[test]
     fn honours_a_denial_from_a_source_the_rule_does_not_accept() {
-        // FR-008a1: `sources` називає тих, хто може дозволити; заборона діє з
-        // будь-якого джерела незалежно від переліку.
+        // FR-008a1: `sources` names those who may allow; a denial applies from
+        // any source regardless of the list.
         let mut ctx = context();
         ctx.sender = PartyContext {
             provider: SourceState::Record(ProviderStatus {
@@ -740,7 +753,7 @@ mod tests {
 
     #[test]
     fn refuses_an_unavailable_source_even_when_the_other_one_allows() {
-        // FR-013: недоступність джерела не послаблює політику.
+        // FR-013: source unavailability does not weaken the policy.
         let mut ctx = context();
         ctx.recipient = PartyContext {
             provider: SourceState::Unavailable,
@@ -790,7 +803,7 @@ mod tests {
 
     #[test]
     fn an_expired_attestation_reads_as_absent_and_not_as_a_refusal() {
-        // FR-008a2: рішення далі ухвалює те саме правило статусу.
+        // FR-008a2: the same status rule then makes the decision.
         let mut short_lived = empty_slots();
         short_lived[0] = slot(
             rule_kind::STATUS,
@@ -820,8 +833,8 @@ mod tests {
 
     #[test]
     fn an_expired_record_stops_denying_along_with_everything_else() {
-        // Вибуваючи з чинних записів, протермінована атестація забирає з собою
-        // і свою заборону.
+        // Dropping out of the current records, an expired attestation takes its
+        // denial with it.
         let mut ctx = context();
         ctx.sender = PartyContext {
             provider: SourceState::Record(ProviderStatus {
@@ -889,9 +902,10 @@ mod tests {
 
     #[test]
     fn refuses_instead_of_overflowing_on_an_amount_that_fills_u64() {
-        // Паніка в хуку була б відмовою без коду, тобто відмовою без причини.
-        // Насичена сума лишається більшою за будь-який досяжний ліміт; вище за
-        // `u64::MAX` не буває й самого обігу, тож насичення нікого не милує.
+        // A panic in the hook would be a refusal without a code, i.e. a refusal
+        // without a reason. A saturated sum stays larger than any reachable
+        // limit; circulation itself never exceeds `u64::MAX`, so saturation
+        // spares no one.
         let mut period = open_policy();
         period[1] = slot(rule_kind::PERIOD_LIMIT, amount_params(100, Some(86_400)));
         let mut ctx = context();
@@ -908,7 +922,7 @@ mod tests {
 
     #[test]
     fn ignores_a_missing_counter_when_no_period_rule_asks_for_one() {
-        // «Правила немає = перевірки немає»: лічильник просто не читається.
+        // "No rule = no check": the counter is simply not read.
         assert_eq!(verdict(&open_policy(), &context()), None);
     }
 }

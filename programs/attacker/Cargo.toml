@@ -2,7 +2,7 @@
 name = "attacker"
 version = "0.1.0"
 edition = "2021"
-description = "Мінімальна чужа програма: переказує токен через CPI, щоб довести, що правило виконує токен, а не застосунок"
+description = "A minimal foreign program: transfers the token via CPI to prove that the token enforces the rule, not the app"
 
 [lib]
 crate-type = ["cdylib", "lib"]

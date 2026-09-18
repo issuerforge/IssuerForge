@@ -4,10 +4,11 @@ pub mod initialize_issuer;
 pub mod set_policy;
 pub mod thaw_holder;
 
-// Глоб потрібен `#[program]`: разом із типами контексту він забирає й
-// `__client_accounts_*`, які генерує `#[derive(Accounts)]`. Щоб два `handler`
-// не стали неоднозначним ім'ям, самі хендлери оголошені `pub(crate)` — глоб їх
-// не бачить, а `lib.rs` кличе їх повним шляхом усередині крейта.
+// `#[program]` needs the glob: along with the context types it also picks up
+// the `__client_accounts_*` that `#[derive(Accounts)]` generates. So that two
+// `handler`s do not become an ambiguous name, the handlers themselves are
+// declared `pub(crate)` — the glob does not see them, and `lib.rs` calls them
+// by full path inside the crate.
 pub use attest_reserve::*;
 pub use create_token::*;
 pub use initialize_issuer::*;

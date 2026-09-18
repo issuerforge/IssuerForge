@@ -1,51 +1,54 @@
-//! Читання атестації провайдера з акаунта SAS.
+//! Reading a provider attestation from a SAS account.
 //!
-//! Друге джерело статусу (FR-008a). Перше — власний реєстр емітента, і воно
-//! просте: це наш акаунт, наша розкладка. Тут інакше: акаунт належить чужій
-//! програмі, а зміст його поля `data` задає **схема**, а не протокол.
+//! The second status source (FR-008a). The first is the issuer's own
+//! registry, and it is simple: our account, our layout. Here it is
+//! different: the account belongs to a foreign program, and the content of
+//! its `data` field is set by a **schema**, not by the protocol.
 //!
-//! **Схему задає платформа, і вона фіксована** — дванадцять байтів на початку
-//! `data`. Альтернатива (зсуви полів у `TokenConfig`) дала б гнучкість ціною
-//! конфігурації, яку кожен емітент може задати неправильно, а виявилось би це
-//! випадковим рівнем верифікації в реальному переказі. Провайдер, що видає
-//! атестації за іншою схемою, просто не дає дозволу — і це видно як відмова, а
-//! не як помилковий дозвіл.
+//! **The platform sets the schema, and it is fixed** — twelve bytes at the
+//! start of `data`. The alternative (field offsets in `TokenConfig`) would
+//! give flexibility at the price of configuration every issuer can get
+//! wrong, and that would surface as a random verification tier in a real
+//! transfer. A provider issuing attestations under a different schema simply
+//! grants no allow — and that shows as a refusal, not as a mistaken allow.
 //!
-//! **Розкладка самого акаунта `Attestation` — припущення, яке перевіряється в
-//! рантаймі.** Зсуви нижче зняті з `program/src/state/attestation.rs` SAS і не
-//! звірені з живою мережею (спайк T057 туди не ходив). Тому парсер не довіряє
-//! їм: він звіряє `nonce`, `credential` і `schema` з тим, що вже знає, і при
-//! будь-якій розбіжності повертає `Unavailable` — тобто **відмову**, а не
-//! дозвіл. Помилка в припущенні коштує непрацездатного джерела, а не пропущеного
-//! переказу. Звірка з devnet — T024.
+//! **The layout of the `Attestation` account itself is an assumption checked
+//! at runtime.** The offsets below were taken from SAS's
+//! `program/src/state/attestation.rs` and not verified against the live
+//! network (spike T057 did not go there). So the parser does not trust them:
+//! it checks `nonce`, `credential` and `schema` against what it already
+//! knows, and on any mismatch returns `Unavailable` — i.e. a **refusal**,
+//! not an allow. A wrong assumption costs an inoperable source, not a
+//! transfer let through. Verification against devnet is T024.
 use anchor_lang::prelude::*;
 
 use crate::rules::evaluate::{ProviderStatus, SourceState, StatusRecord};
 
-/// Програма Solana Attestation Service.
+/// The Solana Attestation Service program.
 pub const SAS_PROGRAM_ID: Pubkey = pubkey!("22zoJMtdu4tQc2PzL74ZUT7FrwgB1Udec8DdW4yw4BdG");
 
-/// Дискримінатор акаунта SAS — один байт перед тілом.
+/// The SAS account discriminator — one byte before the body.
 const DISCRIMINATOR_LEN: usize = 1;
 
 const NONCE_OFFSET: usize = DISCRIMINATOR_LEN;
 const CREDENTIAL_OFFSET: usize = NONCE_OFFSET + 32;
 const SCHEMA_OFFSET: usize = CREDENTIAL_OFFSET + 32;
-/// `data: Vec<u8>` — довжина `u32`, далі байти.
+/// `data: Vec<u8>` — a `u32` length, then the bytes.
 const DATA_LEN_OFFSET: usize = SCHEMA_OFFSET + 32;
 const DATA_OFFSET: usize = DATA_LEN_OFFSET + 4;
 
-/// Схема платформи: перші дванадцять байтів `data`.
+/// The platform schema: the first twelve bytes of `data`.
 ///
-/// `denied` є навмисно, хоч атестацію зазвичай відкликають видаленням акаунта
-/// (тоді джерело читається як `Absent`). Байт дозволяє провайдеру сказати «ні»
-/// **явно**, не чекаючи, поки хтось закриє акаунт, — і за FR-008a1 таке «ні»
-/// перекриває дозвіл із реєстру емітента.
+/// `denied` is there on purpose, even though an attestation is usually
+/// revoked by deleting the account (the source then reads as `Absent`). The
+/// byte lets the provider say "no" **explicitly**, without waiting for
+/// someone to close the account — and under FR-008a1 such a "no" overrides
+/// an allow from the issuer's registry.
 const SCHEMA_TIER: usize = 0;
 const SCHEMA_JURISDICTION: usize = 1;
 const SCHEMA_DENIED: usize = 3;
 const SCHEMA_ISSUED_AT: usize = 4;
-/// Скільки байтів схема вимагає від `data`. Решта ігнорується.
+/// How many bytes the schema requires of `data`. The rest is ignored.
 pub const SCHEMA_BYTES: usize = SCHEMA_ISSUED_AT + 8;
 
 fn pubkey_at(data: &[u8], at: usize) -> Option<Pubkey> {
@@ -63,31 +66,34 @@ fn u32_at(data: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes(bytes))
 }
 
-/// Атестація як джерело статусу для однієї сторони переказу.
+/// An attestation as a status source for one party to the transfer.
 ///
-/// Три стани, і різниця між двома останніми — це різниця між двома кодами
-/// відмови:
-/// - `Absent` — акаунта немає. Провайдер цю адресу не атестував; це нормальний
-///   стан, і рішення далі ухвалює правило статусу.
-/// - `Unavailable` — акаунт є, але прочитати його як атестацію **цієї** адреси
-///   не вдалося: чужий власник, коротке тіло, не ті ключі всередині.
-///   Недоступність джерела не послаблює політику (FR-013).
+/// Three states, and the difference between the last two is the difference
+/// between two refusal codes:
+/// - `Absent` — the account does not exist. The provider did not attest this
+///   address; that is a normal state, and the status rule then makes the
+///   decision.
+/// - `Unavailable` — the account exists, but could not be read as an
+///   attestation of **this** address: a foreign owner, a short body, the
+///   wrong keys inside. Source unavailability does not weaken the policy
+///   (FR-013).
 ///
-/// Адреса акаунта тут **не виводиться заново**, і це не економія на перевірці.
-/// `nonce`, `credential` і `schema` — це рівно ті seeds, з яких SAS вивела PDA,
-/// і вона ж їх туди записала. Акаунт, що належить SAS і має всередині ці три
-/// значення, лежить за тією адресою за побудовою. Порівняння трьох ключів
-/// доводить те саме, що `create_program_address`, і не коштує 1500 CU на
-/// кожному переказі (SC-003).
+/// The account address is **not re-derived** here, and that is not skimping
+/// on a check. `nonce`, `credential` and `schema` are exactly the seeds SAS
+/// derived the PDA from, and it is SAS that wrote them there. An account
+/// owned by SAS and holding these three values inside lies at that address
+/// by construction. Comparing the three keys proves the same thing as
+/// `create_program_address` and does not cost 1500 CU on every transfer
+/// (SC-003).
 pub fn read(
     account: &AccountInfo,
     credential: &Pubkey,
     schema: &Pubkey,
     wallet: &Pubkey,
 ) -> SourceState<ProviderStatus> {
-    // Порожній акаунт за виведеною адресою означає «атестації немає». Це не
-    // недоступність джерела: джерело відповіло, і відповідь — «такої адреси я не
-    // атестувала».
+    // An empty account at the derived address means "no attestation". That
+    // is not source unavailability: the source answered, and the answer is
+    // "I did not attest this address".
     if account.data_is_empty() {
         return SourceState::Absent;
     }
@@ -106,8 +112,8 @@ fn parse(
     schema: &Pubkey,
     wallet: &Pubkey,
 ) -> Option<ProviderStatus> {
-    // Три ключі мусять збігтися всі: кожен із них — seed адреси, і розбіжність
-    // означає або чужий акаунт, або те, що припущення про розкладку хибне.
+    // All three keys must match: each of them is a seed of the address, and a
+    // mismatch means either a foreign account or a wrong layout assumption.
     if pubkey_at(data, NONCE_OFFSET)? != *wallet
         || pubkey_at(data, CREDENTIAL_OFFSET)? != *credential
         || pubkey_at(data, SCHEMA_OFFSET)? != *schema
@@ -117,13 +123,13 @@ fn parse(
 
     let body_len = u32_at(data, DATA_LEN_OFFSET)? as usize;
     let body = data.get(DATA_OFFSET..DATA_OFFSET + body_len)?;
-    // Атестація, коротша за схему, — це не «менше даних», а інша схема.
+    // An attestation shorter than the schema is not "less data" but a different schema.
     if body.len() < SCHEMA_BYTES {
         return None;
     }
 
-    // `expiry` лежить **після** `data`, тобто на змінному зсуві: розбір, а не
-    // константа. Між ними ще `signer` (спайк T057).
+    // `expiry` lies **after** `data`, i.e. at a variable offset: parsing, not
+    // a constant. Between them there is also `signer` (spike T057).
     let expiry = i64_at(data, DATA_OFFSET + body_len + 32)?;
 
     let jurisdiction: [u8; 2] = body
@@ -136,8 +142,8 @@ fn parse(
             denied: body[SCHEMA_DENIED] != 0,
             tier: body[SCHEMA_TIER],
             jurisdiction,
-            // Нуль читається як «без строку» — та сама домовленість, що й у
-            // реєстрі емітента, і вона одна на обидва джерела.
+            // Zero reads as "no expiry" — the same convention as in the
+            // issuer's registry, and it is one for both sources.
             expires_at: (expiry != 0).then_some(expiry),
         },
         issued_at: i64_at(body, SCHEMA_ISSUED_AT)?,
@@ -152,12 +158,12 @@ mod tests {
         Pubkey::new_from_array([seed; 32])
     }
 
-    /// Будує акаунт **за нашим припущенням про розкладку**.
+    /// Builds an account **under our layout assumption**.
     ///
-    /// Тест на такій фікстурі доводить, що парсер самоузгоджений, і **не**
-    /// доводить, що припущення правильне: воно перевіряється тільки проти живої
-    /// SAS на devnet (T024). Саме тому парсер при розбіжності відмовляє, а не
-    /// дозволяє.
+    /// A test on such a fixture proves that the parser is self-consistent,
+    /// and does **not** prove that the assumption is right: that is checked
+    /// only against the live SAS on devnet (T024). That is exactly why the
+    /// parser refuses on a mismatch rather than allowing.
     fn account_bytes(
         nonce: Pubkey,
         credential: Pubkey,
@@ -208,8 +214,8 @@ mod tests {
 
     #[test]
     fn reads_a_zero_expiry_as_no_expiry() {
-        // Та сама домовленість, що й у реєстрі емітента, і вона одна на обидва
-        // джерела.
+        // The same convention as in the issuer's registry, and it is one for
+        // both sources.
         let data = account_bytes(key(1), key(2), key(3), &body(1, b"GH", false, 0), 0);
         let status = parse(&data, &key(2), &key(3), &key(1)).expect("parses");
         assert_eq!(status.record.expires_at, None);
@@ -222,15 +228,15 @@ mod tests {
 
     #[test]
     fn refuses_another_credential_or_another_schema() {
-        // Чужий провайдер і чужа схема — це не «трохи інший статус», це не
-        // статус для цього токена взагалі.
+        // A foreign provider and a foreign schema are not "a slightly different
+        // status", they are no status for this token at all.
         assert!(parse(&good(), &key(9), &key(3), &key(1)).is_none());
         assert!(parse(&good(), &key(2), &key(9), &key(1)).is_none());
     }
 
     #[test]
     fn refuses_a_body_shorter_than_the_schema() {
-        // Атестація, коротша за схему, — це інша схема, а не менше даних.
+        // An attestation shorter than the schema is a different schema, not less data.
         let short = account_bytes(key(1), key(2), key(3), &[0u8; 4], 0);
         assert!(parse(&short, &key(2), &key(3), &key(1)).is_none());
     }
@@ -252,8 +258,8 @@ mod tests {
 
     #[test]
     fn ignores_bytes_the_schema_does_not_claim() {
-        // Провайдер може класти в `data` більше, ніж вимагає схема; на нашому
-        // прочитанні це не позначається.
+        // The provider may put more into `data` than the schema requires; that
+        // does not affect our reading.
         let mut long = body(2, b"KE", false, 5);
         long.extend_from_slice(&[0xAA; 40]);
         let data = account_bytes(key(1), key(2), key(3), &long, 0);

@@ -1,9 +1,11 @@
-// Програма issuer-forge: політика як дані, кворум на дії з коштами, гейт емісії
-// за резервом, escrow погашень і transfer hook, який усе це виконує.
-// Інструкції наповнюються у Фазі 4 — склад і порядок у docs/TASKS.md.
+// The issuer-forge program: policy as data, a quorum on actions with funds,
+// an issuance gate by reserve, a redemption escrow and the transfer hook that
+// enforces all of it. The instructions are filled in during Phase 4 —
+// contents and order in docs/TASKS.md.
 //
-// Програма одна на всіх емітентів (docs/PLAN.md → «Архітектура»): під емітента
-// деплою немає, є набір PDA. Саме це робить FR-003 можливим.
+// One program for all issuers (docs/PLAN.md → "Architecture"): there is no
+// per-issuer deploy, there is a set of PDAs. That is what makes FR-003
+// possible.
 use anchor_lang::prelude::*;
 use spl_discriminator::SplDiscriminate;
 use spl_transfer_hook_interface::instruction::ExecuteInstruction;
@@ -27,11 +29,13 @@ declare_id!("DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5");
 pub mod issuer_forge {
     use super::*;
 
-    /// Створює емітента: склад уповноважених, поріг кворуму й межі, у яких
-    /// операційний ключ платформи може діяти (FR-019a, FR-033, FR-035).
+    /// Creates an issuer: the authorised membership, the quorum threshold and
+    /// the bounds within which the platform's operational key may act
+    /// (FR-019a, FR-033, FR-035).
     ///
-    /// Єдина дія емітента, що не проходить кворум, — бо до неї кворуму ще
-    /// немає. Усе, що вона задає, змінюється далі **тільки** кворумом.
+    /// The only issuer action that does not go through the quorum — because
+    /// before it there is no quorum yet. Everything it sets is changed from
+    /// then on **only** by quorum.
     pub fn initialize_issuer(
         ctx: Context<InitializeIssuer>,
         args: InitializeIssuerArgs,
@@ -39,24 +43,26 @@ pub mod issuer_forge {
         instructions::initialize_issuer::handler(ctx, args)
     }
 
-    /// Випускає токен: mint із розширеннями, конфігурацію, політику версії 1,
-    /// першу атестацію резерву й початкову емісію — усе однією транзакцією
-    /// (FR-001, FR-005, FR-006, FR-022).
+    /// Issues a token: the mint with its extensions, the configuration, policy
+    /// version 1, the first reserve attestation and the initial issuance — all
+    /// in one transaction (FR-001, FR-005, FR-006, FR-022).
     ///
-    /// Підписів два — засновник-адміністратор і атестатор. Перший не може
-    /// випустити токен без другого, бо емісія проходить гейт резерву, а гейту
-    /// нічого читати, доки атестації немає; другий не може нічого сам, бо роль
-    /// атестатора несумісна з будь-якою іншою.
+    /// Two signatures — the founder-admin and the attestor. The first cannot
+    /// issue a token without the second, because the issuance goes through
+    /// the reserve gate, and the gate has nothing to read until an
+    /// attestation exists; the second can do nothing alone, because the
+    /// attestor role is incompatible with any other.
     pub fn create_token(ctx: Context<CreateToken>, args: CreateTokenArgs) -> Result<()> {
         instructions::create_token::create_handler(ctx, args)
     }
 
-    /// Дописує метадані у сам mint (FR-001).
+    /// Writes the metadata into the mint itself (FR-001).
     ///
-    /// Окремою транзакцією від випуску: назва, символ і посилання не вміщаються
-    /// в транзакцію, яка вже несе 384 байти політики й 14 акаунтів. Вказівник
-    /// метаданих на mint ставить `create_token`, тож дописувати нікуди більше,
-    /// ніж у сам токен.
+    /// A separate transaction from the issuance: the name, symbol and URI do
+    /// not fit into a transaction that already carries 384 bytes of policy
+    /// and 14 accounts. The metadata pointer on the mint is set by
+    /// `create_token`, so there is nowhere to write but into the token
+    /// itself.
     pub fn set_token_metadata(
         ctx: Context<SetTokenMetadata>,
         args: SetTokenMetadataArgs,
@@ -64,34 +70,37 @@ pub mod issuer_forge {
         instructions::create_token::set_metadata_handler(ctx, args)
     }
 
-    /// Записує наступну версію політики й переводить токен на неї (FR-009,
+    /// Writes the next policy version and moves the token onto it (FR-009,
     /// FR-010).
     ///
-    /// Зміна набуває сили без повторного випуску токена й без дій з боку
-    /// холдерів: політика — дані, і хук читає нову версію вже на наступному
-    /// переказі. Попередні версії лишаються на своїх адресах назавжди.
+    /// The change takes effect without re-issuing the token and without any
+    /// action by holders: policy is data, and the hook reads the new version
+    /// on the very next transfer. Previous versions stay at their addresses
+    /// forever.
     ///
-    /// Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний
-    /// ключ платформи: підписи передаються в `remaining_accounts`.
+    /// The change is authorised by a quorum of the issuer's wallets (FR-035),
+    /// not by the platform's operational key: the signatures are passed in
+    /// `remaining_accounts`.
     pub fn set_policy(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
         instructions::set_policy::handler(ctx, args)
     }
 
-    /// Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ
-    /// відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).
+    /// Thaws a holder's account and creates both accounts without which a
+    /// transfer is refused: `HolderStatus` and `VelocityCounter` (FR-008b).
     ///
-    /// Хук не створює акаунтів, тож їх створюють тут — наперед. Саме
-    /// розморожування дозволом на переказ не є (FR-008b1): правила політики
-    /// перевіряються на кожному переказі окремо.
+    /// The hook creates no accounts, so they are created here — in advance.
+    /// The thaw itself is not a permission to transfer (FR-008b1): the policy
+    /// rules are checked on every transfer separately.
     pub fn thaw_holder(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Result<()> {
         instructions::thaw_holder::thaw_handler(ctx, args)
     }
 
-    /// Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).
+    /// Updates an address's status in the issuer's own registry (FR-008a,
+    /// FR-008b1).
     ///
-    /// Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається
-    /// розмороженим, а переказ із нього перестає проходити тієї ж миті, коли
-    /// статус більше не задовольняє політику.
+    /// This instruction is what makes FR-008b1 enforceable: the account stays
+    /// thawed, and a transfer from it stops passing the moment the status no
+    /// longer satisfies the policy.
     pub fn set_holder_status(
         ctx: Context<SetHolderStatus>,
         args: SetHolderStatusArgs,
@@ -99,33 +108,34 @@ pub mod issuer_forge {
         instructions::thaw_holder::set_status_handler(ctx, args)
     }
 
-    /// Публікує атестацію резерву (FR-021, FR-024, FR-026).
+    /// Publishes a reserve attestation (FR-021, FR-024, FR-026).
     ///
-    /// Підписує рівно чинний атестатор цього токена: атестація нічого не
-    /// дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує
-    /// кворуму. Запис append-only — переписати його нічим.
+    /// Signed by exactly the current attestor of this token: an attestation
+    /// allows nothing, it only narrows what is allowed, which is why it needs
+    /// no quorum. The record is append-only — there is nothing to overwrite
+    /// it with.
     pub fn attest_reserve(ctx: Context<AttestReserve>, args: AttestReserveArgs) -> Result<()> {
         instructions::attest_reserve::handler(ctx, args)
     }
 
-    /// Створює `ExtraAccountMetaList` — перелік акаунтів, які токен-програма
-    /// підкладатиме хуку на кожному переказі (FR-012).
+    /// Creates the `ExtraAccountMetaList` — the list of accounts the token
+    /// program will hand to the hook on every transfer (FR-012).
     ///
-    /// Окремою інструкцією від випуску: перелік належить інтерфейсу хука, а не
-    /// mint. Клієнт кладе обидві в одну транзакцію.
+    /// A separate instruction from the issuance: the list belongs to the hook
+    /// interface, not to the mint. The client puts both into one transaction.
     pub fn initialize_extra_account_meta_list(
         ctx: Context<InitializeExtraAccountMetaList>,
     ) -> Result<()> {
         hook::extra_accounts::handler(ctx)
     }
 
-    /// Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,
+    /// The transfer hook: the rule check on every transfer (FR-002, FR-011,
     /// FR-012).
     ///
-    /// Дискримінатор заданий явно: цю інструкцію кличе токен-програма за
-    /// інтерфейсом `spl-transfer-hook-interface`, а не клієнт за іменем, тож
-    /// вісім байтів мусять бути ті, що в інтерфейсі, а не ті, що Anchor вивів би
-    /// з назви.
+    /// The discriminator is set explicitly: this instruction is called by the
+    /// token program through the `spl-transfer-hook-interface`, not by a
+    /// client by name, so the eight bytes must be the ones in the interface,
+    /// not the ones Anchor would derive from the name.
     #[instruction(discriminator = ExecuteInstruction::SPL_DISCRIMINATOR_SLICE)]
     pub fn execute(ctx: Context<Execute>, amount: u64) -> Result<()> {
         hook::execute::handler(ctx, amount)

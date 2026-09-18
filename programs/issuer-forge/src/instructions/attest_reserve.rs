@@ -6,24 +6,25 @@ use crate::state::{validate_currency, ReserveAttestation, TokenConfig, CURRENCY_
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct AttestReserveArgs {
-    /// Підтверджена сума в найменшій одиниці валюти резерву.
+    /// The attested amount in the smallest unit of the reserve currency.
     pub amount: u64,
     pub currency: [u8; CURRENCY_BYTES],
-    /// Момент, якого стосується підтвердження. Не «зараз»: атестатор
-    /// підтверджує стан рахунку на певний час, і саме від нього рахується строк
-    /// придатності (FR-023).
+    /// The moment the attestation refers to. Not "now": the attestor attests
+    /// the state of the account at a certain time, and the validity period is
+    /// counted from exactly that (FR-023).
     pub attested_at: i64,
 }
 
-/// Публікація атестації резерву (FR-021, FR-024, FR-024b, FR-026).
+/// Publishing a reserve attestation (FR-021, FR-024, FR-024b, FR-026).
 ///
-/// **Підписує рівно один ключ — чинний атестатор цього токена.** Не кворум:
-/// атестація нічого не дозволяє, вона лише **звужує** те, що дозволено. Не
-/// операційний ключ платформи: FR-024 вимагає, щоб ключ атестатора не міг більше
-/// нічого, а операційний ключ уміє розморожувати рахунки.
+/// **Exactly one key signs — the current attestor of this token.** Not a
+/// quorum: an attestation allows nothing, it only **narrows** what is
+/// allowed. Not the platform's operational key: FR-024 requires that the
+/// attestor key can do nothing else, and the operational key can thaw
+/// accounts.
 ///
-/// Атестатор зберігається в `TokenConfig`, а не в `IssuerConfig`: емітент із
-/// двома токенами законно має для них різних атестаторів (FR-024b).
+/// The attestor is stored in `TokenConfig`, not in `IssuerConfig`: an issuer
+/// with two tokens legitimately has different attestors for them (FR-024b).
 #[derive(Accounts)]
 pub struct AttestReserve<'info> {
     #[account(
@@ -34,9 +35,9 @@ pub struct AttestReserve<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// Наступний запис у послідовності. Індекс береться з лічильника, а не від
-    /// клієнта: `init` за такою адресою неможливий двічі, тож пропустити номер
-    /// або переписати попередній запис нічим.
+    /// The next record in the sequence. The index comes from the counter, not
+    /// from the client: `init` at such an address is impossible twice, so
+    /// there is no way to skip a number or overwrite a previous record.
     #[account(
         init,
         payer = payer,
@@ -50,10 +51,10 @@ pub struct AttestReserve<'info> {
     )]
     pub attestation: Account<'info, ReserveAttestation>,
 
-    /// Чинний атестатор резерву цього токена.
+    /// The current reserve attestor of this token.
     pub attestor: Signer<'info>,
 
-    /// Оренду платить хто завгодно: платіж не є повноваженням.
+    /// Anyone pays the rent: paying is not a power.
     #[account(mut)]
     pub payer: Signer<'info>,
 
@@ -62,15 +63,16 @@ pub struct AttestReserve<'info> {
 
 pub(crate) fn handler(ctx: Context<AttestReserve>, args: AttestReserveArgs) -> Result<()> {
     validate_currency(&args.currency)?;
-    // Валюта резерву мусить бути валютою токена: інакше «емісія + обіг ≤
-    // атестованого» вимагало б курсу, а курсу в програмі немає й не буде.
+    // The reserve currency must be the token's currency: otherwise "issuance
+    // + circulation ≤ attested" would require an exchange rate, and the
+    // program does not have one and never will.
     require!(
         args.currency == ctx.accounts.token_config.reserve_currency,
         ForgeError::ReserveCurrencyMismatch
     );
 
     let now = Clock::get()?.unix_timestamp;
-    // Атестація з майбутнього подовжила б собі строк придатності наперед.
+    // An attestation from the future would extend its own validity in advance.
     require!(
         args.attested_at <= now,
         ForgeError::AttestationInTheFuture
@@ -86,8 +88,9 @@ pub(crate) fn handler(ctx: Context<AttestReserve>, args: AttestReserveArgs) -> R
     attestation.attested_at = args.attested_at;
     attestation.bump = ctx.bumps.attestation;
 
-    // Лічильник рухається останнім: до цього рядка чинною лишається попередня
-    // атестація, тож відмова вище не лишає токен без чинного резерву.
+    // The counter moves last: until this line the previous attestation stays
+    // current, so a refusal above does not leave the token without a current
+    // reserve.
     ctx.accounts.token_config.attestation_count = index
         .checked_add(1)
         .ok_or(ForgeError::ReserveInsufficient)?;

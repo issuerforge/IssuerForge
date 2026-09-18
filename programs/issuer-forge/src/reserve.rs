@@ -1,26 +1,27 @@
-//! Перевірка «емісія + обіг ≤ атестованого резерву» (FR-022, FR-023).
+//! The check "issuance + circulation ≤ attested reserve" (FR-022, FR-023).
 //!
-//! **Одна перевірка на всі шляхи появи токенів.** Її проходить початковий випуск
-//! у `create_token` (T018) і продовження емісії в `mint` (T038, M3). Дві
-//! перевірки означали б, що одна з них колись відстане — а відставання тут
-//! називається емісією понад резерв.
+//! **One check for every way tokens come into existence.** Both the initial
+//! issuance in `create_token` (T018) and further issuance in `mint` (T038,
+//! M3) go through it. Two checks would mean one of them falls behind some
+//! day — and falling behind here is called issuing beyond the reserve.
 //!
-//! **Обіг береться з `mint.supply` у момент виконання, а не з аргументів.** Саме
-//! це закриває сценарій SC-005 про дві одночасні емісії, кожна з яких окремо
-//! вміщується в резерв: друга транзакція бачить supply, який уже виріс від
-//! першої, і не проходить. Жодного окремого замка для гонки не потрібно — його
-//! роль виконує сам порядок виконання в блоці.
+//! **Circulation is taken from `mint.supply` at execution time, not from the
+//! arguments.** That is what closes the SC-005 scenario of two concurrent
+//! issuances each of which fits the reserve on its own: the second
+//! transaction sees a supply already grown by the first, and does not pass.
+//! No separate lock for the race is needed — the execution order within the
+//! block plays that role.
 use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
 use crate::state::{ReserveAttestation, TokenConfig};
 
-/// Чи це справді **остання** атестація цього токена.
+/// Whether this really is the **latest** attestation of this token.
 ///
-/// Без цієї перевірки старіша атестація з більшою сумою була б дійсним входом —
-/// тобто емісією понад резерв, проведеною через акаунт, який ніхто не редагував.
-/// Лічильник у `TokenConfig` каже, котра остання; сама сума лишається там, де її
-/// читає й верифікатор журналу.
+/// Without this check an older attestation with a larger amount would be a
+/// valid input — i.e. an issuance beyond the reserve, carried out through an
+/// account nobody edited. The counter in `TokenConfig` says which one is the
+/// latest; the amount itself stays where the journal verifier reads it too.
 pub fn require_latest(config: &TokenConfig, attestation: &ReserveAttestation) -> Result<()> {
     require_keys_eq!(
         attestation.mint,
@@ -34,27 +35,28 @@ pub fn require_latest(config: &TokenConfig, attestation: &ReserveAttestation) ->
     Ok(())
 }
 
-/// Все, що потрібно, щоб відповісти на питання «чи можна випустити цю суму».
+/// Everything needed to answer the question "may this amount be issued".
 pub struct ReserveCheck {
-    /// Підтверджена сума з **останньої** атестації.
+    /// The attested amount from the **latest** attestation.
     pub attested: u64,
     pub attested_at: i64,
-    /// Скільки атестація лишається чинною (`TokenConfig.attestation_max_age`).
+    /// How long an attestation stays current (`TokenConfig.attestation_max_age`).
     pub max_age: i64,
-    /// Обіг у момент виконання — `mint.supply`.
+    /// Circulation at execution time — `mint.supply`.
     pub supply: u64,
-    /// Скільки просять випустити.
+    /// How much is being asked to issue.
     pub minting: u64,
     pub now: i64,
 }
 
 impl ReserveCheck {
-    /// Дві причини відмови, і вони **різні** (FR-023a): «атестація
-    /// протермінована» і «резерву недостатньо» — це різні дії для емітента, тож
-    /// і різні коди.
+    /// Two reasons for refusal, and they are **different** (FR-023a): "the
+    /// attestation is expired" and "the reserve is insufficient" are different
+    /// actions for the issuer, hence different codes.
     pub fn require_within_reserve(&self) -> Result<()> {
-        // Атестація з майбутнього не «ще чинніша» — це зламаний годинник у
-        // атестатора або спроба продовжити строк наперед.
+        // An attestation from the future is not "even more current" — it is a
+        // broken clock at the attestor or an attempt to extend the period in
+        // advance.
         require!(
             self.attested_at <= self.now,
             ForgeError::AttestationInTheFuture
@@ -64,8 +66,9 @@ impl ReserveCheck {
             ForgeError::ReserveAttestationExpired
         );
 
-        // Насичення замість переповнення: сума, що не влазить у u64, безумовно
-        // більша за будь-який резерв, і паніка тут була б відмовою без причини.
+        // Saturation instead of overflow: a sum that does not fit in a u64 is
+        // unconditionally larger than any reserve, and a panic here would be a
+        // refusal without a reason.
         let after = self.supply.saturating_add(self.minting);
         require!(after <= self.attested, ForgeError::ReserveInsufficient);
         Ok(())
@@ -121,8 +124,9 @@ mod tests {
         );
     }
 
-    /// SC-005: дві емісії, кожна з яких окремо вміщується в резерв. Друга бачить
-    /// обіг, який уже виріс від першої, — і не проходить.
+    /// SC-005: two issuances each of which fits the reserve on its own. The
+    /// second sees a circulation already grown by the first — and does not
+    /// pass.
     #[test]
     fn refuses_the_second_of_two_issues_that_each_fit_alone() {
         let first = ReserveCheck {
@@ -144,8 +148,8 @@ mod tests {
 
     #[test]
     fn separates_an_expired_attestation_from_an_insufficient_reserve() {
-        // FR-023a: для емітента це різні дії — попросити свіжу атестацію або
-        // довнести резерв.
+        // FR-023a: for the issuer these are different actions — ask for a fresh
+        // attestation, or top up the reserve.
         let stale = ReserveCheck {
             attested_at: NOW - 7 * DAY - 1,
             ..check()
@@ -155,9 +159,9 @@ mod tests {
             code(ForgeError::ReserveAttestationExpired)
         );
 
-        // Протермінована перевіряється **раніше** за суму: емітенту з обома
-        // проблемами треба спершу свіжа атестація, бо без неї сума нічого не
-        // означає.
+        // Expiry is checked **before** the amount: an issuer with both problems
+        // needs a fresh attestation first, because without it the amount means
+        // nothing.
         let both = ReserveCheck {
             attested_at: NOW - 7 * DAY - 1,
             minting: 10_000,
@@ -192,7 +196,7 @@ mod tests {
 
     #[test]
     fn refuses_instead_of_overflowing() {
-        // Паніка тут була б відмовою без причини.
+        // A panic here would be a refusal without a reason.
         let huge = ReserveCheck {
             supply: u64::MAX,
             minting: 1,
@@ -238,13 +242,13 @@ mod tests {
     fn accepts_only_the_last_attestation_published() {
         let config = config(3);
         assert!(require_latest(&config, &attestation(2, config.mint)).is_ok());
-        // Старіша атестація з більшою сумою — це емісія понад резерв через
-        // акаунт, якого ніхто не редагував.
+        // An older attestation with a larger amount is an issuance beyond the
+        // reserve through an account nobody edited.
         assert_eq!(
             err(require_latest(&config, &attestation(1, config.mint))),
             code(ForgeError::AttestationNotLatest)
         );
-        // І чужа атестація з правильним номером — теж не вона.
+        // And someone else's attestation with the right number is not it either.
         assert_eq!(
             err(require_latest(
                 &config,
@@ -256,8 +260,8 @@ mod tests {
 
     #[test]
     fn allows_issuing_nothing_against_an_empty_reserve() {
-        // Резерв, який спорожнів, не робить токен недійсним: він зупиняє емісію,
-        // а не обіг (FR-023).
+        // A reserve that ran dry does not invalidate the token: it stops
+        // issuance, not circulation (FR-023).
         let nothing = ReserveCheck {
             attested: 0,
             supply: 0,

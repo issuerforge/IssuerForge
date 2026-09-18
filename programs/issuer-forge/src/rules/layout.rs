@@ -1,36 +1,39 @@
-//! Канонічна розкладка правил політики і її перевірка при записі.
+//! The canonical layout of policy rules and its check at write time.
 //!
-//! Дзеркало `packages/policy/src/layout.ts`. Там `decode` відхиляє все, що
-//! `encode` не міг видати; тут те саме робить `validate` — і робить це **до**
-//! того, як байти ляжуть в акаунт. Це другий замок канонічності: перший стоїть
-//! на клієнті, а клієнт нашою програмою не є.
+//! A mirror of `packages/policy/src/layout.ts`. There `decode` rejects
+//! everything `encode` could not have produced; here `validate` does the
+//! same — and does it **before** the bytes land in the account. This is the
+//! second lock on canonicity: the first is on the client, and the client is
+//! not our program.
 //!
-//! Чому цього мало не бути: `rules_hash` іменує політику, і два різні масиви
-//! байтів з тим самим змістом зробили б це ім'я іменем запису, а не політики —
-//! рівно в момент, коли на нього посилається рядок журналу.
+//! Why it could not be left out: `rules_hash` names the policy, and two
+//! different byte arrays with the same content would make that name the
+//! name of a spelling rather than of the policy — exactly at the moment a
+//! journal line refers to it.
 //!
-//! Оцінювач правил (T015) читає ці ж слоти на кожному переказі й лягає поруч, у
-//! `rules/`. Тут — тільки форма й межі, без жодного рішення про переказ.
+//! The rule evaluator (T015) reads these same slots on every transfer and
+//! sits beside this, in `rules/`. Here there is only shape and bounds, with
+//! no decision about a transfer.
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hash;
 
 use crate::error::ForgeError;
 
-/// Слотів у `PolicyConfig.rules`. Фіксовано під zero-copy читання в хуку.
+/// Slots in `PolicyConfig.rules`. Fixed for zero-copy reading in the hook.
 pub const MAX_RULE_SLOTS: usize = 16;
 
-/// Байтів на слот: `kind`, `op`, `params`.
+/// Bytes per slot: `kind`, `op`, `params`.
 pub const RULE_SLOT_BYTES: usize = 24;
 
-/// Байтів параметрів у слоті — саме цей бюджет обмежує кожне правило.
+/// Parameter bytes in a slot — this budget is what limits every rule.
 pub const RULE_PARAMS_BYTES: usize = 22;
 
-/// Повний розмір поля `rules`.
+/// The full size of the `rules` field.
 pub const RULES_BYTES: usize = MAX_RULE_SLOTS * RULE_SLOT_BYTES;
 
-/// Коди видів правил. Нуль зарезервований за порожнім слотом: масив фіксованої
-/// довжини завжди має хвіст із нулів, і вид правила з кодом 0 зробив би цей
-/// хвіст шістнадцятьма мовчазними правилами.
+/// Rule kind codes. Zero is reserved for an empty slot: a fixed-length array
+/// always has a tail of zeros, and a rule kind with code 0 would turn that
+/// tail into sixteen silent rules.
 pub mod rule_kind {
     pub const EMPTY: u8 = 0;
     pub const STATUS: u8 = 1;
@@ -39,19 +42,20 @@ pub mod rule_kind {
     pub const PERIOD_LIMIT: u8 = 4;
 }
 
-/// Бітові значення джерел статусу — дзеркало `STATUS_SOURCE` у `model.ts`.
+/// The bit values of the status sources — a mirror of `STATUS_SOURCE` in `model.ts`.
 pub mod status_source {
     pub const PROVIDER: u8 = 1 << 0;
     pub const REGISTER: u8 = 1 << 1;
     pub const ALL: u8 = PROVIDER | REGISTER;
 }
 
-/// Другий байт слота лишається нулем і **перевіряється**: інакше він стає тихим
-/// каналом, у який щось потрапляє й змінює `rules_hash`, нічого не змінюючи в
-/// змісті. Нове кодування параметрів — це новий `kind`, а не нове значення тут.
+/// The second byte of a slot stays zero and **is checked**: otherwise it
+/// becomes a silent channel into which something gets in and changes
+/// `rules_hash` without changing anything in the content. A new parameter
+/// encoding is a new `kind`, not a new value here.
 pub const RULE_OP_RESERVED: u8 = 0;
 
-/// Юрисдикцій в одному правилі: код ISO alpha-2 — два байти, параметрів — 22.
+/// Jurisdictions in one rule: an ISO alpha-2 code is two bytes, the parameters are 22.
 pub const MAX_JURISDICTIONS: usize = RULE_PARAMS_BYTES / 2;
 
 pub const MIN_PERIOD_SECONDS: u32 = 3_600;
@@ -59,7 +63,7 @@ pub const MAX_PERIOD_SECONDS: u32 = 31 * 24 * 3_600;
 pub const MIN_ATTESTATION_AGE_SECONDS: u32 = 3_600;
 pub const MAX_ATTESTATION_AGE_SECONDS: u32 = 365 * 24 * 3_600;
 
-/// Один слот правила, як він лежить в акаунті.
+/// One rule slot, as it lies in the account.
 #[zero_copy]
 pub struct RuleSlot {
     pub kind: u8,
@@ -67,13 +71,13 @@ pub struct RuleSlot {
     pub params: [u8; RULE_PARAMS_BYTES],
 }
 
-/// Перевірка канонічності всього масиву слотів.
+/// The canonicity check of the whole slot array.
 ///
-/// Відхиляє все, чого не міг видати `encode` на боці TS: ненульову набивку
-/// порожнього слота, дірку між правилами, ненульовий `op`, порядок не за
-/// зростанням `kind` (він же ловить дублі), невідомий вид правила й параметри
-/// поза межами моделі. Жодна з цих речей не змінює того, що політика означає —
-/// і кожна змінює її хеш.
+/// Rejects everything `encode` on the TS side could not have produced:
+/// non-zero padding of an empty slot, a gap between rules, a non-zero `op`,
+/// an order not ascending by `kind` (which also catches duplicates), an
+/// unknown rule kind and parameters outside the model's bounds. None of
+/// these changes what the policy means — and every one changes its hash.
 pub fn validate(slots: &[RuleSlot]) -> Result<()> {
     require!(
         slots.len() == MAX_RULE_SLOTS,
@@ -86,7 +90,7 @@ pub fn validate(slots: &[RuleSlot]) -> Result<()> {
 
     for slot in slots {
         if slot.kind == rule_kind::EMPTY {
-            // Порожній слот мусить бути порожній цілком.
+            // An empty slot must be entirely empty.
             require!(
                 slot.op == 0 && slot.params.iter().all(|byte| *byte == 0),
                 ForgeError::PolicyRulesNotCanonical
@@ -95,13 +99,13 @@ pub fn validate(slots: &[RuleSlot]) -> Result<()> {
             continue;
         }
 
-        // Дірка між правилами дала б два кодування однієї політики.
+        // A gap between rules would give two encodings of one policy.
         require!(!ended, ForgeError::PolicyRulesNotCanonical);
         require!(
             slot.op == RULE_OP_RESERVED,
             ForgeError::PolicyRulesNotCanonical
         );
-        // Строго за зростанням: цим же порівнянням відпадають і дублі.
+        // Strictly ascending: the same comparison also drops duplicates.
         require!(
             slot.kind > previous_kind,
             ForgeError::PolicyRulesNotCanonical
@@ -116,16 +120,15 @@ pub fn validate(slots: &[RuleSlot]) -> Result<()> {
             rule_kind::JURISDICTIONS => validate_jurisdictions(&slot.params)?,
             rule_kind::TRANSFER_LIMIT => validate_transfer_limit(&slot.params)?,
             rule_kind::PERIOD_LIMIT => validate_period_limit(&slot.params)?,
-            // Невідомий вид правила — відмова, а не пропуск: політика, якої
-            // читач не розуміє повністю, не стає слабшою мовчки. Той самий
-            // принцип, що й FR-013 про недоступне джерело статусу.
+            // An unknown rule kind is a refusal, not a skip: a policy the reader
+            // does not fully understand does not get weaker silently. The same
+            // principle as FR-013 about an unavailable status source.
             _ => return err!(ForgeError::PolicyRuleKindUnknown),
         }
     }
 
-    // Політика без відповіді на питання «хто може тримати» неможлива за
-    // моделлю; FR-008b1 вимагає постійної перевірки, а не разового
-    // розморожування.
+    // A policy without an answer to "who may hold" is impossible under the
+    // model; FR-008b1 requires a continuous check, not a one-off thaw.
     require!(has_status, ForgeError::PolicyStatusRuleMissing);
     Ok(())
 }
@@ -150,25 +153,26 @@ fn require_zero_tail(params: &[u8; RULE_PARAMS_BYTES], from: usize) -> Result<()
 
 fn validate_status(params: &[u8; RULE_PARAMS_BYTES]) -> Result<()> {
     let mask = params[0];
-    // Порожня маска — це «дозволити нікому», а невідомий біт — джерело, якого
-    // читач не знає: виконати його не можна, пропустити теж.
+    // An empty mask is "allow no one", and an unknown bit is a source the
+    // reader does not know: it can be neither executed nor skipped.
     require!(
         mask != 0 && mask & !status_source::ALL == 0,
         ForgeError::PolicyRuleParamsOutOfRange
     );
 
-    // params[1] — мінімальний рівень; стеля рівня є стелею байта, тож будь-яке
-    // значення дійсне, і вигадувати тут продуктову межу немає підстав.
+    // params[1] is the minimum tier; the tier ceiling is the byte ceiling, so
+    // any value is valid, and there is no ground to invent a product bound
+    // here.
     let max_age = u32_at(params, 2);
-    // Нуль означає «строку немає»: модель не дозволяє значення менше за годину,
-    // тож нуль не є дійсним строком і читається однозначно.
+    // Zero means "no validity period": the model allows no value below an
+    // hour, so zero is not a valid period and reads unambiguously.
     require!(
         max_age == 0
             || (MIN_ATTESTATION_AGE_SECONDS..=MAX_ATTESTATION_AGE_SECONDS).contains(&max_age),
         ForgeError::PolicyRuleParamsOutOfRange
     );
-    // FR-008a2: політика, що приймає атестації провайдера й не називає строку
-    // їх придатності, — це верифікація, зроблена колись і чинна назавжди.
+    // FR-008a2: a policy that accepts provider attestations and does not name
+    // their validity period is a verification done once and valid forever.
     require!(
         mask & status_source::PROVIDER == 0 || max_age != 0,
         ForgeError::PolicyRuleParamsOutOfRange
@@ -193,9 +197,9 @@ fn validate_jurisdictions(params: &[u8; RULE_PARAMS_BYTES]) -> Result<()> {
             code[0].is_ascii_uppercase() && code[1].is_ascii_uppercase(),
             ForgeError::PolicyRuleParamsOutOfRange
         );
-        // Строго за зростанням — та сама детермінованість, що й у порядку
-        // слотів: множина країн не має порядку, а хеш політики мусить бути
-        // однаковий для однакового змісту. Дублі відпадають цим же порівнянням.
+        // Strictly ascending — the same determinism as in the slot order: a set
+        // of countries has no order, and the policy hash must be identical for
+        // identical content. Duplicates are dropped by the same comparison.
         require!(
             count == 0 || code > previous,
             ForgeError::PolicyRulesNotCanonical
@@ -204,15 +208,15 @@ fn validate_jurisdictions(params: &[u8; RULE_PARAMS_BYTES]) -> Result<()> {
         count += 1;
     }
 
-    // Порожній перелік не є способом сказати «усі»: правила немає — перевірки
-    // немає, і другого способу сказати те саме бути не повинно.
+    // An empty list is not a way to say "all": no rule — no check, and there
+    // must be no second way of saying the same thing.
     require!(count > 0, ForgeError::PolicyRuleParamsOutOfRange);
     Ok(())
 }
 
 fn validate_transfer_limit(params: &[u8; RULE_PARAMS_BYTES]) -> Result<()> {
-    // Нульовий ліміт відмовляє в кожному переказі — це не ліміт, а зупинка
-    // обігу, для якої існує пауза.
+    // A zero limit refuses every transfer — that is not a limit but a halt of
+    // circulation, for which a pause exists.
     require!(
         u64_at(params, 0) > 0,
         ForgeError::PolicyRuleParamsOutOfRange
@@ -233,13 +237,13 @@ fn validate_period_limit(params: &[u8; RULE_PARAMS_BYTES]) -> Result<()> {
     require_zero_tail(params, 12)
 }
 
-/// `rules_hash` — sha256 над усіма шістнадцятьма слотами, як вони лежать в
-/// акаунті.
+/// `rules_hash` — sha256 over all sixteen slots, as they lie in the account.
 ///
-/// sha256, а не щось інше, бо його рахує сама програма нативним syscall'ом: один
-/// виклик на зміну політики й жодного на переказі. Хеш рахується над **усім**
-/// полем, а не над заповненою частиною: незалежний верифікатор (SC-006) бере
-/// зріз даних акаунта й хешує його, не знаючи, скільки слотів зайнято.
+/// sha256 and not something else, because the program itself computes it
+/// with a native syscall: one call per policy change and none on a transfer.
+/// The hash is computed over the **whole** field, not the filled part: the
+/// independent verifier (SC-006) takes a slice of the account data and
+/// hashes it without knowing how many slots are in use.
 pub fn rules_hash(slots: &[RuleSlot]) -> [u8; 32] {
     hash(bytemuck::cast_slice(slots)).to_bytes()
 }
@@ -276,8 +280,8 @@ mod tests {
     fn jurisdiction_params(codes: &[&str]) -> [u8; RULE_PARAMS_BYTES] {
         let mut params = [0u8; RULE_PARAMS_BYTES];
         for (index, code) in codes.iter().enumerate() {
-            // Порожній рядок лишає пару нулів — так у тесті записується дірка
-            // всередині переліку.
+            // An empty string leaves a pair of zeros — that is how a gap inside
+            // the list is written in a test.
             if code.len() == 2 {
                 params[index * 2..index * 2 + 2].copy_from_slice(code.as_bytes());
             }
@@ -285,8 +289,9 @@ mod tests {
         params
     }
 
-    /// Найслабша політика, яку модель дозволяє записати: обидва джерела, рівень
-    /// не перевіряється, атестації дано найдовший допустимий строк.
+    /// The weakest policy the model allows to be written: both sources, the
+    /// tier is not checked, the attestation is given the longest allowed
+    /// validity.
     fn open_policy() -> [RuleSlot; MAX_RULE_SLOTS] {
         let mut slots = empty_slots();
         slots[0] = RuleSlot {
@@ -350,7 +355,7 @@ mod tests {
             err(validate(&slots)),
             code(ForgeError::PolicyStatusRuleMissing)
         );
-        // Порожня політика падає тим же кодом: слоти є, статусу немає.
+        // An empty policy fails with the same code: there are slots, there is no status.
         assert_eq!(
             err(validate(&empty_slots())),
             code(ForgeError::PolicyStatusRuleMissing)
@@ -359,8 +364,8 @@ mod tests {
 
     #[test]
     fn refuses_a_rule_kind_it_does_not_define() {
-        // Це другий замок канонічності з T012: перший стоїть на клієнті, а
-        // клієнт нашою програмою не є.
+        // This is the second lock on canonicity from T012: the first is on the
+        // client, and the client is not our program.
         let mut slots = open_policy();
         slots[1] = RuleSlot {
             kind: 9,
@@ -375,7 +380,7 @@ mod tests {
 
     #[test]
     fn refuses_bytes_that_change_the_hash_without_changing_the_meaning() {
-        // Ненульова набивка порожнього слота.
+        // Non-zero padding of an empty slot.
         let mut padded = open_policy();
         padded[5].params[7] = 1;
         assert_eq!(
@@ -383,7 +388,7 @@ mod tests {
             code(ForgeError::PolicyRulesNotCanonical)
         );
 
-        // Ненульовий зарезервований байт.
+        // A non-zero reserved byte.
         let mut op = open_policy();
         op[0].op = 1;
         assert_eq!(
@@ -391,7 +396,7 @@ mod tests {
             code(ForgeError::PolicyRulesNotCanonical)
         );
 
-        // Набивка всередині параметрів правила.
+        // Padding inside a rule's parameters.
         let mut tail = open_policy();
         tail[0].params[21] = 1;
         assert_eq!(
@@ -443,8 +448,8 @@ mod tests {
 
     #[test]
     fn refuses_provider_attestations_with_no_shelf_life() {
-        // FR-008a2 існує саме проти верифікації, зробленої колись і чинної
-        // назавжди.
+        // FR-008a2 exists precisely against a verification done once and valid
+        // forever.
         let mut slots = open_policy();
         slots[0].params = status_params(status_source::PROVIDER, 0, 0);
         assert_eq!(
@@ -452,7 +457,7 @@ mod tests {
             code(ForgeError::PolicyRuleParamsOutOfRange)
         );
 
-        // Без провайдера серед джерел строк не потрібен.
+        // Without the provider among the sources no validity period is needed.
         let mut register_only = open_policy();
         register_only[0].params = status_params(status_source::REGISTER, 0, 0);
         assert!(validate(&register_only).is_ok());
@@ -472,7 +477,7 @@ mod tests {
 
     #[test]
     fn refuses_a_limit_of_zero() {
-        // Нульовий ліміт — це зупинка обігу, для якої існує пауза.
+        // A zero limit is a halt of circulation, for which a pause exists.
         let mut transfer = full_policy();
         transfer[2].params = amount_params(0, None);
         assert_eq!(
@@ -543,15 +548,17 @@ mod tests {
 
     #[test]
     fn hashes_the_whole_field_and_not_the_filled_part() {
-        // Дві політики, що різняться лише одним заповненим слотом, мусять мати
-        // різні хеші; хеш береться з усіх 384 байтів, тож довжина входу стала.
+        // Two policies differing only in one filled slot must have different
+        // hashes; the hash is taken over all 384 bytes, so the input length is
+        // constant.
         assert_ne!(rules_hash(&open_policy()), rules_hash(&full_policy()));
         assert_eq!(bytemuck::cast_slice::<RuleSlot, u8>(&open_policy()).len(), RULES_BYTES);
     }
 
-    /// Хеш рахують дві реалізації: ця й `rulesHash` у `packages/policy`. Вектор
-    /// нижче знятий з TS і зашитий сюди числом — розходження має падати тестом,
-    /// а не виявлятись розбіжністю імені політики в журналі.
+    /// Two implementations compute the hash: this one and `rulesHash` in
+    /// `packages/policy`. The vector below was taken from TS and hardcoded
+    /// here as a number — a divergence must fail a test, not surface as a
+    /// mismatched policy name in the journal.
     #[test]
     fn matches_the_hash_the_typescript_side_computes() {
         assert_eq!(hex(&rules_hash(&open_policy())), OPEN_POLICY_HASH);

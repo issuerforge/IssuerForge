@@ -1,19 +1,21 @@
-//! Чужа програма, яка переказує наш токен через CPI.
+//! A foreign program that transfers our token via CPI.
 //!
-//! **Це не приклад інтеграції, а інструмент виміру.** Головна обіцянка проєкту
-//! звучить так: правило виконує сам токен, а не застосунок (`docs/SPEC.md`,
-//! FR-002). Довести її можна єдиним способом — переказати повз наш застосунок і
-//! отримати відмову. Три вектори з чотирьох (сторонній клієнт, делегат,
-//! дроблення) роблять це з боку клієнта; четвертий вимагає **іншої програми на
-//! ланцюгу**, бо саме програма-посередник — це те, чим обходять перевірки, що
-//! живуть у застосунку.
+//! **This is not an integration example but a measurement tool.** The
+//! project's main promise reads: the token itself enforces the rule, not the
+//! app (`docs/SPEC.md`, FR-002). There is only one way to prove it — transfer
+//! past our app and get refused. Three vectors of four (a third-party client,
+//! a delegate, splitting) do that from the client side; the fourth requires
+//! **another program on chain**, because a relay program is exactly what
+//! checks living in an app are bypassed with.
 //!
-//! Програма не має ані стану, ані повноважень, ані власних перевірок: вона
-//! робить рівно один CPI й нічого більше. Усе, що станеться далі, — це рішення
-//! токен-програми та нашого хука, і саме воно вимірюється (SC-002).
+//! The program has no state, no authority and no checks of its own: it makes
+//! exactly one CPI and nothing more. Everything that happens next is the
+//! decision of the token program and our hook, and that is what is measured
+//! (SC-002).
 //!
-//! **Деплоїться разом із демо й ніде більше.** У продукті її немає: у
-//! `docs/PLAN.md` вона не значиться, а `tools/demo` — єдиний, хто її кличе.
+//! **Deployed together with the demo and nowhere else.** It is not in the
+//! product: `docs/PLAN.md` does not list it, and `tools/demo` is the only
+//! thing that calls it.
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::{AccountMeta, Instruction};
 use anchor_lang::solana_program::program::invoke;
@@ -21,24 +23,26 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 declare_id!("9ZCmUGqkrtBrm83uiiMwBgRrV2cBPE9HGMgA25iRJGkQ");
 
-/// `TokenInstruction::TransferChecked` — індекс 12 у токен-програмі.
+/// `TokenInstruction::TransferChecked` — index 12 in the token program.
 ///
-/// Інструкція складається руками, а не через `anchor_spl::token_interface::
-/// transfer_checked`: той будує **фіксований** перелік акаунтів і
-/// `remaining_accounts` у CPI не передає. Без них токен-програма не має чого
-/// підкласти хуку, і відмова приходить «бракує акаунта» — тобто вимір SC-002
-/// доводив би поламану проводку, а не роботу правила. Це виявив перший прогін
-/// демо (T024).
+/// The instruction is assembled by hand rather than through
+/// `anchor_spl::token_interface::transfer_checked`: that one builds a
+/// **fixed** account list and passes no `remaining_accounts` into the CPI.
+/// Without them the token program has nothing to hand to the hook, and the
+/// refusal comes as "missing account" — i.e. the SC-002 measurement would
+/// prove broken wiring, not the rule at work. The first demo run found this
+/// (T024).
 const TRANSFER_CHECKED: u8 = 12;
 
 #[program]
 pub mod attacker {
     use super::*;
 
-    /// Переказ через посередника: підписує власник, викликає ця програма.
+    /// A transfer through a relay: the owner signs, this program calls.
     ///
-    /// Додаткові акаунти хука приходять у `remaining_accounts` і йдуть у CPI
-    /// без змін — і в переліку метаданих, і в переліку `AccountInfo`.
+    /// The hook's extra accounts arrive in `remaining_accounts` and go into
+    /// the CPI unchanged — both in the metadata list and in the
+    /// `AccountInfo` list.
     pub fn relay_transfer<'info>(
         ctx: Context<'_, '_, '_, 'info, RelayTransfer<'info>>,
         amount: u64,
@@ -84,11 +88,12 @@ pub mod attacker {
     }
 }
 
-/// Жодного обмеження на акаунти тут немає навмисно.
+/// There is deliberately no constraint on the accounts here.
 ///
-/// Ця програма не має захищати нічого: її задача — бути найзручнішим із
-/// можливих обходів. Перевірки, які тут спокусливо дописати, є в токен-програмі
-/// й у хуку, і саме вони мусять спрацювати.
+/// This program is not meant to protect anything: its job is to be the most
+/// convenient bypass possible. The checks it is tempting to add here exist
+/// in the token program and in the hook, and those are the ones that must
+/// fire.
 #[derive(Accounts)]
 pub struct RelayTransfer<'info> {
     #[account(mut)]

@@ -11,29 +11,29 @@ use crate::state::{delegation, HolderStatus, HolderStatusInput, IssuerConfig, To
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ThawHolderArgs {
-    /// Власник рахунку. Мусить збігтися з `owner` токен-акаунта — інакше
-    /// статус ліг би за адресою, якої переказ ніколи не прочитає.
+    /// The account owner. Must match the token account's `owner` — otherwise
+    /// the status would land at an address a transfer never reads.
     pub wallet: Pubkey,
-    /// Початковий статус — тільки для **першого** розморожування.
+    /// The initial status — only for the **first** thaw.
     ///
-    /// `None` означає «запис уже є, я його не чіпаю»: так виглядає повторне
-    /// розморожування після заморозки офіцером (T026). Розбіжність між
-    /// наміром і станом акаунта відхиляється, а не тлумачиться, тож жоден
-    /// виклик не змінює статусу мовчки.
+    /// `None` means "the record already exists, I am not touching it": that
+    /// is what a repeat thaw after an officer's freeze looks like (T026). A
+    /// mismatch between the intent and the account state is rejected, not
+    /// interpreted, so no call changes the status silently.
     pub status: Option<HolderStatusInput>,
 }
 
-/// Розморожування рахунку холдера (FR-008b).
+/// Thawing a holder's account (FR-008b).
 ///
-/// **Хук не створює акаунтів** — ані payer, ані підпису system program у нього
-/// немає, — тож `HolderStatus` і `VelocityCounter` створюються тут, наперед.
-/// Рахунок, для якого їх немає, отримує відмову в переказі, а не пропуск
-/// перевірки (FR-013).
+/// **The hook creates no accounts** — it has neither a payer nor a system
+/// program signature — so `HolderStatus` and `VelocityCounter` are created
+/// here, in advance. An account that lacks them gets a transfer refusal, not
+/// a skipped check (FR-013).
 ///
-/// Розморожування **не є дозволом на переказ** (FR-008b1): воно лише знімає
-/// `DefaultAccountState = Frozen`, після чого кожен переказ окремо проходить
-/// правила політики. Рахунок, розморожений учора, отримає відмову сьогодні,
-/// якщо статус більше не задовольняє чинну версію.
+/// A thaw **is not a permission to transfer** (FR-008b1): it only lifts
+/// `DefaultAccountState = Frozen`, after which every transfer goes through
+/// the policy rules separately. An account thawed yesterday is refused today
+/// if its status no longer satisfies the current version.
 #[derive(Accounts)]
 #[instruction(args: ThawHolderArgs)]
 pub struct ThawHolder<'info> {
@@ -56,9 +56,9 @@ pub struct ThawHolder<'info> {
     )]
     pub mint: InterfaceAccount<'info, Mint>,
 
-    /// Токен-акаунт холдера. Обидві перевірки обов'язкові: адреса акаунта не
-    /// доводить ані його mint, ані власника, а статус виводиться саме з
-    /// `wallet`.
+    /// The holder's token account. Both checks are mandatory: the account
+    /// address proves neither its mint nor its owner, and the status is
+    /// derived from `wallet` specifically.
     #[account(
         mut,
         constraint = token_account.mint == token_config.mint @ ForgeError::HolderAccountMismatch,
@@ -66,9 +66,10 @@ pub struct ThawHolder<'info> {
     )]
     pub token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// `init_if_needed`, бо рахунок законно розморожують удруге — після
-    /// заморозки офіцером. Повторне створення нічого не переписує: що саме
-    /// пишеться, вирішує `updated_at`, а не наявність акаунта.
+    /// `init_if_needed`, because an account is legitimately thawed a second
+    /// time — after an officer's freeze. A repeat creation overwrites
+    /// nothing: what is written is decided by `updated_at`, not by the
+    /// account's existence.
     #[account(
         init_if_needed,
         payer = payer,
@@ -78,10 +79,11 @@ pub struct ThawHolder<'info> {
     )]
     pub holder_status: Account<'info, HolderStatus>,
 
-    /// Так само `init_if_needed` — і **жодне значення вікна тут не пишеться**,
-    /// тільки власна ідентичність акаунта. Скидання вікна операційним ключем
-    /// зняло б ліміт за період рутинною дією, тобто дало б повноваження, якого
-    /// в масці делегації немає й не може бути (FR-035a).
+    /// Likewise `init_if_needed` — and **no window value is written here**,
+    /// only the account's own identity. Resetting the window with the
+    /// operational key would lift the period limit with a routine action,
+    /// i.e. grant a power the delegation mask does not have and cannot have
+    /// (FR-035a).
     #[account(
         init_if_needed,
         payer = payer,
@@ -94,7 +96,7 @@ pub struct ThawHolder<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// Операційний ключ платформи або уповноважений учасник складу.
+    /// The platform's operational key or an authorised member of the membership.
     pub authority: Signer<'info>,
 
     pub token_program: Interface<'info, TokenInterface>,
@@ -112,33 +114,33 @@ pub(crate) fn thaw_handler(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Re
     let holder = &mut ctx.accounts.holder_status;
 
     match (holder.is_written(), args.status) {
-        // Перше розморожування: статус приходить разом із ним.
+        // The first thaw: the status comes with it.
         (false, Some(status)) => {
             holder.mint = ctx.accounts.token_config.mint;
             holder.wallet = args.wallet;
             holder.bump = ctx.bumps.holder_status;
             holder.apply(&status, now)?;
         }
-        // Повторне: статус уже є, і змінює його тільки `set_holder_status` — під
-        // власним повноваженням делегації. Інакше ключ із самим лише
-        // `THAW_HOLDER` переписував би реєстр статусів через повторний виклик.
+        // A repeat: the status already exists, and only `set_holder_status`
+        // changes it — under its own delegation power. Otherwise a key with
+        // nothing but `THAW_HOLDER` would overwrite the status registry
+        // through a repeat call.
         (true, None) => {}
         (false, None) => return err!(ForgeError::HolderStatusRequired),
         (true, Some(_)) => return err!(ForgeError::HolderStatusAlreadySet),
     }
 
-    // Лічильник: тільки його власна ідентичність. Значення вікна лишаються
-    // такими, як їх лишив останній переказ, — і саме тому вони тут не
-    // згадуються.
+    // The counter: only its own identity. The window values stay as the last
+    // transfer left them — which is exactly why they are not mentioned here.
     let counter = &mut ctx.accounts.velocity_counter;
     counter.mint = ctx.accounts.token_config.mint;
     counter.wallet = args.wallet;
     counter.bump = ctx.bumps.velocity_counter;
 
-    // Заморожений рахунок — стан за замовчуванням (`DefaultAccountState`), але
-    // повторне розморожування вже розмороженого відхилила б токен-програма, а
-    // акаунти статусу при цьому вже створені. Пропуск тут робить інструкцію
-    // ідемпотентною для того, заради чого її кличуть удруге.
+    // A frozen account is the default state (`DefaultAccountState`), but the
+    // token program would reject thawing an already thawed one, while the
+    // status accounts are already created by then. Skipping here makes the
+    // instruction idempotent for what it is called a second time for.
     if ctx.accounts.token_account.state == AccountState::Frozen {
         let mint_key = ctx.accounts.token_config.mint;
         let signer: &[&[u8]] = &[TOKEN_SEED, mint_key.as_ref(), &[ctx.accounts.token_config.bump]];
@@ -162,16 +164,18 @@ pub struct SetHolderStatusArgs {
     pub status: HolderStatusInput,
 }
 
-/// Оновлення власного реєстру статусів емітента (FR-008a, FR-008b1).
+/// Updating the issuer's own status registry (FR-008a, FR-008b1).
 ///
-/// Друга половина пари: `thaw_holder` заводить запис, ця інструкція його
-/// змінює — знижує рівень, міняє юрисдикцію, ставить строк або вмикає
-/// `denied`. Саме вона робить FR-008b1 виконуваним: рахунок лишається
-/// розмороженим, а переказ із нього перестає проходити тієї ж миті, бо статус
-/// читається на **кожному** переказі, а не при розморожуванні.
+/// The second half of the pair: `thaw_holder` creates the record, this
+/// instruction changes it — lowers the tier, changes the jurisdiction, sets
+/// an expiry or turns on `denied`. It is what makes FR-008b1 enforceable:
+/// the account stays thawed, and a transfer from it stops passing that very
+/// moment, because the status is read on **every** transfer, not at thaw
+/// time.
 ///
-/// Токен-акаунта тут немає навмисно: зміна статусу нічого не морозить. Заморозка
-/// — окрема комплаєнс-дія з підставою й кейсом (T026, FR-014).
+/// There is deliberately no token account here: a status change freezes
+/// nothing. A freeze is a separate compliance action with a reason and a
+/// case (T026, FR-014).
 #[derive(Accounts)]
 #[instruction(args: SetHolderStatusArgs)]
 pub struct SetHolderStatus<'info> {
@@ -188,10 +192,11 @@ pub struct SetHolderStatus<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// Без `init`: запису, якого немає, ця інструкція не заводить. Створення
-    /// прив'язане до розморожування, бо статус без розмороженого рахунку нічого
-    /// не означає, а `HolderStatus` без `VelocityCounter` дав би відмову в
-    /// переказі там, де емітент вважає холдера впорядкованим.
+    /// Without `init`: this instruction does not create a record that does
+    /// not exist. Creation is tied to the thaw, because a status without a
+    /// thawed account means nothing, and a `HolderStatus` without a
+    /// `VelocityCounter` would give a transfer refusal where the issuer
+    /// considers the holder in order.
     #[account(
         mut,
         seeds = [HOLDER_SEED, token_config.mint.as_ref(), args.wallet.as_ref()],

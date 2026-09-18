@@ -1,61 +1,67 @@
-//! Seeds і межі, спільні для всіх акаунтів програми.
+//! Seeds and bounds shared by all the program's accounts.
 
-/// `["issuer", issuer_id]`. `issuer_id` — окремий ключ, згенерований при
-/// створенні; він нічого не підписує й ніколи не змінюється.
+/// `["issuer", issuer_id]`. `issuer_id` is a separate key generated at
+/// creation; it signs nothing and never changes.
 ///
-/// Виводити адресу з гаманця засновника було б простіше, але тоді цей гаманець
-/// лишався б несучою конструкцією назавжди: навіть виключений кворумом за
-/// компрометацією, він потрібен кожному клієнту, щоб узагалі знайти акаунт.
+/// Deriving the address from the founder's wallet would be simpler, but then
+/// that wallet would remain a load-bearing part forever: even after the
+/// quorum removed it for being compromised, every client would need it just
+/// to find the account.
 pub const ISSUER_SEED: &[u8] = b"issuer";
 
 /// `["token", mint]`.
 pub const TOKEN_SEED: &[u8] = b"token";
 
-/// `["policy", mint, version]`, версія — `u32` little-endian.
+/// `["policy", mint, version]`, the version a `u32` little-endian.
 ///
-/// Версія у seed, а не поле, яке перезаписується: кожна версія отримує власну
-/// адресу, тож незмінність історії (FR-010) забезпечує рантайм, а не наша
-/// перевірка. Кодування числа закріплене на клієнті в `packages/chain/src/pda.ts`.
+/// The version is in the seed, not a field that gets overwritten: every
+/// version gets its own address, so the immutability of history (FR-010) is
+/// guaranteed by the runtime, not by our check. The number encoding is pinned
+/// on the client in `packages/chain/src/pda.ts`.
 pub const POLICY_SEED: &[u8] = b"policy";
 
-/// `["holder", mint, wallet]` — статус адреси у власному реєстрі емітента.
+/// `["holder", mint, wallet]` — an address's status in the issuer's own registry.
 pub const HOLDER_SEED: &[u8] = b"holder";
 
-/// `["velocity", mint, wallet]` — лічильник ліміту за період.
+/// `["velocity", mint, wallet]` — the per-period limit counter.
 pub const VELOCITY_SEED: &[u8] = b"velocity";
 
-/// `["reserve", mint, index]` — append-only атестація резерву, індекс `u64` LE.
+/// `["reserve", mint, index]` — an append-only reserve attestation, the index a `u64` LE.
 pub const RESERVE_SEED: &[u8] = b"reserve";
 
-/// `["mint", issuer_id, index]` — сам токен, індекс `u32` little-endian.
+/// `["mint", issuer_id, index]` — the token itself, the index a `u32`
+/// little-endian.
 ///
-/// Mint є PDA, а не клієнтським ключем, з арифметичної причини: третій підпис у
-/// транзакції випуску коштує 64 байти, а вона й так важить ~1180 із 1232
-/// (розрахунок — у `SCRATCHPAD.md`, блок T018). Наслідок кращий за причину:
-/// адреса токена виводиться з емітента й номера, тож консоль перелічує токени
-/// емітента без індексатора, а клієнт знає адресу до підписання.
+/// The mint is a PDA, not a client key, for an arithmetic reason: a third
+/// signature in the issuance transaction costs 64 bytes, and it already
+/// weighs ~1180 of 1232 (the calculation is in `SCRATCHPAD.md`, block T018).
+/// The consequence is better than the cause: the token address is derived
+/// from the issuer and the number, so the console lists an issuer's tokens
+/// without an indexer, and the client knows the address before signing.
 pub const MINT_SEED: &[u8] = b"mint";
 
-/// Номер першої версії політики в кодуванні seed.
+/// The number of the first policy version in seed encoding.
 ///
-/// Константою, а не `to_le_bytes()` на місці: у `create_token` цей seed стоїть
-/// у трьох різних виразах, і три однакові літерали розійшлися б тихо.
+/// A constant rather than `to_le_bytes()` in place: in `create_token` this
+/// seed appears in three different expressions, and three identical literals
+/// would diverge quietly.
 pub const FIRST_POLICY_VERSION_LE: [u8; 4] = FIRST_POLICY_VERSION.to_le_bytes();
 
-/// Індекс першої атестації резерву в кодуванні seed. Її створює `create_token`.
+/// The index of the first reserve attestation in seed encoding. `create_token` creates it.
 pub const FIRST_ATTESTATION_INDEX_LE: [u8; 8] = 0u64.to_le_bytes();
 
-/// Номер першої версії політики. Її пише `create_token`; `set_policy` починає з
-/// другої, тому нуль тут означає «токена ще немає», а не «політика порожня».
+/// The number of the first policy version. `create_token` writes it;
+/// `set_policy` starts from the second, so zero here means "no token yet",
+/// not "the policy is empty".
 pub const FIRST_POLICY_VERSION: u32 = 1;
 
-/// Стеля складу вповноважених.
+/// The ceiling on the authorised membership.
 ///
-/// Число зафіксоване тут, а не в конфігурації: воно задає і розмір
-/// `IssuerConfig`, і ширину бітмапи підписів у `ActionProposal`. Збільшити його
-/// після деплою означає міграцію акаунтів усіх емітентів.
+/// The number is fixed here, not in configuration: it sets both the size of
+/// `IssuerConfig` and the width of the signature bitmap in `ActionProposal`.
+/// Raising it after deploy means migrating every issuer's accounts.
 pub const MAX_MEMBERS: usize = 8;
 
-/// Мінімальний кворум. FR-019: дії з коштами виконуються **тільки** за
-/// кворумом 2-з-N, тож одиниця тут не є допустимим значенням ні за яких умов.
+/// The minimum quorum. FR-019: actions with funds are executed **only** by a
+/// 2-of-N quorum, so one is not a valid value here under any circumstances.
 pub const MIN_QUORUM: u8 = 2;

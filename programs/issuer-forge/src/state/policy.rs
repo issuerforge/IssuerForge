@@ -2,64 +2,73 @@ use anchor_lang::prelude::*;
 
 use crate::rules::layout::{self, RuleSlot, MAX_RULE_SLOTS, RULES_BYTES};
 
-/// Версія політики. PDA: `["policy", mint, version]`, версія — `u32` LE.
+/// A policy version. PDA: `["policy", mint, version]`, the version a `u32`
+/// LE.
 ///
-/// **Незмінність історії — властивість адреси, а не перевірки в коді.** Кожна
-/// версія живе за власним PDA й створюється через `init`, тож повторний запис у
-/// вже існуючу версію відхиляє рантайм, а не наша логіка (FR-010). Перезаписати
-/// попередню версію нічим: інструкції, яка б відкрила її на запис, у програмі
-/// немає.
+/// **The immutability of history is a property of the address, not of a
+/// check in code.** Every version lives at its own PDA and is created through
+/// `init`, so a repeat write into an existing version is rejected by the
+/// runtime, not by our logic (FR-010). There is nothing to overwrite a
+/// previous version with: the program has no instruction that would open it
+/// for writing.
 ///
-/// `zero_copy`, бо хук читає `rules` на **кожному** переказі: десеріалізація
-/// Borsh 384 байтів у CU-бюджеті хука коштувала б дорожче за саму перевірку.
-/// Звідси `#[repr(C)]`, явна набивка до восьми байтів і `AccountLoader` замість
-/// `Account` на боці інструкцій.
+/// `zero_copy`, because the hook reads `rules` on **every** transfer: Borsh
+/// deserialisation of 384 bytes within the hook's CU budget would cost more
+/// than the check itself. Hence `#[repr(C)]`, explicit padding to eight
+/// bytes and `AccountLoader` instead of `Account` on the instruction side.
 #[account(zero_copy)]
 pub struct PolicyConfig {
-    /// Час активації, unix-секунди — половина того, чого вимагає FR-010.
+    /// The activation time, unix seconds — half of what FR-010 requires.
     pub activated_at: i64,
     pub version: u32,
-    /// Mint, чию політику ця версія описує.
+    /// The mint whose policy this version describes.
     ///
-    /// Дублює seeds, і це **вимога хука**, а не зручність. Хук читає політику
-    /// через `AccountLoader`, а полів `AccountLoader` не видно в атрибутах
-    /// `#[account(...)]`, тож прив'язати акаунт до mint можна або цим
-    /// порівнянням, або `create_program_address` — а той коштує 1500 CU на
-    /// кожному переказі (SC-003). Тридцять два байти на версію політики дешевші.
+    /// Duplicates the seeds, and that is a **requirement of the hook**, not a
+    /// convenience. The hook reads the policy through `AccountLoader`, and
+    /// `AccountLoader` fields are not visible in `#[account(...)]`
+    /// attributes, so the account can be tied to the mint either by this
+    /// comparison or by `create_program_address` — and the latter costs
+    /// 1500 CU on every transfer (SC-003). Thirty-two bytes per policy
+    /// version are cheaper.
     pub mint: Pubkey,
-    /// Хто ініціював зміну — перший підпис із зібраного кворуму.
+    /// Who initiated the change — the first signature of the collected
+    /// quorum.
     ///
-    /// Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить
-    /// навмисно: він належить журналу й `ActionProposal` (T025, T029), а
-    /// шістнадцять адрес у кожній версії політики були б третім дзеркалом того
-    /// самого факту.
+    /// The named list of everyone who authorised the action (FR-019c) is
+    /// deliberately not here: it belongs to the journal and `ActionProposal`
+    /// (T025, T029), and sixteen addresses in every policy version would be a
+    /// third mirror of the same fact.
     pub author: Pubkey,
-    /// Правила у канонічній розкладці. Порядок і межі тримає `rules::layout`.
+    /// The rules in the canonical layout. `rules::layout` holds the order and the bounds.
     pub rules: [RuleSlot; MAX_RULE_SLOTS],
-    /// sha256 над усім полем `rules`, порахований програмою при записі.
+    /// sha256 over the whole `rules` field, computed by the program at write
+    /// time.
     ///
-    /// Рахується тут, а не приймається від клієнта: хеш, який приніс той самий,
-    /// хто приніс байти, доводить лише те, що клієнт уміє рахувати хеші.
+    /// Computed here rather than accepted from the client: a hash brought by
+    /// the same party that brought the bytes proves only that the client
+    /// knows how to compute hashes.
     pub rules_hash: [u8; 32],
     pub bump: u8,
-    /// Явна набивка до вирівнювання 8. Без неї `bytemuck::Pod` не виводиться, а
-    /// мовчазна набивка компілятора потрапила б у хеш акаунта як сміття.
+    /// Explicit padding to alignment 8. Without it `bytemuck::Pod` cannot be
+    /// derived, and the compiler's silent padding would end up in the account
+    /// hash as garbage.
     pub padding: [u8; 3],
 }
 
-/// Розмір акаунта з дискримінатором Anchor.
+/// The account size including the Anchor discriminator.
 pub const POLICY_CONFIG_LEN: usize = 8 + std::mem::size_of::<PolicyConfig>();
 
 impl PolicyConfig {
-    /// Записати версію політики.
+    /// Writes a policy version.
     ///
-    /// Єдина точка запису `PolicyConfig` у програмі: її кличе `set_policy` для
-    /// версій від другої й `create_token` (T018) для першої. Два писці означали
-    /// б дві перевірки канонічності, з яких одна колись відстане.
+    /// The only place in the program that writes a `PolicyConfig`:
+    /// `set_policy` calls it for versions from the second, and `create_token`
+    /// (T018) for the first. Two writers would mean two canonicity checks,
+    /// one of which would fall behind some day.
     ///
-    /// Байти проходять `layout::validate` **до** запису: політика, що не могла
-    /// вийти з `encode`, не повинна доживати до того моменту, коли на її хеш
-    /// пошлеться запис журналу.
+    /// The bytes go through `layout::validate` **before** the write: a policy
+    /// that could not have come out of `encode` must not survive to the
+    /// moment a journal record refers to its hash.
     pub fn write(
         &mut self,
         version: u32,
@@ -152,12 +161,12 @@ mod tests {
         );
     }
 
-    /// Канонічність перевіряється **до** запису: інакше акаунт лишався б із
-    /// половиною нової політики після відмови.
+    /// Canonicity is checked **before** the write: otherwise the account would
+    /// be left with half of the new policy after a refusal.
     #[test]
     fn refuses_a_policy_the_encoder_could_not_have_produced() {
         let mut rules = open_rules();
-        rules[1] = 1; // ненульовий зарезервований байт
+        rules[1] = 1; // a non-zero reserved byte
         let mut policy = blank();
         assert_eq!(
             err(policy.write(2, Pubkey::default(), Pubkey::default(), &rules, 0, 254)),
@@ -166,7 +175,7 @@ mod tests {
         assert_eq!(policy.version, 0);
     }
 
-    /// Розмір акаунта — частина рахунку за оренду в кожній версії політики.
+    /// The account size is part of the rent bill for every policy version.
     #[test]
     fn the_account_has_no_hidden_padding() {
         assert_eq!(std::mem::size_of::<PolicyConfig>(), 496);

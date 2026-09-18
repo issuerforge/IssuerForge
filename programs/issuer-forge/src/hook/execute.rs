@@ -1,20 +1,22 @@
-//! `Execute` — точка, у якій правило стає невідворотним (FR-002, FR-011, FR-012).
+//! `Execute` — the point at which the rule becomes inescapable (FR-002,
+//! FR-011, FR-012).
 //!
-//! Токен-програма кличе цю інструкцію всередині кожного `transfer_checked` по
-//! mint із розширенням `TransferHook`. Обійти її не можна ні з гаманця, ні
-//! через CPI з чужої програми, ні делегованими повноваженнями: перевірка живе не
-//! в застосунку, а в самому токені.
+//! The token program calls this instruction inside every `transfer_checked`
+//! of a mint with the `TransferHook` extension. It cannot be bypassed from a
+//! wallet, through CPI from a foreign program, or with delegated authority:
+//! the check lives not in the app but in the token itself.
 //!
-//! **Що робить хук і чого не робить.** Він читає — акаунти статусу, лічильник,
-//! політику, — складає `TransferContext` і віддає рішення оцінювачу
-//! (`rules::evaluate`). Жодного правила тут не написано вдруге: розійтися з
-//! TS-половиною було б нічому. Пише хук рівно один акаунт — лічильник вікна
-//! відправника, і тільки після дозволу.
+//! **What the hook does and does not do.** It reads — the status accounts,
+//! the counter, the policy — assembles a `TransferContext` and hands the
+//! decision to the evaluator (`rules::evaluate`). Not a single rule is
+//! written a second time here: there would be nothing to diverge from the TS
+//! half. The hook writes exactly one account — the sender's window counter,
+//! and only after an allow.
 //!
-//! **Відсутність акаунта — відмова, а не пропуск** (FR-013). Тому акаунти
-//! статусу приймаються нетипізованими: `Account<'info, T>` дав би помилку Anchor
-//! «акаунт не ініціалізований», а холдер має побачити `SENDER_STATUS_MISSING` —
-//! назву причини, а не збій.
+//! **A missing account is a refusal, not a skip** (FR-013). That is why the
+//! status accounts are taken untyped: `Account<'info, T>` would yield the
+//! Anchor error "account not initialized", while the holder must see
+//! `SENDER_STATUS_MISSING` — the name of the reason, not a failure.
 use anchor_lang::prelude::*;
 use anchor_lang::{AccountDeserialize, AccountSerialize};
 use anchor_spl::token_2022::spl_token_2022::extension::transfer_hook::TransferHookAccount;
@@ -31,10 +33,10 @@ use crate::rules::evaluate::{
 };
 use crate::state::{HolderStatus, PolicyConfig, TokenConfig, VelocityCounter};
 
-/// Порядок полів **є протоколом**: він мусить збігатися з переліком у
-/// `extra_accounts.rs` рядок у рядок, бо токен-програма підкладає акаунти саме
-/// за тим переліком. Перестановка тут не зламає збірки — вона змусить хук
-/// читати чужий акаунт як свій.
+/// The field order **is the protocol**: it must match the list in
+/// `extra_accounts.rs` line for line, because the token program hands the
+/// accounts over by exactly that list. A reordering here does not break the
+/// build — it makes the hook read someone else's account as its own.
 #[derive(Accounts)]
 pub struct Execute<'info> {
     #[account(token::mint = mint)]
@@ -45,10 +47,10 @@ pub struct Execute<'info> {
     #[account(token::mint = mint)]
     pub destination_token: InterfaceAccount<'info, TokenAccount>,
 
-    /// CHECK: власник джерела переказу; його передає токен-програма.
+    /// CHECK: the owner of the transfer source; the token program passes it.
     pub owner: UncheckedAccount<'info>,
 
-    /// CHECK: перелік extra-акаунтів; його адресу перевіряє токен-програма.
+    /// CHECK: the extra account list; the token program checks its address.
     pub extra_account_meta_list: UncheckedAccount<'info>,
 
     #[account(
@@ -57,39 +59,40 @@ pub struct Execute<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// Чинна версія політики. Її адресу резолвить токен-програма з поля
-    /// `policy_version` у `TokenConfig`, тож підсунути іншу версію неможливо;
-    /// перевірка нижче лишається другим замком, а не єдиним.
+    /// The current policy version. The token program resolves its address
+    /// from the `policy_version` field in `TokenConfig`, so slipping in
+    /// another version is impossible; the check below remains a second lock,
+    /// not the only one.
     pub policy_config: AccountLoader<'info, PolicyConfig>,
 
-    /// CHECK: розбирається вручну — відсутність акаунта мусить давати наш код
-    /// відмови, а не помилку Anchor.
+    /// CHECK: parsed by hand — a missing account must yield our refusal code,
+    /// not an Anchor error.
     pub sender_status: UncheckedAccount<'info>,
 
-    /// CHECK: те саме; єдиний акаунт, який хук пише.
+    /// CHECK: the same; the only account the hook writes.
     #[account(mut)]
     pub sender_velocity: UncheckedAccount<'info>,
 
-    /// CHECK: те саме, для отримувача.
+    /// CHECK: the same, for the recipient.
     pub recipient_status: UncheckedAccount<'info>,
 
-    /// CHECK: програма SAS. Потрібна як акаунт, бо на неї посилаються зовнішні
-    /// PDA атестацій у переліку.
+    /// CHECK: the SAS program. Needed as an account because the external
+    /// attestation PDAs in the list refer to it.
     pub sas_program: UncheckedAccount<'info>,
 
-    /// CHECK: атестація відправника; розбирається `hook::attestation`.
+    /// CHECK: the sender's attestation; parsed by `hook::attestation`.
     pub sender_attestation: UncheckedAccount<'info>,
 
-    /// CHECK: атестація отримувача.
+    /// CHECK: the recipient's attestation.
     pub recipient_attestation: UncheckedAccount<'info>,
 }
 
-/// Токен-акаунт у стані переказу.
+/// A token account in the transferring state.
 ///
-/// Без цієї перевірки хук можна було б покликати напряму, поза переказом. Сам по
-/// собі такий виклик коштів не рухає, але він рухає **лічильник вікна** — тобто
-/// дає стороннім спосіб витратити чужий ліміт за період. Прапорець ставить сама
-/// токен-програма на час CPI.
+/// Without this check the hook could be called directly, outside a transfer.
+/// Such a call moves no funds by itself, but it moves the **window counter**
+/// — i.e. gives outsiders a way to spend someone else's period limit. The
+/// flag is set by the token program itself for the duration of the CPI.
 fn require_transferring(info: &AccountInfo) -> Result<()> {
     let data = info.try_borrow_data()?;
     let state = StateWithExtensions::<SplTokenAccount>::unpack(&data)
@@ -103,12 +106,13 @@ fn require_transferring(info: &AccountInfo) -> Result<()> {
     Ok(())
 }
 
-/// Прочитати `HolderStatus` із нетипізованого акаунта.
+/// Reads a `HolderStatus` from an untyped account.
 ///
-/// Три стани — три різні речі, і кожна має власний код відмови на виході:
-/// порожній акаунт означає «запису немає», чужий власник або нечитабельне тіло —
-/// «джерело недоступне», а запис не про цього холдера — теж недоступне, бо ми не
-/// знаємо, що сказало б справжнє.
+/// Three states are three different things, and each has its own refusal
+/// code on the way out: an empty account means "no record", a foreign owner
+/// or an unreadable body means "source unavailable", and a record about
+/// another holder is unavailable too, because we do not know what the real
+/// one would have said.
 fn read_holder(info: &AccountInfo, mint: &Pubkey, wallet: &Pubkey) -> SourceState<StatusRecord> {
     if info.data_is_empty() {
         return SourceState::Absent;
@@ -126,8 +130,8 @@ fn read_holder(info: &AccountInfo, mint: &Pubkey, wallet: &Pubkey) -> SourceStat
     }
 }
 
-/// Лічильник вікна. `None` — акаунта немає, і це відмова, якщо політика має
-/// ліміт за період (`VELOCITY_COUNTER_MISSING`).
+/// The window counter. `None` — the account does not exist, and that is a
+/// refusal if the policy has a period limit (`VELOCITY_COUNTER_MISSING`).
 fn read_counter(info: &AccountInfo, mint: &Pubkey, wallet: &Pubkey) -> Option<VelocityCounter> {
     if info.data_is_empty() || info.owner != &crate::ID {
         return None;
@@ -148,7 +152,7 @@ fn write_counter(info: &AccountInfo, counter: &VelocityCounter) -> Result<()> {
 }
 
 pub(crate) fn handler(ctx: Context<Execute>, amount: u64) -> Result<()> {
-    // Обидві сторони мусять бути в стані переказу: інакше це не переказ.
+    // Both parties must be in the transferring state: otherwise this is not a transfer.
     require_transferring(&ctx.accounts.source_token.to_account_info())?;
     require_transferring(&ctx.accounts.destination_token.to_account_info())?;
 
@@ -198,9 +202,10 @@ pub(crate) fn handler(ctx: Context<Execute>, amount: u64) -> Result<()> {
     };
 
     let policy = ctx.accounts.policy_config.load()?;
-    // Політика чужого mint із тим самим номером версії — єдине, чого резолюція
-    // за seeds не виключає сама (адреса виводиться з mint, але акаунт міг би
-    // прийти від клієнта, який резолюцію обійшов).
+    // A policy of another mint with the same version number is the only thing
+    // seed resolution does not rule out by itself (the address is derived
+    // from the mint, but the account could have come from a client that
+    // bypassed the resolution).
     require_keys_eq!(
         policy.mint,
         mint,
@@ -213,8 +218,8 @@ pub(crate) fn handler(ctx: Context<Execute>, amount: u64) -> Result<()> {
 
     evaluate(&policy.rules, &context)?;
 
-    // Лічильник рухається **тільки після дозволу**: відхилений переказ не
-    // витрачає ліміту, інакше відмова коштувала б холдеру вікна.
+    // The counter moves **only after an allow**: a refused transfer spends no
+    // limit, otherwise a refusal would cost the holder the window.
     if let (Some(mut counter), Some(window)) = (counter, period_window_seconds(&policy.rules)) {
         let closed = context.now >= counter.window_start.saturating_add(i64::from(window));
         if closed {

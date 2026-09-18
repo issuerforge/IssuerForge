@@ -1,34 +1,38 @@
 use anchor_lang::prelude::*;
 
-/// Усі помилки програми одним переліком — і це вимушено, а не за смаком.
+/// All the program's errors in one enum — and that is forced, not a matter
+/// of taste.
 ///
-/// Anchor нумерує коди послідовно від `ERROR_CODE_OFFSET` (6000) у порядку
-/// оголошення. Два окремі `#[error_code]` без `offset` почались би з 6000 обидва
-/// й зіткнулись, а `#[error_code(offset = …)]` розводить їх **тільки в рантаймі**:
-/// генератор IDL хардкодить `ERROR_CODE_OFFSET + #id`
-/// (`anchor-syn-0.32.1/src/idl/error.rs:29`) і про зсув не знає. IDL із чужою
-/// нумерацією гірший за її відсутність: клієнт Anchor назвав би код 6000 —
-/// реальну відмову переказу — першою помилкою валідації.
+/// Anchor numbers codes sequentially from `ERROR_CODE_OFFSET` (6000) in
+/// declaration order. Two separate `#[error_code]`s without `offset` would
+/// both start at 6000 and collide, while `#[error_code(offset = …)]`
+/// separates them **only at runtime**: the IDL generator hardcodes
+/// `ERROR_CODE_OFFSET + #id` (`anchor-syn-0.32.1/src/idl/error.rs:29`) and
+/// knows nothing of the offset. An IDL with the wrong numbering is worse than
+/// none: the Anchor client would name code 6000 — a real transfer refusal —
+/// as the first validation error.
 ///
-/// Звідси розкладка нижче, у якої дві секції й одне правило.
+/// Hence the layout below, which has two sections and one rule.
 ///
-/// **Секція 1, індекси 0…11 — коди відмови в переказі.** Дзеркало
-/// `packages/shared/src/refusal.ts`: назви й **порядок** збігаються один в один,
-/// бо `hookIndex` там і є цей індекс, а `6000 + hookIndex` — те число, що
-/// приїжджає в логах і далі в журнал, який емітент показує регулятору. Порядок
-/// повторює порядок перевірок у хуку: відмова — це перша перевірка, що не
-/// пройшла. Логіку, яка їх повертає, пише T015; тут вони оголошені, бо номер
-/// має бути закріплений до першої транзакції, а не після.
+/// **Section 1, indices 0…11 — the transfer refusal codes.** A mirror of
+/// `packages/shared/src/refusal.ts`: the names and the **order** match one to
+/// one, because `hookIndex` there is this index, and `6000 + hookIndex` is
+/// the number that arrives in the logs and then in the journal the issuer
+/// shows the regulator. The order repeats the order of checks in the hook: a
+/// refusal is the first check that failed. The logic that returns them is
+/// written by T015; they are declared here because the number must be pinned
+/// before the first transaction, not after.
 ///
-/// **Секція 2, індекси 12 і далі — перевірки вхідних даних і повноважень.**
+/// **Section 2, indices 12 onwards — input and authority checks.**
 ///
-/// **Правило одне: варіанти тільки дописуються в кінець своєї секції.** Вставка
-/// в середину зсуває всі наступні коди й тихо перейменовує причини відмов у вже
-/// виданих записах журналу. Тест `refusal_codes_match_the_shared_table` існує
-/// саме проти цього.
+/// **One rule: variants are only ever appended at the end of their
+/// section.** An insertion in the middle shifts every following code and
+/// silently renames refusal reasons in journal records already issued. The
+/// test `refusal_codes_match_the_shared_table` exists precisely against
+/// that.
 #[error_code]
 pub enum ForgeError {
-    // ─── Секція 1: відмови переказу (дзеркало refusal.ts) ────────────────────
+    // ─── Section 1: transfer refusals (a mirror of refusal.ts) ───────────────
     #[msg("policy version does not match the one this mint is configured for")]
     PolicyVersionMismatch,
     #[msg("sender has no status account")]
@@ -53,20 +57,23 @@ pub enum ForgeError {
     VelocityCounterMissing,
     #[msg("amount exceeds the limit for the period")]
     PeriodLimitExceeded,
-    /// Політика містить вид правила, якого ця версія програми не знає.
+    /// The policy contains a rule kind this version of the program does not
+    /// know.
     ///
-    /// **Останній у секції, і це порядок перевірки, а не поступка нумерації.**
-    /// Правило, якого читач не розуміє, робить неможливим саме «так»: якщо
-    /// зрозуміле правило вже відмовило, його причина точніша й називається
-    /// вона; якщо ж усі зрозумілі пройшли, сказати «так» не можна, бо невідоме
-    /// могло сказати «ні».
+    /// **Last in the section, and that is the check order, not a concession
+    /// to numbering.** A rule the reader does not understand makes "yes"
+    /// itself impossible: if an understood rule has already refused, its
+    /// reason is more precise and it is the one named; if all the understood
+    /// ones passed, "yes" still cannot be said, because the unknown one might
+    /// have said "no".
     ///
-    /// Досяжний тільки після відкату програми на версію, старшу за політику:
-    /// запис невідомого виду відхиляє `set_policy` (`PolicyRuleKindUnknown`).
+    /// Reachable only after rolling the program back to a version older than
+    /// the policy: `set_policy` rejects writing an unknown kind
+    /// (`PolicyRuleKindUnknown`).
     #[msg("policy carries a rule kind this version of the program does not know")]
     UnknownRuleKind,
 
-    // ─── Секція 2: перевірки вхідних даних і повноважень ─────────────────────
+    // ─── Section 2: input and authority checks ───────────────────────────────
     #[msg("issuer must have at least two members to reach a quorum")]
     TooFewMembers,
     #[msg("member list exceeds the fixed capacity")]
@@ -145,17 +152,17 @@ pub enum ForgeError {
     FeeRateOutOfRange,
 }
 
-/// Перший код секції перевірок. Секція відмов займає рівно `ERROR_CODE_OFFSET…+12`.
+/// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
 pub const VALIDATION_ERROR_BASE: u32 = anchor_lang::error::ERROR_CODE_OFFSET + 13;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Дзеркало числове, тож і звіряється числами. Таблиця нижче переписана з
-    /// `packages/shared/src/refusal.ts` вручну — іншого способу немає, і саме
-    /// тому вона тут є: розходження має падати тестом, а не виявлятись у
-    /// журналі через місяць.
+    /// The mirror is numeric, so it is checked numerically. The table below is
+    /// copied from `packages/shared/src/refusal.ts` by hand — there is no
+    /// other way, and that is exactly why it is here: a divergence must fail
+    /// a test, not surface in the journal a month later.
     #[test]
     fn refusal_codes_match_the_shared_table() {
         let expected: [(ForgeError, u32); 13] = [
@@ -179,24 +186,24 @@ mod tests {
         }
     }
 
-    /// Секція перевірок починається одразу за відмовами й не залазить у них.
+    /// The checks section starts right after the refusals and does not intrude on them.
     #[test]
     fn validation_errors_start_after_the_refusal_range() {
         assert_eq!(VALIDATION_ERROR_BASE, 6013);
         assert_eq!(u32::from(ForgeError::TooFewMembers), VALIDATION_ERROR_BASE);
     }
 
-    /// Секція 2 тільки дописується в кінець. Вставка в середину зсунула б усі
-    /// наступні коди й тихо перейменувала причини відмов у транзакціях, які вже
-    /// лежать у ланцюгу.
+    /// Section 2 is only ever appended at the end. An insertion in the middle
+    /// would shift every following code and silently rename refusal reasons
+    /// in transactions already on chain.
     #[test]
     fn validation_codes_only_ever_grow_at_the_end() {
-        // Останній код, який був до T014.
+        // The last code that existed before T014.
         assert_eq!(
             u32::from(ForgeError::MissingOperationalKey),
             VALIDATION_ERROR_BASE + 10
         );
-        // Перший і останній із доданих T014.
+        // The first and the last of those added by T014.
         assert_eq!(
             u32::from(ForgeError::TokenNotFromThisIssuer),
             VALIDATION_ERROR_BASE + 11
@@ -205,7 +212,7 @@ mod tests {
             u32::from(ForgeError::QuorumNotReached),
             VALIDATION_ERROR_BASE + 19
         );
-        // Перший і останній із доданих T016.
+        // The first and the last of those added by T016.
         assert_eq!(
             u32::from(ForgeError::PowerNotDelegated),
             VALIDATION_ERROR_BASE + 20
@@ -214,7 +221,7 @@ mod tests {
             u32::from(ForgeError::HolderAccountMismatch),
             VALIDATION_ERROR_BASE + 26
         );
-        // Перший і останній із доданих T055.
+        // The first and the last of those added by T055.
         assert_eq!(
             u32::from(ForgeError::NotTheAttestor),
             VALIDATION_ERROR_BASE + 27
@@ -223,7 +230,7 @@ mod tests {
             u32::from(ForgeError::AttestationNotLatest),
             VALIDATION_ERROR_BASE + 33
         );
-        // Перший і останній із доданих T018.
+        // The first and the last of those added by T018.
         assert_eq!(
             u32::from(ForgeError::NotAnAttestorMember),
             VALIDATION_ERROR_BASE + 34

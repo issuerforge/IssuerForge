@@ -1,18 +1,20 @@
-//! Випуск токена (FR-001, FR-005, FR-006, FR-022) і запис його метаданих.
+//! Token issuance (FR-001, FR-005, FR-006, FR-022) and writing its metadata.
 //!
-//! **Одна транзакція робить токен цілим.** Mint із п'ятьма розширеннями,
-//! `TokenConfig`, політика версії 1, атестація резерву #0, рахунок засновника й
-//! початкова емісія — усе тут. Проміжного стану, у якому токен уже існує, а
-//! правило, резерв чи політика ще ні, не буває: інструкція або пройшла вся, або
-//! не залишила по собі нічого.
+//! **One transaction makes the token whole.** The mint with five extensions,
+//! `TokenConfig`, policy version 1, reserve attestation #0, the founder's
+//! account and the initial issuance — all here. There is no intermediate
+//! state in which the token already exists but the rule, the reserve or the
+//! policy does not yet: the instruction either passed in full or left
+//! nothing behind.
 //!
-//! **Метадані пишуться другою транзакцією, і це не недогляд.** Розрахунок
-//! бюджету (`SCRATCHPAD.md`, блок T018) дав ~1180 байтів із 1232 ще до рядків
-//! назви й символу: 384 байти самої політики, 14 акаунтів, два підписи. Назва й
-//! посилання не вміщаються — тому `create_token` ставить `MetadataPointer` на
-//! сам mint (нуль байтів аргументів), а `set_token_metadata` дописує вміст.
-//! Вікно між двома транзакціями безпечне: усі рахунки за замовчуванням
-//! заморожені, а назва нічого не дозволяє й не забороняє.
+//! **The metadata is written by a second transaction, and that is not an
+//! oversight.** The budget calculation (`SCRATCHPAD.md`, block T018) gave
+//! ~1180 bytes of 1232 before the name and symbol strings: 384 bytes of the
+//! policy itself, 14 accounts, two signatures. The name and the URI do not
+//! fit — so `create_token` sets a `MetadataPointer` to the mint itself (zero
+//! bytes of arguments), and `set_token_metadata` writes the content. The
+//! window between the two transactions is safe: all accounts are frozen by
+//! default, and a name neither allows nor forbids anything.
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, CreateAccount, Transfer};
 use anchor_spl::associated_token::{self, AssociatedToken};
@@ -41,19 +43,23 @@ use crate::state::{
     ReserveAttestation, TokenConfig, VelocityCounter, CURRENCY_BYTES, POLICY_CONFIG_LEN,
 };
 
-/// Розширення mint. **Перелік є контрактом із хуком, а не набором опцій.**
+/// The mint extensions. **The list is a contract with the hook, not a set of
+/// options.**
 ///
-/// - `TransferHook` — те, заради чого проєкт існує: без нього правило
-///   перевіряє застосунок, а не токен.
-/// - `DefaultAccountState = Frozen` — рахунок, якого емітент не онбордив, не
-///   отримує коштів. Це і робить `thaw_holder` осмисленим.
-/// - `PermanentDelegate` — вилучення за приписом (FR-017), кворумом і з T027.
-/// - `Pausable` — авторитетна пауза обігу (FR-016); `TokenConfig.paused_at`
-///   лишається дзеркалом для екранів, а не джерелом правди.
-/// - `MetadataPointer` — вказує на сам mint; вміст пише `set_token_metadata`.
+/// - `TransferHook` — what the project exists for: without it the app checks
+///   the rule, not the token.
+/// - `DefaultAccountState = Frozen` — an account the issuer did not onboard
+///   receives no funds. This is what makes `thaw_holder` meaningful.
+/// - `PermanentDelegate` — seizure under an order (FR-017), by quorum and
+///   from T027.
+/// - `Pausable` — the authoritative pause of circulation (FR-016);
+///   `TokenConfig.paused_at` remains a mirror for the screens, not a source
+///   of truth.
+/// - `MetadataPointer` — points at the mint itself; `set_token_metadata`
+///   writes the content.
 ///
-/// Порядок у масиві впливає тільки на розмір акаунта, і то не впливає:
-/// `try_calculate_account_len` рахує суму, а не послідовність.
+/// The order in the array affects only the account size, and does not even
+/// affect that: `try_calculate_account_len` computes a sum, not a sequence.
 const MINT_EXTENSIONS: [ExtensionType; 5] = [
     ExtensionType::TransferHook,
     ExtensionType::DefaultAccountState,
@@ -62,84 +68,93 @@ const MINT_EXTENSIONS: [ExtensionType; 5] = [
     ExtensionType::MetadataPointer,
 ];
 
-/// Стелі рядків метаданих.
+/// The ceilings on the metadata strings.
 ///
-/// Межа тут не через смак: `token_metadata_initialize` **реалокує mint**, і
-/// оренду за новий розмір платить той, хто кличе. Без стелі один виклик міг би
-/// зажадати мегабайта оренди з гаманця офіцера.
+/// The bound is not a matter of taste: `token_metadata_initialize`
+/// **reallocates the mint**, and the rent for the new size is paid by the
+/// caller. Without a ceiling one call could demand a megabyte of rent from
+/// an officer's wallet.
 const MAX_NAME_LEN: usize = 32;
 const MAX_SYMBOL_LEN: usize = 12;
 const MAX_URI_LEN: usize = 200;
 
-/// Стеля ставки комісії: 100% у базисних пунктах (FR-038a).
+/// The fee rate ceiling: 100% in basis points (FR-038a).
 const MAX_FEE_BPS: u16 = 10_000;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreateTokenArgs {
     pub decimals: u8,
-    /// SAS-credential провайдера, атестації якого приймає цей токен, і схема
-    /// тих атестацій. Обидва — незмінні параметри (FR-005): їхні зсуви в
-    /// `TokenConfig` зашиті в `address_config` переліку акаунтів хука.
+    /// The SAS credential of the provider whose attestations this token
+    /// accepts, and the schema of those attestations. Both are immutable
+    /// parameters (FR-005): their offsets in `TokenConfig` are baked into the
+    /// `address_config` of the hook's account list.
     pub attestation_credential: Pubkey,
     pub attestation_schema: Pubkey,
-    /// Скарбниця платформи (FR-038).
+    /// The platform treasury (FR-038).
     pub treasury: Pubkey,
     pub fee_bps: u16,
-    /// Строк придатності атестації резерву, секунди (FR-023b).
+    /// The reserve attestation validity period, seconds (FR-023b).
     pub attestation_max_age: i64,
-    /// Валюта резерву, вона ж валюта токена.
+    /// The reserve currency, which is also the token's currency.
     pub reserve_currency: [u8; CURRENCY_BYTES],
-    /// Політика версії 1 у канонічній розкладці, рівно `RULES_BYTES` байтів.
+    /// Policy version 1 in the canonical layout, exactly `RULES_BYTES` bytes.
     pub rules: Vec<u8>,
-    /// Початкова емісія. Проходить ту саму перевірку резерву, що й `mint`
-    /// (T038): інших шляхів появи токенів у програмі немає.
+    /// The initial issuance. Goes through the same reserve check as `mint`
+    /// (T038): the program has no other way for tokens to come into
+    /// existence.
     pub initial_supply: u64,
-    /// Перша атестація резерву: сума й момент, якого вона стосується. Валюта
-    /// береться з `reserve_currency` — двох валют в одній транзакції не буває.
+    /// The first reserve attestation: the amount and the moment it refers to.
+    /// The currency is taken from `reserve_currency` — there are never two
+    /// currencies in one transaction.
     pub reserve_amount: u64,
     pub reserve_attested_at: i64,
-    /// Статус засновника у власному реєстрі емітента.
+    /// The founder's status in the issuer's own registry.
     ///
-    /// Без нього рахунок, на який лягла емісія, не зміг би нічого відправити:
-    /// хук читає статус відправника на кожному переказі й відсутність запису
-    /// вважає відмовою (FR-013).
+    /// Without it the account the issuance landed on could send nothing: the
+    /// hook reads the sender's status on every transfer and treats a missing
+    /// record as a refusal (FR-013).
     pub founder_status: HolderStatusInput,
 }
 
-/// Випуск токена.
+/// Token issuance.
 ///
-/// **Підписів рівно два — засновник і атестатор**, і кожен потрібен із власної
-/// причини. Засновник мусить бути адміністратором складу: токен не створюється
-/// від імені людей, серед яких тебе немає, і операційний ключ платформи сюди не
-/// дістає ніколи (FR-035a). Атестатор потрібен тому, що перша атестація не може
-/// передувати токену — її адреса виводиться з mint, — а токен без атестації
-/// означав би емісію, за якою ніхто не поручився.
+/// **Exactly two signatures — the founder and the attestor**, and each is
+/// needed for its own reason. The founder must be an admin of the
+/// membership: a token is not created on behalf of people you are not
+/// among, and the platform's operational key never reaches here (FR-035a).
+/// The attestor is needed because the first attestation cannot precede the
+/// token — its address is derived from the mint — and a token without an
+/// attestation would mean an issuance nobody vouched for.
 ///
-/// **Кворуму тут немає, і це вимушено, а не за смаком.** FR-035 називає емісію
-/// серед дій, які потребують кворуму, і `mint` (T038) його матиме. Але кворум
-/// 2-з-N у цій транзакції коштує ще один підпис і ще один ключ — 96 байтів на
-/// 1180 наявних із 1232, — тобто транзакції з кворумом просто не існує без
-/// таблиці адрес. Що при цьому не втрачено: емітент на момент випуску не має
-/// жодного холдера, тож кворум захищав би тільки самих підписантів від себе;
-/// продовження емісії, вилучення, пауза й зміна політики кворум мають.
+/// **There is no quorum here, and that is forced, not a matter of taste.**
+/// FR-035 names issuance among the actions that need a quorum, and `mint`
+/// (T038) will have one. But a 2-of-N quorum in this transaction costs one
+/// more signature and one more key — 96 bytes on top of the 1180 of 1232
+/// already used — i.e. a transaction with a quorum simply does not exist
+/// without an address lookup table. What is not lost: at the moment of
+/// issuance the issuer has no holders, so a quorum would protect only the
+/// signers from themselves; further issuance, seizure, pause and policy
+/// change do have a quorum.
 #[derive(Accounts)]
 #[instruction(args: CreateTokenArgs)]
 pub struct CreateToken<'info> {
-    /// Засновник, він же платник оренди.
+    /// The founder, who is also the rent payer.
     ///
-    /// Об'єднані навмисно: окремий платник — це шістнадцятий акаунт і третій
-    /// підпис, а їх немає куди покласти. Гаманець засновника без SOL платформа
-    /// поповнює перед випуском; у `set_token_metadata` нижче платник знову
-    /// окремий, бо там місце є.
+    /// Merged on purpose: a separate payer is a sixteenth account and a
+    /// third signature, and there is nowhere to put them. A founder's wallet
+    /// without SOL is topped up by the platform before the issuance; in
+    /// `set_token_metadata` below the payer is separate again, because there
+    /// is room there.
     #[account(mut)]
     pub founder: Signer<'info>,
 
-    /// Атестатор резерву цього токена. Мусить стояти у складі емітента з роллю
-    /// атестатора, а вона за `initialize_issuer` несумісна з будь-якою іншою.
+    /// The reserve attestor of this token. Must be in the issuer's membership
+    /// with the attestor role, which under `initialize_issuer` is
+    /// incompatible with any other.
     pub attestor: Signer<'info>,
 
-    /// `mut`, бо інструкція збільшує лічильник токенів — з нього виведена
-    /// адреса mint.
+    /// `mut`, because the instruction increments the token counter — the mint
+    /// address is derived from it.
     #[account(
         mut,
         seeds = [ISSUER_SEED, issuer_config.issuer_id.as_ref()],
@@ -147,9 +162,10 @@ pub struct CreateToken<'info> {
     )]
     pub issuer_config: Account<'info, IssuerConfig>,
 
-    /// CHECK: адресу задають seeds, вміст пише токен-програма. Типізувати
-    /// нічим: акаунт ще не існує, а `InterfaceAccount<Mint>` вимагав би
-    /// ініціалізованого mint — тобто того, що ця інструкція якраз і робить.
+    /// CHECK: the seeds set the address, the token program writes the
+    /// content. There is nothing to type it with: the account does not exist
+    /// yet, and `InterfaceAccount<Mint>` would require an initialised mint —
+    /// i.e. exactly what this instruction does.
     #[account(
         mut,
         seeds = [MINT_SEED, issuer_config.issuer_id.as_ref(), &issuer_config.token_count.to_le_bytes()],
@@ -166,9 +182,9 @@ pub struct CreateToken<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// Політика версії 1. Пишеться тією самою `PolicyConfig::write`, що й усі
-    /// наступні версії: два писці означали б дві перевірки канонічності, з яких
-    /// одна колись відстане.
+    /// Policy version 1. Written with the same `PolicyConfig::write` as all
+    /// later versions: two writers would mean two canonicity checks, one of
+    /// which would fall behind some day.
     #[account(
         init,
         payer = founder,
@@ -178,8 +194,8 @@ pub struct CreateToken<'info> {
     )]
     pub policy_config: AccountLoader<'info, PolicyConfig>,
 
-    /// Атестація #0. Індекс у seeds і `init` роблять історію незмінною без
-    /// жодної перевірки з нашого боку (FR-026).
+    /// Attestation #0. The index in the seeds and `init` make the history
+    /// immutable without any check on our side (FR-026).
     #[account(
         init,
         payer = founder,
@@ -189,9 +205,10 @@ pub struct CreateToken<'info> {
     )]
     pub attestation: Account<'info, ReserveAttestation>,
 
-    /// CHECK: адресу виводить і звіряє сама ATA-програма при створенні —
-    /// повторювати `create_program_address` тут означало б платити за ту саму
-    /// перевірку двічі. Створити його наперед не можна: mint ще не існує.
+    /// CHECK: the ATA program itself derives and checks the address at
+    /// creation — repeating `create_program_address` here would mean paying
+    /// for the same check twice. It cannot be created in advance: the mint
+    /// does not exist yet.
     #[account(mut)]
     pub founder_token_account: UncheckedAccount<'info>,
 
@@ -219,18 +236,18 @@ pub struct CreateToken<'info> {
 }
 
 pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -> Result<()> {
-    // Засновник — адміністратор складу. Ця перевірка і є FR-035a на цьому
-    // шляху: операційний ключ платформи в складі не стоїть, тож токенів він не
-    // створює навіть скомпрометованим.
+    // The founder is an admin of the membership. This check is FR-035a on
+    // this path: the platform's operational key is not in the membership, so
+    // it creates no tokens even when compromised.
     require!(
         ctx.accounts
             .issuer_config
             .member_has(&ctx.accounts.founder.key(), role::ADMIN),
         ForgeError::NotAnAdmin
     );
-    // Атестатор — теж учасник складу, а не будь-який ключ, який засновник
-    // назвав атестатором. Інакше емітент поручався б за власний резерв сам,
-    // просто підписавши другим гаманцем (FR-024).
+    // The attestor is a member of the membership too, not any key the founder
+    // named as the attestor. Otherwise the issuer would vouch for its own
+    // reserve itself, simply by signing with a second wallet (FR-024).
     require!(
         ctx.accounts
             .issuer_config
@@ -239,8 +256,8 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     );
 
     validate_currency(&args.reserve_currency)?;
-    // Нульовий строк зробив би протермінованою кожну атестацію, включно з тією,
-    // що створюється рядком нижче: токен випустився б непридатним до емісії.
+    // A zero period would make every attestation expired, including the one
+    // created a line below: the token would be issued unfit for issuance.
     require!(
         args.attestation_max_age > 0,
         ForgeError::AttestationMaxAgeInvalid
@@ -261,10 +278,10 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     ];
     let config_signer: &[&[u8]] = &[TOKEN_SEED, mint_key.as_ref(), &[ctx.bumps.token_config]];
 
-    // ── mint і його розширення ──────────────────────────────────────────────
-    // Порядок жорсткий і заданий токен-програмою: акаунт, потім розширення,
-    // потім `initialize_mint2`. Розширення, ініціалізоване після mint, не
-    // ініціалізується взагалі.
+    // ── the mint and its extensions ─────────────────────────────────────────
+    // The order is strict and set by the token program: the account, then the
+    // extensions, then `initialize_mint2`. An extension initialised after the
+    // mint is not initialised at all.
     let space = ExtensionType::try_calculate_account_len::<MintState>(&MINT_EXTENSIONS)?;
     system_program::create_account(
         CpiContext::new_with_signer(
@@ -284,8 +301,9 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         token_program_id: token_program.clone(),
         mint: ctx.accounts.mint.to_account_info(),
     };
-    // Вказівник дивиться на сам mint: метадані живуть у тому ж акаунті, який їх
-    // описує, тож окремого акаунта, який можна підмінити, не існує.
+    // The pointer points at the mint itself: the metadata lives in the same
+    // account it describes, so there is no separate account that could be
+    // swapped.
     metadata_pointer_initialize(
         CpiContext::new(token_program.clone(), extension_accounts),
         Some(config_key),
@@ -326,9 +344,9 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         &config_key,
     )?;
 
-    // Для `Pausable` в anchor-spl 0.32.1 обгортки немає — інструкція будується
-    // напряму. Підпису вона не потребує: `initialize` лише записує, хто зможе
-    // ставити паузу далі.
+    // anchor-spl 0.32.1 has no wrapper for `Pausable` — the instruction is
+    // built directly. It needs no signature: `initialize` only records who
+    // will be able to pause later.
     let pausable = spl_token_2022::extension::pausable::instruction::initialize(
         &token_program.key(),
         &mint_key,
@@ -339,9 +357,9 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         &[ctx.accounts.mint.to_account_info(), token_program.clone()],
     )?;
 
-    // Обидва повноваження — PDA `TokenConfig`. Жодна людина не тримає ключа,
-    // яким можна надрукувати чи заморозити: усе, що з ними робиться, проходить
-    // через інструкції цієї програми з їхніми перевірками.
+    // Both authorities are the `TokenConfig` PDA. No person holds a key that
+    // can mint or freeze: everything done with them goes through this
+    // program's instructions with their checks.
     initialize_mint2(
         CpiContext::new(
             token_program.clone(),
@@ -354,7 +372,7 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         Some(&config_key),
     )?;
 
-    // ── конфігурація токена ─────────────────────────────────────────────────
+    // ── the token configuration ─────────────────────────────────────────────
     let config = &mut ctx.accounts.token_config;
     config.issuer = ctx.accounts.issuer_config.key();
     config.mint = mint_key;
@@ -382,7 +400,7 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         )?;
     }
 
-    // ── перша атестація й гейт емісії ───────────────────────────────────────
+    // ── the first attestation and the issuance gate ─────────────────────────
     require!(
         args.reserve_attested_at <= now,
         ForgeError::AttestationInTheFuture
@@ -396,10 +414,11 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     attestation.attested_at = args.reserve_attested_at;
     attestation.bump = ctx.bumps.attestation;
 
-    // Обидві перевірки — ті самі функції, що й у `mint` (T038). Тут вони
-    // виглядають надлишковими (атестація щойно створена, обіг завідомо нуль), і
-    // саме тому стоять: шлях появи токенів мусить бути один, інакше «той самий»
-    // гейт колись розійдеться на два.
+    // Both checks are the same functions as in `mint` (T038). Here they look
+    // redundant (the attestation was just created, circulation is known to
+    // be zero), and that is exactly why they are here: there must be one way
+    // for tokens to come into existence, otherwise "the same" gate will one
+    // day split into two.
     require_latest(&ctx.accounts.token_config, &ctx.accounts.attestation)?;
     let supply = {
         let data = ctx.accounts.mint.try_borrow_data()?;
@@ -415,12 +434,13 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     }
     .require_within_reserve()?;
 
-    // ── рахунок засновника й початкова емісія ───────────────────────────────
-    // **Емісія йде на власний рахунок емітента, і це не спрощення.** `mint_to`
-    // хука не кличе: токени, надруковані просто на адресу, названу засновником,
-    // потрапили б туди без жодної перевірки правил. Тому початковий випуск
-    // лягає на гаманець, який щойно підписав транзакцію, а будь-який рух далі —
-    // це переказ, і його перевіряє хук.
+    // ── the founder's account and the initial issuance ──────────────────────
+    // **The issuance goes to the issuer's own account, and that is not a
+    // simplification.** `mint_to` does not call the hook: tokens minted
+    // straight to an address the founder named would land there with no rule
+    // check at all. So the initial issuance lands on the wallet that just
+    // signed the transaction, and any movement from there is a transfer, and
+    // the hook checks it.
     associated_token::create(CpiContext::new(
         ctx.accounts.associated_token_program.to_account_info(),
         associated_token::Create {
@@ -433,10 +453,10 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         },
     ))?;
 
-    // Ті самі два акаунти, що заводить `thaw_holder`, і записуються вони через
-    // ті самі єдині точки запису. Розморожування дублюється тут не за
-    // зручністю: `DefaultAccountState = Frozen` уже діє, а `mint_to` на
-    // заморожений рахунок токен-програма відхиляє.
+    // The same two accounts `thaw_holder` creates, and they are written
+    // through the same single write points. The thaw is duplicated here not
+    // for convenience: `DefaultAccountState = Frozen` is already in effect,
+    // and the token program rejects `mint_to` onto a frozen account.
     let status = &mut ctx.accounts.holder_status;
     status.mint = mint_key;
     status.wallet = ctx.accounts.founder.key();
@@ -471,8 +491,8 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         args.initial_supply,
     )?;
 
-    // Остання дія: номер зайнятий тільки тоді, коли токен за ним справді
-    // створений.
+    // The last action: the number is taken only when the token behind it is
+    // really created.
     ctx.accounts.issuer_config.token_count = ctx
         .accounts
         .issuer_config
@@ -490,15 +510,15 @@ pub struct SetTokenMetadataArgs {
     pub uri: String,
 }
 
-/// Запис метаданих у сам mint (FR-001).
+/// Writing the metadata into the mint itself (FR-001).
 ///
-/// Друга транзакція випуску. Розділення чисто бюджетне — див. заголовок файла, —
-/// але воно дало й приємний наслідок: платник тут знову окремий від того, хто
-/// санкціонує, як у `initialize_issuer`.
+/// The second issuance transaction. The split is purely budgetary — see the
+/// file header — but it had a pleasant consequence too: the payer here is
+/// separate again from whoever authorises, as in `initialize_issuer`.
 ///
-/// Повторний виклик відхиляє токен-програма: TLV-запис метаданих уже
-/// існуватиме. Зміна назви — це `token_metadata_update_field` і окрема дія
-/// емітента, якої в M1 немає.
+/// A repeat call is rejected by the token program: the metadata TLV entry
+/// will already exist. Renaming is `token_metadata_update_field` and a
+/// separate issuer action, which M1 does not have.
 #[derive(Accounts)]
 pub struct SetTokenMetadata<'info> {
     #[account(
@@ -514,18 +534,18 @@ pub struct SetTokenMetadata<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// CHECK: mint звірений із `TokenConfig`; вміст читає й пише токен-програма.
+    /// CHECK: the mint is checked against `TokenConfig`; the token program reads and writes the content.
     #[account(
         mut,
         constraint = mint.key() == token_config.mint @ ForgeError::HolderAccountMismatch,
     )]
     pub mint: UncheckedAccount<'info>,
 
-    /// Хто доплачує оренду за виріслий mint. Повноважень не дає.
+    /// Who tops up the rent for the grown mint. Grants no powers.
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// Адміністратор складу емітента.
+    /// An admin of the issuer's membership.
     pub authority: Signer<'info>,
 
     pub token_program: Interface<'info, TokenInterface>,
@@ -552,9 +572,10 @@ pub(crate) fn set_metadata_handler(
     let mint_key = ctx.accounts.mint.key();
     let token_program = ctx.accounts.token_program.to_account_info();
 
-    // Токен-програма реалокує mint сама, але оренди не додає — вона очікує, що
-    // лампорти вже на місці. Дорахувати їх мусимо ми, і саме тому рядки мають
-    // стелю: інакше розмір реалоку задавав би той, хто кличе.
+    // The token program reallocates the mint itself but adds no rent — it
+    // expects the lamports to be there already. We have to top them up, and
+    // that is exactly why the strings have a ceiling: otherwise the caller
+    // would set the realloc size.
     let metadata = TokenMetadata {
         name: args.name.clone(),
         symbol: args.symbol.clone(),
@@ -582,9 +603,9 @@ pub(crate) fn set_metadata_handler(
         )?;
     }
 
-    // Право змінювати метадані далі лишається за PDA, а не за людиною: інакше
-    // «незмінні параметри», які майстер показує при випуску (FR-005), змінював
-    // би один ключ поза будь-якою перевіркою.
+    // The right to change the metadata later stays with the PDA, not with a
+    // person: otherwise the "immutable parameters" the wizard shows at
+    // issuance (FR-005) would be changed by one key outside any check.
     let config_signer: &[&[u8]] = &[TOKEN_SEED, mint_key.as_ref(), &[ctx.accounts.token_config.bump]];
     token_metadata_initialize(
         CpiContext::new_with_signer(
@@ -611,10 +632,11 @@ mod tests {
     use super::*;
     use anchor_lang::solana_program::program_pack::Pack;
 
-    /// Розширення mint є контрактом із хуком: без `TransferHook` правило не
-    /// виконується, без `DefaultAccountState` не має сенсу `thaw_holder`, без
-    /// `MetadataPointer` друга транзакція не має куди писати. Перелік
-    /// перевіряється числом, щоб «прибрати одне заодно» падало тестом.
+    /// The mint extensions are a contract with the hook: without
+    /// `TransferHook` the rule is not enforced, without `DefaultAccountState`
+    /// `thaw_holder` makes no sense, without `MetadataPointer` the second
+    /// transaction has nowhere to write. The list is checked by count so that
+    /// "remove one while at it" fails a test.
     #[test]
     fn the_mint_carries_every_extension_the_product_depends_on() {
         assert!(MINT_EXTENSIONS.contains(&ExtensionType::TransferHook));
@@ -625,10 +647,11 @@ mod tests {
         assert_eq!(MINT_EXTENSIONS.len(), 5);
     }
 
-    /// Рахунок, створений для такого mint, мусить нести супутні розширення
-    /// (`TransferHookAccount`, `PausableAccount`) — інакше переказ відхилить
-    /// токен-програма ще до хука. Створює його ATA-програма, і вона виводить
-    /// перелік із самого mint; тест доводить, що виводити є що.
+    /// An account created for such a mint must carry the companion extensions
+    /// (`TransferHookAccount`, `PausableAccount`) — otherwise the token
+    /// program rejects the transfer before the hook. The ATA program creates
+    /// it and derives the list from the mint itself; the test proves there is
+    /// something to derive.
     #[test]
     fn the_extensions_require_their_account_side_counterparts() {
         let required = ExtensionType::get_required_init_account_extensions(&MINT_EXTENSIONS);
@@ -636,8 +659,8 @@ mod tests {
         assert!(required.contains(&ExtensionType::PausableAccount));
     }
 
-    /// Розмір mint рахується з переліку, а не константою: додане розширення не
-    /// має тихо не вміститись.
+    /// The mint size is computed from the list, not a constant: an added
+    /// extension must not silently fail to fit.
     #[test]
     fn the_mint_account_is_larger_than_a_plain_one() {
         let space = ExtensionType::try_calculate_account_len::<MintState>(&MINT_EXTENSIONS)
@@ -645,8 +668,8 @@ mod tests {
         assert!(space > MintState::LEN);
     }
 
-    /// Стелі рядків існують не заради охайності, а тому, що за реалок mint
-    /// платить той, хто кличе інструкцію.
+    /// The string ceilings exist not for tidiness but because whoever calls
+    /// the instruction pays for the mint realloc.
     #[test]
     fn metadata_limits_bound_the_rent_a_single_call_can_demand() {
         let metadata = TokenMetadata {
@@ -656,8 +679,9 @@ mod tests {
             ..Default::default()
         };
         let size = metadata.tlv_size_of().expect("size is computable");
-        // Півкілобайта — верхня межа того, на скільки виросте mint. Число
-        // навмисно грубе: воно стереже порядок величини, а не байти.
+        // Half a kilobyte is the upper bound on how much the mint grows. The
+        // number is deliberately coarse: it guards the order of magnitude, not
+        // the bytes.
         assert!(size < 512, "metadata grows the mint by {size} bytes");
     }
 }

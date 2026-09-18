@@ -2,48 +2,50 @@ use anchor_lang::prelude::*;
 
 use crate::constants::MAX_MEMBERS;
 
-/// Ролі емітента (FR-033). Бітмаска, бо одна людина законно буває і
-/// адміністратором, і офіцером — крім атестатора, див. `ATTESTOR`.
+/// Issuer roles (FR-033). A bitmask, because one person is legitimately both
+/// an admin and an officer — except the attestor, see `ATTESTOR`.
 pub mod role {
-    /// Адміністратор: учасник кворуму на дії з коштами й зміни конфігурації.
+    /// Admin: a member of the quorum on actions with funds and configuration changes.
     pub const ADMIN: u8 = 1 << 0;
-    /// Офіцер комплаєнсу: заморозка окремого рахунку одноосібно (FR-014),
-    /// участь у кворумі на вилучення й паузу.
+    /// Compliance officer: freezes an individual account alone (FR-014),
+    /// takes part in the quorum on seizure and pause.
     pub const COMPLIANCE: u8 = 1 << 1;
-    /// Атестатор резерву. FR-024 вимагає, щоб цей ключ **не міг більше нічого**,
-    /// тож поєднання цього біта з будь-яким іншим програма відхиляє.
+    /// Reserve attestor. FR-024 requires that this key **can do nothing else**,
+    /// so the program rejects combining this bit with any other.
     pub const ATTESTOR: u8 = 1 << 2;
-    /// Спостерігач без права дії (FR-033). Існує саме для того, щоб «доступ до
-    /// консолі» не доводилось видавати роллю, яка щось може.
+    /// An observer with no right to act (FR-033). Exists precisely so that
+    /// "console access" does not have to be granted with a role that can do
+    /// something.
     pub const OBSERVER: u8 = 1 << 3;
 
     pub const ALL: u8 = ADMIN | COMPLIANCE | ATTESTOR | OBSERVER;
-    /// Ролі, підпис яких рахується в кворум.
+    /// The roles whose signature counts towards the quorum.
     pub const AUTHORISING: u8 = ADMIN | COMPLIANCE;
 }
 
-/// Повноваження, які емітент делегує операційному ключу платформи (FR-035).
+/// The powers an issuer delegates to the platform's operational key (FR-035).
 ///
-/// Перелік закритий **у коді**, а не в конфігурації: емісії, вилучення, паузи й
-/// зміни політики тут немає й бути не може. Саме це робить FR-035a перевіркою,
-/// а не обіцянкою — скомпрометований операційний ключ не отримає цих прав
-/// навіть від власника емітента, бо їх нічим виразити.
+/// The list is closed **in code**, not in configuration: issuance, seizure,
+/// pause and policy change are not here and cannot be. That is what makes
+/// FR-035a a check rather than a promise — a compromised operational key
+/// will not get these rights even from the issuer's owner, because there is
+/// nothing to express them with.
 pub mod delegation {
-    /// Розморожування рахунку після верифікації (FR-008b2).
+    /// Thawing an account after verification (FR-008b2).
     pub const THAW_HOLDER: u8 = 1 << 0;
-    /// Оновлення власного реєстру статусів емітента (FR-008a).
+    /// Updating the issuer's own status registry (FR-008a).
     pub const SET_HOLDER_STATUS: u8 = 1 << 1;
-    /// Сетлмент погашення після підтвердження коридору (FR-029).
+    /// Settling a redemption after the corridor's confirmation (FR-029).
     pub const SETTLE_REDEMPTION: u8 = 1 << 2;
 
     pub const ALL: u8 = THAW_HOLDER | SET_HOLDER_STATUS | SETTLE_REDEMPTION;
 }
 
-/// Рядок складу вповноважених: адреса гаманця й маска її ролей.
+/// A row of the authorised membership: a wallet address and its role mask.
 ///
-/// Роль прив'язана до адреси, а не до облікового запису входу (FR-034a): зміна
-/// способу входу не змінює повноважень, а втрата доступу до акаунта не передає
-/// роль іншій адресі.
+/// A role is bound to the address, not to the login account (FR-034a): a
+/// change of login method does not change the powers, and losing access to
+/// the account does not pass the role to another address.
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Member {
     pub wallet: Pubkey,
@@ -60,51 +62,55 @@ impl Member {
     }
 }
 
-/// Конфігурація емітента. PDA: `["issuer", issuer_id]`.
+/// The issuer configuration. PDA: `["issuer", issuer_id]`.
 #[account]
 #[derive(InitSpace)]
 pub struct IssuerConfig {
-    /// Незмінний ідентифікатор, з якого виведена адреса цього акаунта. Нічого
-    /// не підписує: його єдина робота — бути seed, який переживає зміну складу.
+    /// The immutable identifier this account's address is derived from. Signs
+    /// nothing: its only job is to be the seed that outlives membership
+    /// changes.
     pub issuer_id: Pubkey,
-    /// Склад фіксованої довжини. Порядок рядків значущий: бітмапа підписів у
-    /// `ActionProposal` індексує саме його, тож видалення учасника не має
-    /// зсувати решту — звільнений слот лишається порожнім.
+    /// A fixed-length membership. The row order matters: the signature bitmap
+    /// in `ActionProposal` indexes exactly it, so removing a member must not
+    /// shift the rest — the freed slot stays empty.
     pub members: [Member; MAX_MEMBERS],
-    /// Скільки слотів зайнято. Не збігається з кількістю непорожніх слотів
-    /// після видалень — це верхня межа обходу, а не лічильник учасників.
+    /// How many slots are in use. Not equal to the number of non-empty slots
+    /// after removals — it is the upper bound for iteration, not a member
+    /// count.
     pub member_slots: u8,
-    /// Поріг кворуму (FR-019). Не менший за `MIN_QUORUM`.
+    /// The quorum threshold (FR-019). Not below `MIN_QUORUM`.
     pub quorum_n: u8,
-    /// Операційний ключ платформи. Грошей не рухає (FR-035a).
+    /// The platform's operational key. Moves no money (FR-035a).
     pub operational_key: Pubkey,
-    /// Що саме йому делеговано. Відкликається однією дією (FR-035b).
+    /// What exactly is delegated to it. Revoked with one action (FR-035b).
     pub delegation_mask: u8,
     pub bump: u8,
-    /// Скільки токенів емітент випустив. Наступний отримає саме цей номер.
+    /// How many tokens the issuer has issued. The next one gets exactly this
+    /// number.
     ///
-    /// Не статистика: номер стоїть у seeds mint (`["mint", issuer_id, index]`),
-    /// тобто це той лічильник, який робить адресу токена виводимою. Через нього
-    /// два одночасні `create_token` того самого емітента конфліктують по
-    /// акаунту — і це правильно: другий побачить уже зайняту адресу, а не
-    /// створить токен-близнюк.
+    /// Not a statistic: the number is in the mint seeds
+    /// (`["mint", issuer_id, index]`), i.e. it is the counter that makes the
+    /// token address derivable. Through it two concurrent `create_token`s of
+    /// the same issuer conflict on the account — and that is right: the
+    /// second sees an already taken address instead of creating a twin token.
     ///
-    /// Дописане в кінець структури: `IssuerConfig` створюється до першого
-    /// токена, тож жодні зсуви в ньому нікуди не зашиті, але правило «тільки в
-    /// кінець» дешевше тримати завжди, ніж згадувати, де воно потрібне.
+    /// Appended at the end of the struct: `IssuerConfig` is created before the
+    /// first token, so no offsets in it are baked in anywhere, but the rule
+    /// "only at the end" is cheaper to keep always than to remember where it
+    /// is needed.
     pub token_count: u32,
 }
 
 impl IssuerConfig {
-    /// Чи має ця адреса хоч одну з названих ролей.
+    /// Whether this address has at least one of the named roles.
     pub fn member_has(&self, wallet: &Pubkey, mask: u8) -> bool {
         self.members
             .iter()
             .any(|m| !m.is_empty() && m.wallet == *wallet && m.has(mask))
     }
 
-    /// Скільки підписів узагалі можна зібрати. Кворум, більший за це число,
-    /// зробив би дії з коштами неможливими назавжди.
+    /// How many signatures can be collected at all. A quorum larger than this
+    /// number would make actions with funds impossible forever.
     pub fn authorising_count(&self) -> u8 {
         self.members
             .iter()
@@ -112,7 +118,7 @@ impl IssuerConfig {
             .count() as u8
     }
 
-    /// Чи делеговане операційному ключу конкретне повноваження.
+    /// Whether a specific power is delegated to the operational key.
     pub fn delegates(&self, power: u8) -> bool {
         self.delegation_mask & power == power
     }

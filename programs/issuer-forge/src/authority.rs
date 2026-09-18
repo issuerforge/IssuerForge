@@ -1,31 +1,32 @@
-//! Хто може підписати рутинну дію емітента (FR-035).
+//! Who may sign a routine issuer action (FR-035).
 //!
-//! Рутинна — це дія, що не рухає чужих коштів: розморожування рахунку,
-//! оновлення власного реєстру статусів, сетлмент погашення. Кворум для них не
-//! потрібен (`quorum.rs` існує для іншого), але й «будь-який підпис» тут не
-//! годиться.
+//! Routine means an action that moves no one else's funds: thawing an
+//! account, updating the issuer's own status registry, settling a
+//! redemption. No quorum is needed for them (`quorum.rs` exists for something
+//! else), but "any signature" will not do here either.
 //!
-//! **Підписати може двоє: операційний ключ платформи в межах делегації або
-//! уповноважений учасник складу.** Другий шлях є не для зручності: делегація
-//! відкликається однією дією (FR-035b), і якби він був єдиним, відкликання
-//! заморозило б онбординг назавжди — емітент утратив би здатність розморозити
-//! рахунок власними руками. Ключова властивість FR-035a від цього не
-//! змінюється: у масці делегації немає й не може бути жодного повноваження, що
-//! рухає кошти, а другий шлях веде до гаманців самого емітента.
+//! **Two may sign: the platform's operational key within its delegation, or
+//! an authorised member of the membership.** The second path is not there
+//! for convenience: a delegation is revoked with one action (FR-035b), and
+//! if the first path were the only one, a revocation would freeze onboarding
+//! forever — the issuer would lose the ability to thaw an account with its
+//! own hands. The key property of FR-035a does not change because of this:
+//! the delegation mask has no power that moves funds and cannot have one,
+//! and the second path leads to the issuer's own wallets.
 //!
-//! T030 узагальнить це на решту інструкцій; тут — рівно те, що потрібно
-//! розморожуванню й статусам.
+//! T030 will generalise this to the remaining instructions; here is exactly
+//! what thawing and statuses need.
 use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
 use crate::state::{role, IssuerConfig};
 
-/// Чи може ця адреса виконати рутинну дію з названим повноваженням.
+/// Whether this address may perform a routine action with the named power.
 ///
-/// Порядок перевірки значущий: спершу склад, потім операційний ключ. Якщо та
-/// сама адреса стоїть і там, і там, вона діє як учасник — інакше емітент,
-/// що поставив власний гаманець операційним ключем, утратив би свої права
-/// разом із відкликанням делегації.
+/// The check order matters: the membership first, then the operational key.
+/// If the same address is in both, it acts as a member — otherwise an issuer
+/// that set its own wallet as the operational key would lose its rights
+/// along with the revocation of the delegation.
 pub fn require_routine(issuer: &IssuerConfig, signer: &Pubkey, power: u8) -> Result<()> {
     if issuer.member_has(signer, role::AUTHORISING) {
         return Ok(());
@@ -35,9 +36,9 @@ pub fn require_routine(issuer: &IssuerConfig, signer: &Pubkey, power: u8) -> Res
         *signer == issuer.operational_key,
         ForgeError::NotAnOperatorOrOfficer
     );
-    // Окремий код, а не той самий: «підписав не той» і «підписав той, кому цього
-    // не доручали» — різні події для журналу й різні дії для того, хто читає
-    // відмову.
+    // A separate code, not the same one: "the wrong one signed" and "the one
+    // who signed was not entrusted with this" are different events for the
+    // journal and different actions for whoever reads the refusal.
     require!(issuer.delegates(power), ForgeError::PowerNotDelegated);
     Ok(())
 }
@@ -115,7 +116,7 @@ mod tests {
 
     #[test]
     fn accepts_an_officer_and_an_admin_whatever_the_delegation_says() {
-        // Відкликана делегація не має заморожувати онбординг назавжди.
+        // A revoked delegation must not freeze onboarding forever.
         let revoked = issuer(&[(1, role::ADMIN), (2, role::COMPLIANCE)], wallet(10), 0);
         assert!(require_routine(&revoked, &wallet(1), delegation::THAW_HOLDER).is_ok());
         assert!(require_routine(&revoked, &wallet(2), delegation::THAW_HOLDER).is_ok());
@@ -123,8 +124,8 @@ mod tests {
 
     #[test]
     fn refuses_an_observer_and_an_attestor() {
-        // Спостерігач не має права дії, атестатор не має інших повноважень
-        // (FR-024) — жоден із них не розморожує рахунків.
+        // An observer has no right to act, an attestor has no other powers
+        // (FR-024) — neither of them thaws accounts.
         for seed in [3u8, 4] {
             assert_eq!(
                 err(require_routine(&standard(), &wallet(seed), delegation::THAW_HOLDER)),
@@ -143,8 +144,8 @@ mod tests {
 
     #[test]
     fn lets_a_member_act_as_a_member_even_when_they_are_the_operational_key() {
-        // Інакше емітент, що поставив власний гаманець операційним ключем,
-        // утратив би свої права разом із відкликанням делегації.
+        // Otherwise an issuer that set its own wallet as the operational key
+        // would lose its rights along with the revocation of the delegation.
         let doubled = issuer(&[(1, role::ADMIN), (2, role::COMPLIANCE)], wallet(1), 0);
         assert!(require_routine(&doubled, &wallet(1), delegation::THAW_HOLDER).is_ok());
     }

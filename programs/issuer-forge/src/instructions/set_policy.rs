@@ -8,22 +8,23 @@ use crate::state::{IssuerConfig, PolicyConfig, TokenConfig, POLICY_CONFIG_LEN};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct SetPolicyArgs {
-    /// Номер нової версії. Мусить бути рівно наступним за чинною: пропуск
-    /// зробив би «попередню версію» невиводимою з номера, а історію — переліком
-    /// з дірками, який нічим не звірити.
+    /// The new version number. Must be exactly the next after the current
+    /// one: a skip would make "the previous version" underivable from the
+    /// number, and the history a list with gaps that nothing can verify.
     pub version: u32,
-    /// Правила в канонічній розкладці, рівно `RULES_BYTES` байтів.
+    /// The rules in the canonical layout, exactly `RULES_BYTES` bytes.
     ///
-    /// `Vec<u8>`, а не масив: Borsh описує його як `bytes`, і IDL лишається
-    /// читабельним для клієнта. Довжину перевіряє програма.
+    /// A `Vec<u8>`, not an array: Borsh describes it as `bytes`, and the IDL
+    /// stays readable for the client. The program checks the length.
     pub rules: Vec<u8>,
 }
 
-/// Зміна політики токена (FR-009, FR-010).
+/// Changing a token's policy (FR-009, FR-010).
 ///
-/// Політика — дані, тож зміна набуває сили без повторного випуску токена, без
-/// міграції холдерів і без жодної дії з їхнього боку: хук на наступному переказі
-/// читає нову версію, бо `TokenConfig.policy_version` уже вказує на неї.
+/// Policy is data, so the change takes effect without re-issuing the token,
+/// without migrating holders and without any action on their part: on the
+/// next transfer the hook reads the new version, because
+/// `TokenConfig.policy_version` already points at it.
 #[derive(Accounts)]
 #[instruction(args: SetPolicyArgs)]
 pub struct SetPolicy<'info> {
@@ -33,8 +34,8 @@ pub struct SetPolicy<'info> {
     )]
     pub issuer_config: Account<'info, IssuerConfig>,
 
-    /// Мусить іти перед `policy_config`: його `mint` є seed'ом наступного
-    /// акаунта, а Anchor перевіряє поля в порядку оголошення.
+    /// Must come before `policy_config`: its `mint` is a seed of the next
+    /// account, and Anchor checks fields in declaration order.
     #[account(
         mut,
         seeds = [TOKEN_SEED, token_config.mint.as_ref()],
@@ -43,9 +44,9 @@ pub struct SetPolicy<'info> {
     )]
     pub token_config: Account<'info, TokenConfig>,
 
-    /// Нова версія. `init` тут і є незмінністю історії (FR-010): версія, яка вже
-    /// існує, не створюється вдруге, а інструкції, що відкрила б її на запис, у
-    /// програмі немає.
+    /// The new version. `init` here is the immutability of history (FR-010):
+    /// a version that already exists is not created a second time, and the
+    /// program has no instruction that would open it for writing.
     #[account(
         init,
         payer = payer,
@@ -55,15 +56,16 @@ pub struct SetPolicy<'info> {
     )]
     pub policy_config: AccountLoader<'info, PolicyConfig>,
 
-    /// Хто платить оренду за нову версію. Повноважень цей підпис не дає — їх
-    /// дає тільки кворум серед `remaining_accounts`.
+    /// Who pays the rent for the new version. This signature grants no powers
+    /// — only the quorum among `remaining_accounts` does.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-    // `remaining_accounts` — гаманці, що санкціонують зміну. Кожен мусить
-    // підписати транзакцію й стояти у складі емітента з роллю, яка дає право
-    // санкціонувати; їх має бути не менше за `quorum_n`.
+    // `remaining_accounts` are the wallets authorising the change. Each must
+    // sign the transaction and be in the issuer's membership with a role
+    // that grants the right to authorise; there must be at least `quorum_n`
+    // of them.
 }
 
 pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
@@ -72,11 +74,12 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         ForgeError::PolicyRulesNotCanonical
     );
 
-    // Наступна версія й тільки вона. Умова «чинна ≥ першої» тут не зайва: вона
-    // робить `set_policy` нездатним записати першу версію взагалі. Першу пише
-    // `create_token` (T018) тією ж функцією `PolicyConfig::write`, тож стану
-    // «токен є, політики немає» не існує ні миті — і його не доводиться
-    // обробляти ані хуку, ані консолі.
+    // The next version and only it. The condition "current ≥ first" is not
+    // redundant here: it makes `set_policy` unable to write the first version
+    // at all. The first is written by `create_token` (T018) with the same
+    // `PolicyConfig::write`, so the state "the token exists, the policy does
+    // not" never exists for a moment — and neither the hook nor the console
+    // has to handle it.
     let current = ctx.accounts.token_config.policy_version;
     require!(
         current >= FIRST_POLICY_VERSION
@@ -84,8 +87,8 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         ForgeError::PolicyVersionNotNext
     );
 
-    // FR-035: зміна політики — дія гаманців емітента за кворумом, і перевіряє
-    // його програма, а не консоль.
+    // FR-035: a policy change is an action of the issuer's wallets by quorum,
+    // and the program checks it, not the console.
     let approvals = quorum::approvals_from(ctx.remaining_accounts)?;
     quorum::check(&ctx.accounts.issuer_config, &approvals)?;
 
@@ -105,9 +108,9 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         )?;
     }
 
-    // Остання дія: до цього рядка чинною лишається попередня версія, тож
-    // відмова на будь-якій перевірці вище не лишає токен на політиці, яку
-    // програма щойно відхилила.
+    // The last action: until this line the previous version stays current,
+    // so a refusal at any check above does not leave the token on a policy
+    // the program just rejected.
     ctx.accounts.token_config.policy_version = args.version;
     Ok(())
 }

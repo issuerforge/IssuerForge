@@ -2,51 +2,56 @@ use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
 
-/// Скільки байтів відведено на позначення валюти резерву.
+/// How many bytes are reserved for the reserve currency code.
 ///
-/// Три — це ISO 4217 alpha-3; решта є, бо резерв законно тримають і в тому, що
-/// трибуквеного коду не має. Дзеркалиться в `attestationEventSchema`
-/// (`packages/shared/src/events`), де те саме поле оголошене як 3…8 символів.
+/// Three is ISO 4217 alpha-3; the rest exist because a reserve is
+/// legitimately held in things that have no three-letter code too. Mirrored
+/// in `attestationEventSchema` (`packages/shared/src/events`), where the same
+/// field is declared as 3…8 characters.
 pub const CURRENCY_BYTES: usize = 8;
 
-/// Атестація резерву. PDA: `["reserve", mint, index]`, індекс — `u64` LE.
+/// A reserve attestation. PDA: `["reserve", mint, index]`, the index a `u64`
+/// LE.
 ///
-/// **Append-only, і це властивість адреси, а не перевірки** (FR-026): кожен
-/// індекс — власний PDA, створений через `init`, тож переписати запис нічим.
-/// Інструкції, яка б відкрила попередню атестацію на запис, у програмі немає, і
-/// заміна атестатора (FR-024a) історії не чіпає — вона змінює те, хто підпише
-/// **наступну**.
+/// **Append-only, and that is a property of the address, not of a check**
+/// (FR-026): every index is its own PDA created through `init`, so there is
+/// nothing to overwrite a record with. The program has no instruction that
+/// would open a previous attestation for writing, and replacing the attestor
+/// (FR-024a) does not touch history — it changes who signs the **next**
+/// one.
 ///
-/// **`expires_at` тут немає, попри `docs/PLAN.md`.** Строк придатності задається
-/// при випуску й змінюється кворумом (FR-023b), тобто живе в
-/// `TokenConfig.attestation_max_age`. Знімок цього строку в кожному записі був би
-/// другою відповіддю на питання «чи протермінована атестація», і при зміні
-/// строку дві відповіді розійшлися б. Публічна сторінка рахує
-/// `attested_at + max_age` — так само, як програма.
+/// **There is no `expires_at` here, despite `docs/PLAN.md`.** The validity
+/// period is set at issuance and changed by quorum (FR-023b), i.e. it lives
+/// in `TokenConfig.attestation_max_age`. A snapshot of that period in every
+/// record would be a second answer to "is the attestation expired", and on a
+/// change of the period the two answers would diverge. The public page
+/// computes `attested_at + max_age` — the same way the program does.
 #[account]
 #[derive(InitSpace)]
 pub struct ReserveAttestation {
     pub mint: Pubkey,
-    /// Позиція в послідовності. Індекс і є історія: він адресує «попередню
-    /// атестацію», а не змушує шукати її перебором.
+    /// The position in the sequence. The index is the history: it addresses
+    /// "the previous attestation" rather than forcing a search for it.
     pub index: u64,
-    /// Підтверджена сума в найменшій одиниці **валюти резерву** — вона ж
-    /// найменша одиниця токена, бо `currency` мусить збігтися з валютою токена
-    /// (`TokenConfig.reserve_currency`). Без цієї рівності порівняння «емісія +
-    /// обіг ≤ атестованого» вимагало б курсу, якого в програмі немає й не буде.
+    /// The attested amount in the smallest unit of the **reserve currency** —
+    /// which is also the token's smallest unit, because `currency` must match
+    /// the token's currency (`TokenConfig.reserve_currency`). Without that
+    /// equality the comparison "issuance + circulation ≤ attested" would
+    /// require an exchange rate, which the program does not have and never
+    /// will.
     pub amount: u64,
     pub currency: [u8; CURRENCY_BYTES],
-    /// Хто підписав. Лишається в записі назавжди: після заміни атестатора
-    /// (FR-024a) видно, хто підтверджував резерв тоді.
+    /// Who signed. Stays in the record forever: after the attestor is replaced
+    /// (FR-024a) it is visible who attested the reserve back then.
     pub attestor: Pubkey,
     pub attested_at: i64,
     pub bump: u8,
 }
 
-/// Валюта в канонічній формі: 3…8 великих латинських літер, далі нулі.
+/// The currency in canonical form: 3…8 upper-case Latin letters, then zeros.
 ///
-/// Порівнюється байт у байт із `TokenConfig.reserve_currency`, тож «ngn» і «NGN»
-/// мусять бути одним значенням, а не двома.
+/// Compared byte for byte with `TokenConfig.reserve_currency`, so "ngn" and
+/// "NGN" must be one value, not two.
 pub fn validate_currency(currency: &[u8; CURRENCY_BYTES]) -> Result<()> {
     let length = currency
         .iter()
@@ -57,8 +62,8 @@ pub fn validate_currency(currency: &[u8; CURRENCY_BYTES]) -> Result<()> {
         currency[..length].iter().all(u8::is_ascii_uppercase),
         ForgeError::ReserveCurrencyInvalid
     );
-    // Хвіст мусить бути нульовий цілком: інакше «NGN\0X» і «NGN» читалися б як
-    // різні значення, які людина назве однаково.
+    // The tail must be entirely zero: otherwise "NGN\0X" and "NGN" would read
+    // as different values a person would call the same.
     require!(
         currency[length..].iter().all(|byte| *byte == 0),
         ForgeError::ReserveCurrencyInvalid
@@ -66,10 +71,11 @@ pub fn validate_currency(currency: &[u8; CURRENCY_BYTES]) -> Result<()> {
     Ok(())
 }
 
-/// Валюта як байти, без нульових літералів у джерелі.
+/// The currency as bytes, with no NUL literals in the source.
 ///
-/// Літерал `*b"NGN\0\0\0\0\0"` виглядає коротшим, але кладе в текст програми справжні
-/// NUL-байти: файл перестає бути текстовим для `grep`, `diff` і для очей.
+/// The literal `*b"NGN\0\0\0\0\0"` looks shorter, but puts real NUL bytes into
+/// the program text: the file stops being text for `grep`, `diff` and the
+/// eye.
 pub const fn currency_bytes(code: &[u8]) -> [u8; CURRENCY_BYTES] {
     let mut bytes = [0u8; CURRENCY_BYTES];
     let mut index = 0;
@@ -113,7 +119,7 @@ mod tests {
 
     #[test]
     fn refuses_a_tail_that_is_not_zero() {
-        // Інакше два байтові значення читалися б людиною як одне слово.
+        // Otherwise two byte values would be read by a person as one word.
         let mut holed = currency("NGN");
         holed[5] = b'X';
         assert_eq!(

@@ -21,11 +21,12 @@ export type IssuerForge = {
     {
       "name": "attestReserve",
       "docs": [
-        "Публікує атестацію резерву (FR-021, FR-024, FR-026).",
+        "Publishes a reserve attestation (FR-021, FR-024, FR-026).",
         "",
-        "Підписує рівно чинний атестатор цього токена: атестація нічого не",
-        "дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує",
-        "кворуму. Запис append-only — переписати його нічим."
+        "Signed by exactly the current attestor of this token: an attestation",
+        "allows nothing, it only narrows what is allowed, which is why it needs",
+        "no quorum. The record is append-only — there is nothing to overwrite",
+        "it with."
       ],
       "discriminator": [
         67,
@@ -64,9 +65,9 @@ export type IssuerForge = {
         {
           "name": "attestation",
           "docs": [
-            "Наступний запис у послідовності. Індекс береться з лічильника, а не від",
-            "клієнта: `init` за такою адресою неможливий двічі, тож пропустити номер",
-            "або переписати попередній запис нічим."
+            "The next record in the sequence. The index comes from the counter, not",
+            "from the client: `init` at such an address is impossible twice, so",
+            "there is no way to skip a number or overwrite a previous record."
           ],
           "writable": true,
           "pda": {
@@ -99,14 +100,14 @@ export type IssuerForge = {
         {
           "name": "attestor",
           "docs": [
-            "Чинний атестатор резерву цього токена."
+            "The current reserve attestor of this token."
           ],
           "signer": true
         },
         {
           "name": "payer",
           "docs": [
-            "Оренду платить хто завгодно: платіж не є повноваженням."
+            "Anyone pays the rent: paying is not a power."
           ],
           "writable": true,
           "signer": true
@@ -130,14 +131,15 @@ export type IssuerForge = {
     {
       "name": "createToken",
       "docs": [
-        "Випускає токен: mint із розширеннями, конфігурацію, політику версії 1,",
-        "першу атестацію резерву й початкову емісію — усе однією транзакцією",
-        "(FR-001, FR-005, FR-006, FR-022).",
+        "Issues a token: the mint with its extensions, the configuration, policy",
+        "version 1, the first reserve attestation and the initial issuance — all",
+        "in one transaction (FR-001, FR-005, FR-006, FR-022).",
         "",
-        "Підписів два — засновник-адміністратор і атестатор. Перший не може",
-        "випустити токен без другого, бо емісія проходить гейт резерву, а гейту",
-        "нічого читати, доки атестації немає; другий не може нічого сам, бо роль",
-        "атестатора несумісна з будь-якою іншою."
+        "Two signatures — the founder-admin and the attestor. The first cannot",
+        "issue a token without the second, because the issuance goes through",
+        "the reserve gate, and the gate has nothing to read until an",
+        "attestation exists; the second can do nothing alone, because the",
+        "attestor role is incompatible with any other."
       ],
       "discriminator": [
         84,
@@ -153,12 +155,13 @@ export type IssuerForge = {
         {
           "name": "founder",
           "docs": [
-            "Засновник, він же платник оренди.",
+            "The founder, who is also the rent payer.",
             "",
-            "Об'єднані навмисно: окремий платник — це шістнадцятий акаунт і третій",
-            "підпис, а їх немає куди покласти. Гаманець засновника без SOL платформа",
-            "поповнює перед випуском; у `set_token_metadata` нижче платник знову",
-            "окремий, бо там місце є."
+            "Merged on purpose: a separate payer is a sixteenth account and a",
+            "third signature, and there is nowhere to put them. A founder's wallet",
+            "without SOL is topped up by the platform before the issuance; in",
+            "`set_token_metadata` below the payer is separate again, because there",
+            "is room there."
           ],
           "writable": true,
           "signer": true
@@ -166,16 +169,17 @@ export type IssuerForge = {
         {
           "name": "attestor",
           "docs": [
-            "Атестатор резерву цього токена. Мусить стояти у складі емітента з роллю",
-            "атестатора, а вона за `initialize_issuer` несумісна з будь-якою іншою."
+            "The reserve attestor of this token. Must be in the issuer's membership",
+            "with the attestor role, which under `initialize_issuer` is",
+            "incompatible with any other."
           ],
           "signer": true
         },
         {
           "name": "issuerConfig",
           "docs": [
-            "`mut`, бо інструкція збільшує лічильник токенів — з нього виведена",
-            "адреса mint."
+            "`mut`, because the instruction increments the token counter — the mint",
+            "address is derived from it."
           ],
           "writable": true,
           "pda": {
@@ -202,8 +206,9 @@ export type IssuerForge = {
         {
           "name": "mint",
           "docs": [
-            "нічим: акаунт ще не існує, а `InterfaceAccount<Mint>` вимагав би",
-            "ініціалізованого mint — тобто того, що ця інструкція якраз і робить."
+            "content. There is nothing to type it with: the account does not exist",
+            "yet, and `InterfaceAccount<Mint>` would require an initialised mint —",
+            "i.e. exactly what this instruction does."
           ],
           "writable": true,
           "pda": {
@@ -255,9 +260,9 @@ export type IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Політика версії 1. Пишеться тією самою `PolicyConfig::write`, що й усі",
-            "наступні версії: два писці означали б дві перевірки канонічності, з яких",
-            "одна колись відстане."
+            "Policy version 1. Written with the same `PolicyConfig::write` as all",
+            "later versions: two writers would mean two canonicity checks, one of",
+            "which would fall behind some day."
           ],
           "writable": true,
           "pda": {
@@ -292,8 +297,8 @@ export type IssuerForge = {
         {
           "name": "attestation",
           "docs": [
-            "Атестація #0. Індекс у seeds і `init` роблять історію незмінною без",
-            "жодної перевірки з нашого боку (FR-026)."
+            "Attestation #0. The index in the seeds and `init` make the history",
+            "immutable without any check on our side (FR-026)."
           ],
           "writable": true,
           "pda": {
@@ -333,8 +338,9 @@ export type IssuerForge = {
         {
           "name": "founderTokenAccount",
           "docs": [
-            "повторювати `create_program_address` тут означало б платити за ту саму",
-            "перевірку двічі. Створити його наперед не можна: mint ще не існує."
+            "creation — repeating `create_program_address` here would mean paying",
+            "for the same check twice. It cannot be created in advance: the mint",
+            "does not exist yet."
           ],
           "writable": true
         },
@@ -420,13 +426,13 @@ export type IssuerForge = {
     {
       "name": "execute",
       "docs": [
-        "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
+        "The transfer hook: the rule check on every transfer (FR-002, FR-011,",
         "FR-012).",
         "",
-        "Дискримінатор заданий явно: цю інструкцію кличе токен-програма за",
-        "інтерфейсом `spl-transfer-hook-interface`, а не клієнт за іменем, тож",
-        "вісім байтів мусять бути ті, що в інтерфейсі, а не ті, що Anchor вивів би",
-        "з назви."
+        "The discriminator is set explicitly: this instruction is called by the",
+        "token program through the `spl-transfer-hook-interface`, not by a",
+        "client by name, so the eight bytes must be the ones in the interface,",
+        "not the ones Anchor would derive from the name."
       ],
       "discriminator": [
         105,
@@ -478,15 +484,16 @@ export type IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Чинна версія політики. Її адресу резолвить токен-програма з поля",
-            "`policy_version` у `TokenConfig`, тож підсунути іншу версію неможливо;",
-            "перевірка нижче лишається другим замком, а не єдиним."
+            "The current policy version. The token program resolves its address",
+            "from the `policy_version` field in `TokenConfig`, so slipping in",
+            "another version is impossible; the check below remains a second lock,",
+            "not the only one."
           ]
         },
         {
           "name": "senderStatus",
           "docs": [
-            "відмови, а не помилку Anchor."
+            "not an Anchor error."
           ]
         },
         {
@@ -499,7 +506,7 @@ export type IssuerForge = {
         {
           "name": "sasProgram",
           "docs": [
-            "PDA атестацій у переліку."
+            "attestation PDAs in the list refer to it."
           ]
         },
         {
@@ -519,11 +526,11 @@ export type IssuerForge = {
     {
       "name": "initializeExtraAccountMetaList",
       "docs": [
-        "Створює `ExtraAccountMetaList` — перелік акаунтів, які токен-програма",
-        "підкладатиме хуку на кожному переказі (FR-012).",
+        "Creates the `ExtraAccountMetaList` — the list of accounts the token",
+        "program will hand to the hook on every transfer (FR-012).",
         "",
-        "Окремою інструкцією від випуску: перелік належить інтерфейсу хука, а не",
-        "mint. Клієнт кладе обидві в одну транзакцію."
+        "A separate instruction from the issuance: the list belongs to the hook",
+        "interface, not to the mint. The client puts both into one transaction."
       ],
       "discriminator": [
         92,
@@ -544,7 +551,8 @@ export type IssuerForge = {
         {
           "name": "extraAccountMetaList",
           "docs": [
-            "це TLV-буфер `spl-tlv-account-resolution`, а не акаунт Anchor."
+            "There is nothing to type it with — it is a `spl-tlv-account-resolution`",
+            "TLV buffer, not an Anchor account."
           ],
           "writable": true,
           "pda": {
@@ -616,11 +624,13 @@ export type IssuerForge = {
     {
       "name": "initializeIssuer",
       "docs": [
-        "Створює емітента: склад уповноважених, поріг кворуму й межі, у яких",
-        "операційний ключ платформи може діяти (FR-019a, FR-033, FR-035).",
+        "Creates an issuer: the authorised membership, the quorum threshold and",
+        "the bounds within which the platform's operational key may act",
+        "(FR-019a, FR-033, FR-035).",
         "",
-        "Єдина дія емітента, що не проходить кворум, — бо до неї кворуму ще",
-        "немає. Усе, що вона задає, змінюється далі **тільки** кворумом."
+        "The only issuer action that does not go through the quorum — because",
+        "before it there is no quorum yet. Everything it sets is changed from",
+        "then on **only** by quorum."
       ],
       "discriminator": [
         231,
@@ -659,11 +669,11 @@ export type IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто платить оренду. Свідомо відділений від `founder`: гаманець офіцера,",
-            "створений через Privy, законно має нуль SOL, і вимагати від нього",
-            "платити означало б, що вхід без криптодосвіду (FR-034) не працює на",
-            "першому ж кроці. Повноважень цей підпис не дає — жодна перевірка нижче",
-            "його не питає."
+            "Who pays the rent. Deliberately separated from `founder`: an",
+            "officer's wallet created through Privy legitimately has zero SOL, and",
+            "requiring it to pay would mean that login without crypto experience",
+            "(FR-034) fails at the very first step. This signature grants no",
+            "powers — no check below asks for it."
           ],
           "writable": true,
           "signer": true
@@ -671,8 +681,8 @@ export type IssuerForge = {
         {
           "name": "founder",
           "docs": [
-            "Хто засновує. Мусить бути в складі з роллю адміністратора: емітента не",
-            "можна створити від імені людей, серед яких тебе немає."
+            "Who founds. Must be in the membership with the admin role: an issuer",
+            "cannot be created on behalf of people you are not among."
           ],
           "signer": true
         },
@@ -695,11 +705,12 @@ export type IssuerForge = {
     {
       "name": "setHolderStatus",
       "docs": [
-        "Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).",
+        "Updates an address's status in the issuer's own registry (FR-008a,",
+        "FR-008b1).",
         "",
-        "Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається",
-        "розмороженим, а переказ із нього перестає проходити тієї ж миті, коли",
-        "статус більше не задовольняє політику."
+        "This instruction is what makes FR-008b1 enforceable: the account stays",
+        "thawed, and a transfer from it stops passing the moment the status no",
+        "longer satisfies the policy."
       ],
       "discriminator": [
         121,
@@ -760,10 +771,11 @@ export type IssuerForge = {
         {
           "name": "holderStatus",
           "docs": [
-            "Без `init`: запису, якого немає, ця інструкція не заводить. Створення",
-            "прив'язане до розморожування, бо статус без розмороженого рахунку нічого",
-            "не означає, а `HolderStatus` без `VelocityCounter` дав би відмову в",
-            "переказі там, де емітент вважає холдера впорядкованим."
+            "Without `init`: this instruction does not create a record that does",
+            "not exist. Creation is tied to the thaw, because a status without a",
+            "thawed account means nothing, and a `HolderStatus` without a",
+            "`VelocityCounter` would give a transfer refusal where the issuer",
+            "considers the holder in order."
           ],
           "writable": true,
           "pda": {
@@ -810,15 +822,17 @@ export type IssuerForge = {
     {
       "name": "setPolicy",
       "docs": [
-        "Записує наступну версію політики й переводить токен на неї (FR-009,",
+        "Writes the next policy version and moves the token onto it (FR-009,",
         "FR-010).",
         "",
-        "Зміна набуває сили без повторного випуску токена й без дій з боку",
-        "холдерів: політика — дані, і хук читає нову версію вже на наступному",
-        "переказі. Попередні версії лишаються на своїх адресах назавжди.",
+        "The change takes effect without re-issuing the token and without any",
+        "action by holders: policy is data, and the hook reads the new version",
+        "on the very next transfer. Previous versions stay at their addresses",
+        "forever.",
         "",
-        "Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний",
-        "ключ платформи: підписи передаються в `remaining_accounts`."
+        "The change is authorised by a quorum of the issuer's wallets (FR-035),",
+        "not by the platform's operational key: the signatures are passed in",
+        "`remaining_accounts`."
       ],
       "discriminator": [
         40,
@@ -857,8 +871,8 @@ export type IssuerForge = {
         {
           "name": "tokenConfig",
           "docs": [
-            "Мусить іти перед `policy_config`: його `mint` є seed'ом наступного",
-            "акаунта, а Anchor перевіряє поля в порядку оголошення."
+            "Must come before `policy_config`: its `mint` is a seed of the next",
+            "account, and Anchor checks fields in declaration order."
           ],
           "writable": true,
           "pda": {
@@ -884,9 +898,9 @@ export type IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Нова версія. `init` тут і є незмінністю історії (FR-010): версія, яка вже",
-            "існує, не створюється вдруге, а інструкції, що відкрила б її на запис, у",
-            "програмі немає."
+            "The new version. `init` here is the immutability of history (FR-010):",
+            "a version that already exists is not created a second time, and the",
+            "program has no instruction that would open it for writing."
           ],
           "writable": true,
           "pda": {
@@ -917,8 +931,8 @@ export type IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто платить оренду за нову версію. Повноважень цей підпис не дає — їх",
-            "дає тільки кворум серед `remaining_accounts`."
+            "Who pays the rent for the new version. This signature grants no powers",
+            "— only the quorum among `remaining_accounts` does."
           ],
           "writable": true,
           "signer": true
@@ -942,12 +956,13 @@ export type IssuerForge = {
     {
       "name": "setTokenMetadata",
       "docs": [
-        "Дописує метадані у сам mint (FR-001).",
+        "Writes the metadata into the mint itself (FR-001).",
         "",
-        "Окремою транзакцією від випуску: назва, символ і посилання не вміщаються",
-        "в транзакцію, яка вже несе 384 байти політики й 14 акаунтів. Вказівник",
-        "метаданих на mint ставить `create_token`, тож дописувати нікуди більше,",
-        "ніж у сам токен."
+        "A separate transaction from the issuance: the name, symbol and URI do",
+        "not fit into a transaction that already carries 384 bytes of policy",
+        "and 14 accounts. The metadata pointer on the mint is set by",
+        "`create_token`, so there is nowhere to write but into the token",
+        "itself."
       ],
       "discriminator": [
         218,
@@ -1012,7 +1027,7 @@ export type IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто доплачує оренду за виріслий mint. Повноважень не дає."
+            "Who tops up the rent for the grown mint. Grants no powers."
           ],
           "writable": true,
           "signer": true
@@ -1020,7 +1035,7 @@ export type IssuerForge = {
         {
           "name": "authority",
           "docs": [
-            "Адміністратор складу емітента."
+            "An admin of the issuer's membership."
           ],
           "signer": true
         },
@@ -1046,12 +1061,12 @@ export type IssuerForge = {
     {
       "name": "thawHolder",
       "docs": [
-        "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
-        "відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).",
+        "Thaws a holder's account and creates both accounts without which a",
+        "transfer is refused: `HolderStatus` and `VelocityCounter` (FR-008b).",
         "",
-        "Хук не створює акаунтів, тож їх створюють тут — наперед. Саме",
-        "розморожування дозволом на переказ не є (FR-008b1): правила політики",
-        "перевіряються на кожному переказі окремо."
+        "The hook creates no accounts, so they are created here — in advance.",
+        "The thaw itself is not a permission to transfer (FR-008b1): the policy",
+        "rules are checked on every transfer separately."
       ],
       "discriminator": [
         56,
@@ -1116,18 +1131,19 @@ export type IssuerForge = {
         {
           "name": "tokenAccount",
           "docs": [
-            "Токен-акаунт холдера. Обидві перевірки обов'язкові: адреса акаунта не",
-            "доводить ані його mint, ані власника, а статус виводиться саме з",
-            "`wallet`."
+            "The holder's token account. Both checks are mandatory: the account",
+            "address proves neither its mint nor its owner, and the status is",
+            "derived from `wallet` specifically."
           ],
           "writable": true
         },
         {
           "name": "holderStatus",
           "docs": [
-            "`init_if_needed`, бо рахунок законно розморожують удруге — після",
-            "заморозки офіцером. Повторне створення нічого не переписує: що саме",
-            "пишеться, вирішує `updated_at`, а не наявність акаунта."
+            "`init_if_needed`, because an account is legitimately thawed a second",
+            "time — after an officer's freeze. A repeat creation overwrites",
+            "nothing: what is written is decided by `updated_at`, not by the",
+            "account's existence."
           ],
           "writable": true,
           "pda": {
@@ -1158,10 +1174,11 @@ export type IssuerForge = {
         {
           "name": "velocityCounter",
           "docs": [
-            "Так само `init_if_needed` — і **жодне значення вікна тут не пишеться**,",
-            "тільки власна ідентичність акаунта. Скидання вікна операційним ключем",
-            "зняло б ліміт за період рутинною дією, тобто дало б повноваження, якого",
-            "в масці делегації немає й не може бути (FR-035a)."
+            "Likewise `init_if_needed` — and **no window value is written here**,",
+            "only the account's own identity. Resetting the window with the",
+            "operational key would lift the period limit with a routine action,",
+            "i.e. grant a power the delegation mask does not have and cannot have",
+            "(FR-035a)."
           ],
           "writable": true,
           "pda": {
@@ -1199,7 +1216,7 @@ export type IssuerForge = {
         {
           "name": "authority",
           "docs": [
-            "Операційний ключ платформи або уповноважений учасник складу."
+            "The platform's operational key or an authorised member of the membership."
           ],
           "signer": true
         },
@@ -1569,7 +1586,7 @@ export type IssuerForge = {
           {
             "name": "amount",
             "docs": [
-              "Підтверджена сума в найменшій одиниці валюти резерву."
+              "The attested amount in the smallest unit of the reserve currency."
             ],
             "type": "u64"
           },
@@ -1585,9 +1602,9 @@ export type IssuerForge = {
           {
             "name": "attestedAt",
             "docs": [
-              "Момент, якого стосується підтвердження. Не «зараз»: атестатор",
-              "підтверджує стан рахунку на певний час, і саме від нього рахується строк",
-              "придатності (FR-023)."
+              "The moment the attestation refers to. Not \"now\": the attestor attests",
+              "the state of the account at a certain time, and the validity period is",
+              "counted from exactly that (FR-023)."
             ],
             "type": "i64"
           }
@@ -1606,9 +1623,10 @@ export type IssuerForge = {
           {
             "name": "attestationCredential",
             "docs": [
-              "SAS-credential провайдера, атестації якого приймає цей токен, і схема",
-              "тих атестацій. Обидва — незмінні параметри (FR-005): їхні зсуви в",
-              "`TokenConfig` зашиті в `address_config` переліку акаунтів хука."
+              "The SAS credential of the provider whose attestations this token",
+              "accepts, and the schema of those attestations. Both are immutable",
+              "parameters (FR-005): their offsets in `TokenConfig` are baked into the",
+              "`address_config` of the hook's account list."
             ],
             "type": "pubkey"
           },
@@ -1619,7 +1637,7 @@ export type IssuerForge = {
           {
             "name": "treasury",
             "docs": [
-              "Скарбниця платформи (FR-038)."
+              "The platform treasury (FR-038)."
             ],
             "type": "pubkey"
           },
@@ -1630,14 +1648,14 @@ export type IssuerForge = {
           {
             "name": "attestationMaxAge",
             "docs": [
-              "Строк придатності атестації резерву, секунди (FR-023b)."
+              "The reserve attestation validity period, seconds (FR-023b)."
             ],
             "type": "i64"
           },
           {
             "name": "reserveCurrency",
             "docs": [
-              "Валюта резерву, вона ж валюта токена."
+              "The reserve currency, which is also the token's currency."
             ],
             "type": {
               "array": [
@@ -1649,23 +1667,25 @@ export type IssuerForge = {
           {
             "name": "rules",
             "docs": [
-              "Політика версії 1 у канонічній розкладці, рівно `RULES_BYTES` байтів."
+              "Policy version 1 in the canonical layout, exactly `RULES_BYTES` bytes."
             ],
             "type": "bytes"
           },
           {
             "name": "initialSupply",
             "docs": [
-              "Початкова емісія. Проходить ту саму перевірку резерву, що й `mint`",
-              "(T038): інших шляхів появи токенів у програмі немає."
+              "The initial issuance. Goes through the same reserve check as `mint`",
+              "(T038): the program has no other way for tokens to come into",
+              "existence."
             ],
             "type": "u64"
           },
           {
             "name": "reserveAmount",
             "docs": [
-              "Перша атестація резерву: сума й момент, якого вона стосується. Валюта",
-              "береться з `reserve_currency` — двох валют в одній транзакції не буває."
+              "The first reserve attestation: the amount and the moment it refers to.",
+              "The currency is taken from `reserve_currency` — there are never two",
+              "currencies in one transaction."
             ],
             "type": "u64"
           },
@@ -1676,11 +1696,11 @@ export type IssuerForge = {
           {
             "name": "founderStatus",
             "docs": [
-              "Статус засновника у власному реєстрі емітента.",
+              "The founder's status in the issuer's own registry.",
               "",
-              "Без нього рахунок, на який лягла емісія, не зміг би нічого відправити:",
-              "хук читає статус відправника на кожному переказі й відсутність запису",
-              "вважає відмовою (FR-013)."
+              "Without it the account the issuance landed on could send nothing: the",
+              "hook reads the sender's status on every transfer and treats a missing",
+              "record as a refusal (FR-013)."
             ],
             "type": {
               "defined": {
@@ -1694,23 +1714,27 @@ export type IssuerForge = {
     {
       "name": "holderStatus",
       "docs": [
-        "Статус адреси у власному реєстрі емітента. PDA: `[\"holder\", mint, wallet]`.",
+        "An address's status in the issuer's own registry. PDA:",
+        "`[\"holder\", mint, wallet]`.",
         "",
-        "Це **одне з двох** джерел статусу (FR-008a); друге — атестація провайдера,",
-        "яку хук читає напряму зі спільного сервісу атестацій (спайк T057).",
+        "This is **one of the two** status sources (FR-008a); the other is the",
+        "provider's attestation, which the hook reads directly from the shared",
+        "attestation service (spike T057).",
         "",
-        "**Двох полів із `docs/PLAN.md` тут немає, і це свідомо:**",
-        "- `source` (issuer/provider) був потрібен, поки статус провайдера планували",
-        "дзеркалити сюди. T057 закрив це питання інакше — атестація читається",
-        "напряму, — тож поле означало б «джерело цього запису в реєстрі емітента",
-        "не емітент», чого не буває.",
-        "- `thawed` був би другим джерелом правди про стан, який авторитетно тримає",
-        "сам токен-акаунт (`DefaultAccountState`, `freeze_account`). Офіцер може",
-        "заморозити рахунок (T026), не торкаючись цього акаунта, і прапорець тут",
-        "одразу став би брехнею. Черга на розморожування (FR-008b2) живе офчейн.",
+        "**Two fields from `docs/PLAN.md` are absent here, deliberately:**",
+        "- `source` (issuer/provider) was needed while the provider status was",
+        "planned to be mirrored here. T057 settled the question differently —",
+        "the attestation is read directly — so the field would mean \"the source",
+        "of this record in the issuer's registry is not the issuer\", which never",
+        "happens.",
+        "- `thawed` would be a second source of truth about a state held",
+        "authoritatively by the token account itself (`DefaultAccountState`,",
+        "`freeze_account`). An officer can freeze an account (T026) without",
+        "touching this account, and the flag here would instantly become a lie.",
+        "The thaw queue (FR-008b2) lives off-chain.",
         "",
-        "Через це `flags` звівся до одного значення й лишився `bool`: бітмаска на",
-        "один біт — це маска, яку читають, звіряючись із коментарем."
+        "Because of that `flags` shrank to one value and stayed a `bool`: a",
+        "one-bit bitmask is a mask read by checking against the comment."
       ],
       "type": {
         "kind": "struct",
@@ -1718,9 +1742,9 @@ export type IssuerForge = {
           {
             "name": "mint",
             "docs": [
-              "Обидва поля дублюють seeds навмисно: консоль і індексатор шукають",
-              "холдерів через `getProgramAccounts` із фільтром за mint, а зробити такий",
-              "фільтр по seeds неможливо."
+              "Both fields deliberately duplicate the seeds: the console and the",
+              "indexer look for holders through `getProgramAccounts` with a filter by",
+              "mint, and such a filter cannot be made on seeds."
             ],
             "type": "pubkey"
           },
@@ -1731,14 +1755,14 @@ export type IssuerForge = {
           {
             "name": "tier",
             "docs": [
-              "Рівень верифікації, як його присвоїв емітент."
+              "The verification tier as the issuer assigned it."
             ],
             "type": "u8"
           },
           {
             "name": "jurisdiction",
             "docs": [
-              "Код ISO 3166-1 alpha-2 у верхньому регістрі."
+              "An upper-case ISO 3166-1 alpha-2 code."
             ],
             "type": {
               "array": [
@@ -1750,30 +1774,31 @@ export type IssuerForge = {
           {
             "name": "denied",
             "docs": [
-              "Заборона емітента. Діє **незалежно** від того, чи приймає політика це",
-              "джерело (FR-008a1): власний реєстр звужує коло, дозволене провайдером, і",
-              "ніколи його не розширює."
+              "The issuer's denial. Applies **regardless** of whether the policy",
+              "accepts this source (FR-008a1): the issuer's own registry narrows the",
+              "circle allowed by the provider and never widens it."
             ],
             "type": "bool"
           },
           {
             "name": "expiresAt",
             "docs": [
-              "Строк придатності запису, unix-секунди. **Нуль означає «без строку»**, а",
-              "не «протерміновано»: запис без строку — дійсний стан реєстру, і саме він",
-              "відрізняє реєстр від атестації, яка строк має завжди."
+              "The record's expiry, unix seconds. **Zero means \"no expiry\"**, not",
+              "\"expired\": a record without an expiry is a valid registry state, and",
+              "it is what distinguishes the registry from an attestation, which always",
+              "has one."
             ],
             "type": "i64"
           },
           {
             "name": "updatedAt",
             "docs": [
-              "Коли запис востаннє писали.",
+              "When the record was last written.",
               "",
-              "Не декорація: **нуль тут означає «запису ще не було»**. Свіжостворений",
-              "акаунт весь нульовий, а жоден справжній запис не має нульового часу",
-              "блоку, тож `thaw_holder` за цим полем відрізняє перше розморожування від",
-              "повторного — і не переписує статус, якого йому не доручали писати."
+              "Not decoration: **zero here means \"no record yet\"**. A freshly created",
+              "account is all zeros, and no real record has a zero block time, so",
+              "`thaw_holder` tells the first thaw from a repeat one by this field —",
+              "and does not overwrite a status it was not entrusted to write."
             ],
             "type": "i64"
           },
@@ -1787,10 +1812,10 @@ export type IssuerForge = {
     {
       "name": "holderStatusInput",
       "docs": [
-        "Значення статусу, які приносить інструкція.",
+        "The status values an instruction brings.",
         "",
-        "Окремий тип від акаунта: в акаунті є ще й `mint`, `wallet`, `bump` і",
-        "`updated_at`, і жодне з них клієнт не задає."
+        "A separate type from the account: the account also has `mint`, `wallet`,",
+        "`bump` and `updated_at`, and the client sets none of them."
       ],
       "type": {
         "kind": "struct",
@@ -1815,7 +1840,7 @@ export type IssuerForge = {
           {
             "name": "expiresAt",
             "docs": [
-              "Нуль — без строку."
+              "Zero — no expiry."
             ],
             "type": "i64"
           }
@@ -1830,16 +1855,17 @@ export type IssuerForge = {
           {
             "name": "issuerId",
             "docs": [
-              "Незмінний ідентифікатор емітента — seed його PDA. Генерується клієнтом і",
-              "нічого не підписує, тож ключем від нього володіти не обов'язково."
+              "The issuer's immutable identifier — the seed of its PDA. Generated by",
+              "the client and signs nothing, so owning its key is not required."
             ],
             "type": "pubkey"
           },
           {
             "name": "members",
             "docs": [
-              "Початковий склад: адреса й маска ролей. Порядок стає індексом у бітмапі",
-              "підписів `ActionProposal`, тому зберігається як переданий."
+              "The initial membership: an address and a role mask. The order becomes",
+              "the index in the `ActionProposal` signature bitmap, so it is stored as",
+              "passed."
             ],
             "type": {
               "vec": {
@@ -1867,7 +1893,7 @@ export type IssuerForge = {
     {
       "name": "issuerConfig",
       "docs": [
-        "Конфігурація емітента. PDA: `[\"issuer\", issuer_id]`."
+        "The issuer configuration. PDA: `[\"issuer\", issuer_id]`."
       ],
       "type": {
         "kind": "struct",
@@ -1875,17 +1901,18 @@ export type IssuerForge = {
           {
             "name": "issuerId",
             "docs": [
-              "Незмінний ідентифікатор, з якого виведена адреса цього акаунта. Нічого",
-              "не підписує: його єдина робота — бути seed, який переживає зміну складу."
+              "The immutable identifier this account's address is derived from. Signs",
+              "nothing: its only job is to be the seed that outlives membership",
+              "changes."
             ],
             "type": "pubkey"
           },
           {
             "name": "members",
             "docs": [
-              "Склад фіксованої довжини. Порядок рядків значущий: бітмапа підписів у",
-              "`ActionProposal` індексує саме його, тож видалення учасника не має",
-              "зсувати решту — звільнений слот лишається порожнім."
+              "A fixed-length membership. The row order matters: the signature bitmap",
+              "in `ActionProposal` indexes exactly it, so removing a member must not",
+              "shift the rest — the freed slot stays empty."
             ],
             "type": {
               "array": [
@@ -1901,29 +1928,30 @@ export type IssuerForge = {
           {
             "name": "memberSlots",
             "docs": [
-              "Скільки слотів зайнято. Не збігається з кількістю непорожніх слотів",
-              "після видалень — це верхня межа обходу, а не лічильник учасників."
+              "How many slots are in use. Not equal to the number of non-empty slots",
+              "after removals — it is the upper bound for iteration, not a member",
+              "count."
             ],
             "type": "u8"
           },
           {
             "name": "quorumN",
             "docs": [
-              "Поріг кворуму (FR-019). Не менший за `MIN_QUORUM`."
+              "The quorum threshold (FR-019). Not below `MIN_QUORUM`."
             ],
             "type": "u8"
           },
           {
             "name": "operationalKey",
             "docs": [
-              "Операційний ключ платформи. Грошей не рухає (FR-035a)."
+              "The platform's operational key. Moves no money (FR-035a)."
             ],
             "type": "pubkey"
           },
           {
             "name": "delegationMask",
             "docs": [
-              "Що саме йому делеговано. Відкликається однією дією (FR-035b)."
+              "What exactly is delegated to it. Revoked with one action (FR-035b)."
             ],
             "type": "u8"
           },
@@ -1934,17 +1962,19 @@ export type IssuerForge = {
           {
             "name": "tokenCount",
             "docs": [
-              "Скільки токенів емітент випустив. Наступний отримає саме цей номер.",
+              "How many tokens the issuer has issued. The next one gets exactly this",
+              "number.",
               "",
-              "Не статистика: номер стоїть у seeds mint (`[\"mint\", issuer_id, index]`),",
-              "тобто це той лічильник, який робить адресу токена виводимою. Через нього",
-              "два одночасні `create_token` того самого емітента конфліктують по",
-              "акаунту — і це правильно: другий побачить уже зайняту адресу, а не",
-              "створить токен-близнюк.",
+              "Not a statistic: the number is in the mint seeds",
+              "(`[\"mint\", issuer_id, index]`), i.e. it is the counter that makes the",
+              "token address derivable. Through it two concurrent `create_token`s of",
+              "the same issuer conflict on the account — and that is right: the",
+              "second sees an already taken address instead of creating a twin token.",
               "",
-              "Дописане в кінець структури: `IssuerConfig` створюється до першого",
-              "токена, тож жодні зсуви в ньому нікуди не зашиті, але правило «тільки в",
-              "кінець» дешевше тримати завжди, ніж згадувати, де воно потрібне."
+              "Appended at the end of the struct: `IssuerConfig` is created before the",
+              "first token, so no offsets in it are baked in anywhere, but the rule",
+              "\"only at the end\" is cheaper to keep always than to remember where it",
+              "is needed."
             ],
             "type": "u32"
           }
@@ -1954,11 +1984,11 @@ export type IssuerForge = {
     {
       "name": "member",
       "docs": [
-        "Рядок складу вповноважених: адреса гаманця й маска її ролей.",
+        "A row of the authorised membership: a wallet address and its role mask.",
         "",
-        "Роль прив'язана до адреси, а не до облікового запису входу (FR-034a): зміна",
-        "способу входу не змінює повноважень, а втрата доступу до акаунта не передає",
-        "роль іншій адресі."
+        "A role is bound to the address, not to the login account (FR-034a): a",
+        "change of login method does not change the powers, and losing access to",
+        "the account does not pass the role to another address."
       ],
       "type": {
         "kind": "struct",
@@ -1977,18 +2007,20 @@ export type IssuerForge = {
     {
       "name": "policyConfig",
       "docs": [
-        "Версія політики. PDA: `[\"policy\", mint, version]`, версія — `u32` LE.",
+        "A policy version. PDA: `[\"policy\", mint, version]`, the version a `u32`",
+        "LE.",
         "",
-        "**Незмінність історії — властивість адреси, а не перевірки в коді.** Кожна",
-        "версія живе за власним PDA й створюється через `init`, тож повторний запис у",
-        "вже існуючу версію відхиляє рантайм, а не наша логіка (FR-010). Перезаписати",
-        "попередню версію нічим: інструкції, яка б відкрила її на запис, у програмі",
-        "немає.",
+        "**The immutability of history is a property of the address, not of a",
+        "check in code.** Every version lives at its own PDA and is created through",
+        "`init`, so a repeat write into an existing version is rejected by the",
+        "runtime, not by our logic (FR-010). There is nothing to overwrite a",
+        "previous version with: the program has no instruction that would open it",
+        "for writing.",
         "",
-        "`zero_copy`, бо хук читає `rules` на **кожному** переказі: десеріалізація",
-        "Borsh 384 байтів у CU-бюджеті хука коштувала б дорожче за саму перевірку.",
-        "Звідси `#[repr(C)]`, явна набивка до восьми байтів і `AccountLoader` замість",
-        "`Account` на боці інструкцій."
+        "`zero_copy`, because the hook reads `rules` on **every** transfer: Borsh",
+        "deserialisation of 384 bytes within the hook's CU budget would cost more",
+        "than the check itself. Hence `#[repr(C)]`, explicit padding to eight",
+        "bytes and `AccountLoader` instead of `Account` on the instruction side."
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -2000,7 +2032,7 @@ export type IssuerForge = {
           {
             "name": "activatedAt",
             "docs": [
-              "Час активації, unix-секунди — половина того, чого вимагає FR-010."
+              "The activation time, unix seconds — half of what FR-010 requires."
             ],
             "type": "i64"
           },
@@ -2011,32 +2043,35 @@ export type IssuerForge = {
           {
             "name": "mint",
             "docs": [
-              "Mint, чию політику ця версія описує.",
+              "The mint whose policy this version describes.",
               "",
-              "Дублює seeds, і це **вимога хука**, а не зручність. Хук читає політику",
-              "через `AccountLoader`, а полів `AccountLoader` не видно в атрибутах",
-              "`#[account(...)]`, тож прив'язати акаунт до mint можна або цим",
-              "порівнянням, або `create_program_address` — а той коштує 1500 CU на",
-              "кожному переказі (SC-003). Тридцять два байти на версію політики дешевші."
+              "Duplicates the seeds, and that is a **requirement of the hook**, not a",
+              "convenience. The hook reads the policy through `AccountLoader`, and",
+              "`AccountLoader` fields are not visible in `#[account(...)]`",
+              "attributes, so the account can be tied to the mint either by this",
+              "comparison or by `create_program_address` — and the latter costs",
+              "1500 CU on every transfer (SC-003). Thirty-two bytes per policy",
+              "version are cheaper."
             ],
             "type": "pubkey"
           },
           {
             "name": "author",
             "docs": [
-              "Хто ініціював зміну — перший підпис із зібраного кворуму.",
+              "Who initiated the change — the first signature of the collected",
+              "quorum.",
               "",
-              "Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить",
-              "навмисно: він належить журналу й `ActionProposal` (T025, T029), а",
-              "шістнадцять адрес у кожній версії політики були б третім дзеркалом того",
-              "самого факту."
+              "The named list of everyone who authorised the action (FR-019c) is",
+              "deliberately not here: it belongs to the journal and `ActionProposal`",
+              "(T025, T029), and sixteen addresses in every policy version would be a",
+              "third mirror of the same fact."
             ],
             "type": "pubkey"
           },
           {
             "name": "rules",
             "docs": [
-              "Правила у канонічній розкладці. Порядок і межі тримає `rules::layout`."
+              "The rules in the canonical layout. `rules::layout` holds the order and the bounds."
             ],
             "type": {
               "array": [
@@ -2052,10 +2087,12 @@ export type IssuerForge = {
           {
             "name": "rulesHash",
             "docs": [
-              "sha256 над усім полем `rules`, порахований програмою при записі.",
+              "sha256 over the whole `rules` field, computed by the program at write",
+              "time.",
               "",
-              "Рахується тут, а не приймається від клієнта: хеш, який приніс той самий,",
-              "хто приніс байти, доводить лише те, що клієнт уміє рахувати хеші."
+              "Computed here rather than accepted from the client: a hash brought by",
+              "the same party that brought the bytes proves only that the client",
+              "knows how to compute hashes."
             ],
             "type": {
               "array": [
@@ -2071,8 +2108,9 @@ export type IssuerForge = {
           {
             "name": "padding",
             "docs": [
-              "Явна набивка до вирівнювання 8. Без неї `bytemuck::Pod` не виводиться, а",
-              "мовчазна набивка компілятора потрапила б у хеш акаунта як сміття."
+              "Explicit padding to alignment 8. Without it `bytemuck::Pod` cannot be",
+              "derived, and the compiler's silent padding would end up in the account",
+              "hash as garbage."
             ],
             "type": {
               "array": [
@@ -2087,20 +2125,22 @@ export type IssuerForge = {
     {
       "name": "reserveAttestation",
       "docs": [
-        "Атестація резерву. PDA: `[\"reserve\", mint, index]`, індекс — `u64` LE.",
+        "A reserve attestation. PDA: `[\"reserve\", mint, index]`, the index a `u64`",
+        "LE.",
         "",
-        "**Append-only, і це властивість адреси, а не перевірки** (FR-026): кожен",
-        "індекс — власний PDA, створений через `init`, тож переписати запис нічим.",
-        "Інструкції, яка б відкрила попередню атестацію на запис, у програмі немає, і",
-        "заміна атестатора (FR-024a) історії не чіпає — вона змінює те, хто підпише",
-        "**наступну**.",
+        "**Append-only, and that is a property of the address, not of a check**",
+        "(FR-026): every index is its own PDA created through `init`, so there is",
+        "nothing to overwrite a record with. The program has no instruction that",
+        "would open a previous attestation for writing, and replacing the attestor",
+        "(FR-024a) does not touch history — it changes who signs the **next**",
+        "one.",
         "",
-        "**`expires_at` тут немає, попри `docs/PLAN.md`.** Строк придатності задається",
-        "при випуску й змінюється кворумом (FR-023b), тобто живе в",
-        "`TokenConfig.attestation_max_age`. Знімок цього строку в кожному записі був би",
-        "другою відповіддю на питання «чи протермінована атестація», і при зміні",
-        "строку дві відповіді розійшлися б. Публічна сторінка рахує",
-        "`attested_at + max_age` — так само, як програма."
+        "**There is no `expires_at` here, despite `docs/PLAN.md`.** The validity",
+        "period is set at issuance and changed by quorum (FR-023b), i.e. it lives",
+        "in `TokenConfig.attestation_max_age`. A snapshot of that period in every",
+        "record would be a second answer to \"is the attestation expired\", and on a",
+        "change of the period the two answers would diverge. The public page",
+        "computes `attested_at + max_age` — the same way the program does."
       ],
       "type": {
         "kind": "struct",
@@ -2112,18 +2152,20 @@ export type IssuerForge = {
           {
             "name": "index",
             "docs": [
-              "Позиція в послідовності. Індекс і є історія: він адресує «попередню",
-              "атестацію», а не змушує шукати її перебором."
+              "The position in the sequence. The index is the history: it addresses",
+              "\"the previous attestation\" rather than forcing a search for it."
             ],
             "type": "u64"
           },
           {
             "name": "amount",
             "docs": [
-              "Підтверджена сума в найменшій одиниці **валюти резерву** — вона ж",
-              "найменша одиниця токена, бо `currency` мусить збігтися з валютою токена",
-              "(`TokenConfig.reserve_currency`). Без цієї рівності порівняння «емісія +",
-              "обіг ≤ атестованого» вимагало б курсу, якого в програмі немає й не буде."
+              "The attested amount in the smallest unit of the **reserve currency** —",
+              "which is also the token's smallest unit, because `currency` must match",
+              "the token's currency (`TokenConfig.reserve_currency`). Without that",
+              "equality the comparison \"issuance + circulation ≤ attested\" would",
+              "require an exchange rate, which the program does not have and never",
+              "will."
             ],
             "type": "u64"
           },
@@ -2139,8 +2181,8 @@ export type IssuerForge = {
           {
             "name": "attestor",
             "docs": [
-              "Хто підписав. Лишається в записі назавжди: після заміни атестатора",
-              "(FR-024a) видно, хто підтверджував резерв тоді."
+              "Who signed. Stays in the record forever: after the attestor is replaced",
+              "(FR-024a) it is visible who attested the reserve back then."
             ],
             "type": "pubkey"
           },
@@ -2158,7 +2200,7 @@ export type IssuerForge = {
     {
       "name": "ruleSlot",
       "docs": [
-        "Один слот правила, як він лежить в акаунті."
+        "One rule slot, as it lies in the account."
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -2215,19 +2257,19 @@ export type IssuerForge = {
           {
             "name": "version",
             "docs": [
-              "Номер нової версії. Мусить бути рівно наступним за чинною: пропуск",
-              "зробив би «попередню версію» невиводимою з номера, а історію — переліком",
-              "з дірками, який нічим не звірити."
+              "The new version number. Must be exactly the next after the current",
+              "one: a skip would make \"the previous version\" underivable from the",
+              "number, and the history a list with gaps that nothing can verify."
             ],
             "type": "u32"
           },
           {
             "name": "rules",
             "docs": [
-              "Правила в канонічній розкладці, рівно `RULES_BYTES` байтів.",
+              "The rules in the canonical layout, exactly `RULES_BYTES` bytes.",
               "",
-              "`Vec<u8>`, а не масив: Borsh описує його як `bytes`, і IDL лишається",
-              "читабельним для клієнта. Довжину перевіряє програма."
+              "A `Vec<u8>`, not an array: Borsh describes it as `bytes`, and the IDL",
+              "stays readable for the client. The program checks the length."
             ],
             "type": "bytes"
           }
@@ -2262,20 +2304,20 @@ export type IssuerForge = {
           {
             "name": "wallet",
             "docs": [
-              "Власник рахунку. Мусить збігтися з `owner` токен-акаунта — інакше",
-              "статус ліг би за адресою, якої переказ ніколи не прочитає."
+              "The account owner. Must match the token account's `owner` — otherwise",
+              "the status would land at an address a transfer never reads."
             ],
             "type": "pubkey"
           },
           {
             "name": "status",
             "docs": [
-              "Початковий статус — тільки для **першого** розморожування.",
+              "The initial status — only for the **first** thaw.",
               "",
-              "`None` означає «запис уже є, я його не чіпаю»: так виглядає повторне",
-              "розморожування після заморозки офіцером (T026). Розбіжність між",
-              "наміром і станом акаунта відхиляється, а не тлумачиться, тож жоден",
-              "виклик не змінює статусу мовчки."
+              "`None` means \"the record already exists, I am not touching it\": that",
+              "is what a repeat thaw after an officer's freeze looks like (T026). A",
+              "mismatch between the intent and the account state is rejected, not",
+              "interpreted, so no call changes the status silently."
             ],
             "type": {
               "option": {
@@ -2291,20 +2333,23 @@ export type IssuerForge = {
     {
       "name": "tokenConfig",
       "docs": [
-        "Конфігурація випущеного токена. PDA: `[\"token\", mint]`.",
+        "The configuration of an issued token. PDA: `[\"token\", mint]`.",
         "",
-        "**Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт",
-        "атестації провайдера через `ExtraAccountMetaList`, а її адреса виводиться з",
-        "seeds `[\"attestation\", credential, schema, nonce]` (спайк T057). Два",
-        "32-байтові літерали в 32-байтовий `address_config` не вміщаються ніколи, тож",
-        "`credential` і `schema` беруться **зрізами даних цього акаунта** — а зсув у",
-        "seed `AccountData` має розмір рівно одного байта.",
+        "**The field order here is part of the protocol, not style.** The hook",
+        "receives the provider attestation account through `ExtraAccountMetaList`,",
+        "and its address is derived from the seeds",
+        "`[\"attestation\", credential, schema, nonce]` (spike T057). Two 32-byte",
+        "literals never fit into a 32-byte `address_config`, so `credential` and",
+        "`schema` are taken as **slices of this account's data** — and the offset",
+        "in an `AccountData` seed is exactly one byte wide.",
         "",
-        "Звідси два обмеження, які тепер є вимогами до розкладки:",
-        "- обидва поля мусять лежати в перших 256 байтах акаунта;",
-        "- їхні зсуви зашиті в `address_config` уже створених `ExtraAccountMetaList`,",
-        "тож вставка нового поля **перед ними** мовчки перенаправить хук на чужі",
-        "32 байти. Тест `token_config_offsets_are_pinned` існує саме проти цього."
+        "Hence two constraints that are now requirements on the layout:",
+        "- both fields must lie within the first 256 bytes of the account;",
+        "- their offsets are baked into the `address_config` of every",
+        "`ExtraAccountMetaList` already created, so inserting a new field",
+        "**before them** silently redirects the hook to someone else's 32 bytes.",
+        "The test `token_config_offsets_are_pinned` exists precisely against",
+        "that."
       ],
       "type": {
         "kind": "struct",
@@ -2320,62 +2365,64 @@ export type IssuerForge = {
           {
             "name": "attestationCredential",
             "docs": [
-              "SAS-credential провайдера верифікації, атестації якого приймає цей токен."
+              "The SAS credential of the verification provider whose attestations this token accepts."
             ],
             "type": "pubkey"
           },
           {
             "name": "attestationSchema",
             "docs": [
-              "SAS-schema тих атестацій."
+              "The SAS schema of those attestations."
             ],
             "type": "pubkey"
           },
           {
             "name": "attestor",
             "docs": [
-              "Чинний атестатор резерву **цього токена** (FR-024b).",
+              "The current reserve attestor **of this token** (FR-024b).",
               "",
-              "Живе тут, а не в `IssuerConfig`, попри `docs/PLAN.md`: FR-024b перевіряє",
-              "підпис проти атестатора конкретного токена, і емітент із двома токенами",
-              "законно має для них різних атестаторів."
+              "Lives here rather than in `IssuerConfig`, despite `docs/PLAN.md`:",
+              "FR-024b checks the signature against the attestor of a specific token,",
+              "and an issuer with two tokens legitimately has different attestors for",
+              "them."
             ],
             "type": "pubkey"
           },
           {
             "name": "treasury",
             "docs": [
-              "Скарбниця платформи: сюди йде комісія з емісії й погашення (FR-038)."
+              "The platform treasury: the fee on issuance and redemption goes here (FR-038)."
             ],
             "type": "pubkey"
           },
           {
             "name": "policyVersion",
             "docs": [
-              "Версія політики, на яку налаштований mint. Розбіжність — перша перевірка",
-              "хука й перший код відмови."
+              "The policy version the mint is configured with. A mismatch is the",
+              "hook's first check and the first refusal code."
             ],
             "type": "u32"
           },
           {
             "name": "feeBps",
             "docs": [
-              "Оголошена ставка комісії (FR-038a)."
+              "The declared fee rate (FR-038a)."
             ],
             "type": "u16"
           },
           {
             "name": "attestationMaxAge",
             "docs": [
-              "Строк придатності атестації, секунди (FR-023b)."
+              "The attestation validity period, seconds (FR-023b)."
             ],
             "type": "i64"
           },
           {
             "name": "pausedAt",
             "docs": [
-              "Дзеркало стану паузи для журналу й екранів; `0` — не на паузі.",
-              "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
+              "A mirror of the pause state for the journal and the screens; `0` — not",
+              "paused. The `Pausable` extension on the mint itself remains",
+              "authoritative (FR-016)."
             ],
             "type": "i64"
           },
@@ -2386,27 +2433,30 @@ export type IssuerForge = {
           {
             "name": "attestationCount",
             "docs": [
-              "Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.",
+              "How many reserve attestations have been published. The next one gets",
+              "exactly this index.",
               "",
-              "Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,",
-              "який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**",
-              "атестація остання. Старіша атестація з більшою сумою — це емісія понад",
-              "резерв, і без лічильника її нічим відрізнити від свіжої.",
+              "A counter, not an amount: the attested amount and time are read from",
+              "the same account the journal verifier reads (SC-006), and here lies",
+              "only **which** attestation is the latest. An older attestation with a",
+              "larger amount is an issuance beyond the reserve, and without the",
+              "counter there is nothing to tell it from a fresh one.",
               "",
-              "Дописане в кінець структури: зсуви `credential`, `schema` й",
-              "`policy_version` зашиті в `address_config` кожного створеного",
-              "`ExtraAccountMetaList` і не мають рухатись ніколи."
+              "Appended at the end of the struct: the offsets of `credential`,",
+              "`schema` and `policy_version` are baked into the `address_config` of",
+              "every `ExtraAccountMetaList` created and must never move."
             ],
             "type": "u64"
           },
           {
             "name": "reserveCurrency",
             "docs": [
-              "Валюта резерву, вона ж валюта самого токена.",
+              "The reserve currency, which is also the currency of the token itself.",
               "",
-              "Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює",
-              "два числа, і якби вони були в різних валютах, порівняння вимагало б",
-              "курсу — а курсу в програмі немає й не буде."
+              "The equality is mandatory: the check \"issuance + circulation ≤",
+              "attested\" compares two numbers, and if they were in different",
+              "currencies the comparison would require an exchange rate — which the",
+              "program does not have and never will."
             ],
             "type": {
               "array": [
@@ -2421,15 +2471,16 @@ export type IssuerForge = {
     {
       "name": "velocityCounter",
       "docs": [
-        "Лічильник ліміту за період. PDA: `[\"velocity\", mint, wallet]`.",
+        "The per-period limit counter. PDA: `[\"velocity\", mint, wallet]`.",
         "",
-        "**Виправлення до першої редакції цього файла (T016).** Спершу тут не було",
-        "`mint` і `wallet`: лічильник читає лише хук за виведеною адресою, і сканувати",
-        "його за фільтром нікому не треба. Аргумент виявився неповним — хук приймає",
-        "цей акаунт **нетипізованим** (його відсутність мусить давати наш код відмови,",
-        "а не помилку Anchor), тож прив'язати його до холдера можна або цими двома",
-        "полями, або `create_program_address`, а той коштує 1500 CU на кожному",
-        "переказі (SC-003). Шістдесят чотири байти оренди дешевші за це."
+        "**A correction to the first edition of this file (T016).** At first",
+        "there was no `mint` and `wallet` here: only the hook reads the counter, by",
+        "the derived address, and nobody needs to scan it by filter. The argument",
+        "turned out incomplete — the hook takes this account **untyped** (its",
+        "absence must yield our refusal code, not an Anchor error), so it can be",
+        "tied to the holder either by these two fields or by",
+        "`create_program_address`, and the latter costs 1500 CU on every transfer",
+        "(SC-003). Sixty-four bytes of rent are cheaper than that."
       ],
       "type": {
         "kind": "struct",
@@ -2445,7 +2496,7 @@ export type IssuerForge = {
           {
             "name": "windowStart",
             "docs": [
-              "Початок поточного вікна. Нуль означає, що вікна ще не було."
+              "The start of the current window. Zero means there has been no window yet."
             ],
             "type": "i64"
           },
@@ -2475,11 +2526,12 @@ export const IDL: IssuerForge = {
     {
       "name": "attestReserve",
       "docs": [
-        "Публікує атестацію резерву (FR-021, FR-024, FR-026).",
+        "Publishes a reserve attestation (FR-021, FR-024, FR-026).",
         "",
-        "Підписує рівно чинний атестатор цього токена: атестація нічого не",
-        "дозволяє, вона лише звужує те, що дозволено, і саме тому не потребує",
-        "кворуму. Запис append-only — переписати його нічим."
+        "Signed by exactly the current attestor of this token: an attestation",
+        "allows nothing, it only narrows what is allowed, which is why it needs",
+        "no quorum. The record is append-only — there is nothing to overwrite",
+        "it with."
       ],
       "discriminator": [
         67,
@@ -2518,9 +2570,9 @@ export const IDL: IssuerForge = {
         {
           "name": "attestation",
           "docs": [
-            "Наступний запис у послідовності. Індекс береться з лічильника, а не від",
-            "клієнта: `init` за такою адресою неможливий двічі, тож пропустити номер",
-            "або переписати попередній запис нічим."
+            "The next record in the sequence. The index comes from the counter, not",
+            "from the client: `init` at such an address is impossible twice, so",
+            "there is no way to skip a number or overwrite a previous record."
           ],
           "writable": true,
           "pda": {
@@ -2553,14 +2605,14 @@ export const IDL: IssuerForge = {
         {
           "name": "attestor",
           "docs": [
-            "Чинний атестатор резерву цього токена."
+            "The current reserve attestor of this token."
           ],
           "signer": true
         },
         {
           "name": "payer",
           "docs": [
-            "Оренду платить хто завгодно: платіж не є повноваженням."
+            "Anyone pays the rent: paying is not a power."
           ],
           "writable": true,
           "signer": true
@@ -2584,14 +2636,15 @@ export const IDL: IssuerForge = {
     {
       "name": "createToken",
       "docs": [
-        "Випускає токен: mint із розширеннями, конфігурацію, політику версії 1,",
-        "першу атестацію резерву й початкову емісію — усе однією транзакцією",
-        "(FR-001, FR-005, FR-006, FR-022).",
+        "Issues a token: the mint with its extensions, the configuration, policy",
+        "version 1, the first reserve attestation and the initial issuance — all",
+        "in one transaction (FR-001, FR-005, FR-006, FR-022).",
         "",
-        "Підписів два — засновник-адміністратор і атестатор. Перший не може",
-        "випустити токен без другого, бо емісія проходить гейт резерву, а гейту",
-        "нічого читати, доки атестації немає; другий не може нічого сам, бо роль",
-        "атестатора несумісна з будь-якою іншою."
+        "Two signatures — the founder-admin and the attestor. The first cannot",
+        "issue a token without the second, because the issuance goes through",
+        "the reserve gate, and the gate has nothing to read until an",
+        "attestation exists; the second can do nothing alone, because the",
+        "attestor role is incompatible with any other."
       ],
       "discriminator": [
         84,
@@ -2607,12 +2660,13 @@ export const IDL: IssuerForge = {
         {
           "name": "founder",
           "docs": [
-            "Засновник, він же платник оренди.",
+            "The founder, who is also the rent payer.",
             "",
-            "Об'єднані навмисно: окремий платник — це шістнадцятий акаунт і третій",
-            "підпис, а їх немає куди покласти. Гаманець засновника без SOL платформа",
-            "поповнює перед випуском; у `set_token_metadata` нижче платник знову",
-            "окремий, бо там місце є."
+            "Merged on purpose: a separate payer is a sixteenth account and a",
+            "third signature, and there is nowhere to put them. A founder's wallet",
+            "without SOL is topped up by the platform before the issuance; in",
+            "`set_token_metadata` below the payer is separate again, because there",
+            "is room there."
           ],
           "writable": true,
           "signer": true
@@ -2620,16 +2674,17 @@ export const IDL: IssuerForge = {
         {
           "name": "attestor",
           "docs": [
-            "Атестатор резерву цього токена. Мусить стояти у складі емітента з роллю",
-            "атестатора, а вона за `initialize_issuer` несумісна з будь-якою іншою."
+            "The reserve attestor of this token. Must be in the issuer's membership",
+            "with the attestor role, which under `initialize_issuer` is",
+            "incompatible with any other."
           ],
           "signer": true
         },
         {
           "name": "issuerConfig",
           "docs": [
-            "`mut`, бо інструкція збільшує лічильник токенів — з нього виведена",
-            "адреса mint."
+            "`mut`, because the instruction increments the token counter — the mint",
+            "address is derived from it."
           ],
           "writable": true,
           "pda": {
@@ -2656,8 +2711,9 @@ export const IDL: IssuerForge = {
         {
           "name": "mint",
           "docs": [
-            "нічим: акаунт ще не існує, а `InterfaceAccount<Mint>` вимагав би",
-            "ініціалізованого mint — тобто того, що ця інструкція якраз і робить."
+            "content. There is nothing to type it with: the account does not exist",
+            "yet, and `InterfaceAccount<Mint>` would require an initialised mint —",
+            "i.e. exactly what this instruction does."
           ],
           "writable": true,
           "pda": {
@@ -2709,9 +2765,9 @@ export const IDL: IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Політика версії 1. Пишеться тією самою `PolicyConfig::write`, що й усі",
-            "наступні версії: два писці означали б дві перевірки канонічності, з яких",
-            "одна колись відстане."
+            "Policy version 1. Written with the same `PolicyConfig::write` as all",
+            "later versions: two writers would mean two canonicity checks, one of",
+            "which would fall behind some day."
           ],
           "writable": true,
           "pda": {
@@ -2746,8 +2802,8 @@ export const IDL: IssuerForge = {
         {
           "name": "attestation",
           "docs": [
-            "Атестація #0. Індекс у seeds і `init` роблять історію незмінною без",
-            "жодної перевірки з нашого боку (FR-026)."
+            "Attestation #0. The index in the seeds and `init` make the history",
+            "immutable without any check on our side (FR-026)."
           ],
           "writable": true,
           "pda": {
@@ -2787,8 +2843,9 @@ export const IDL: IssuerForge = {
         {
           "name": "founderTokenAccount",
           "docs": [
-            "повторювати `create_program_address` тут означало б платити за ту саму",
-            "перевірку двічі. Створити його наперед не можна: mint ще не існує."
+            "creation — repeating `create_program_address` here would mean paying",
+            "for the same check twice. It cannot be created in advance: the mint",
+            "does not exist yet."
           ],
           "writable": true
         },
@@ -2874,13 +2931,13 @@ export const IDL: IssuerForge = {
     {
       "name": "execute",
       "docs": [
-        "Transfer hook: перевірка правил на кожному переказі (FR-002, FR-011,",
+        "The transfer hook: the rule check on every transfer (FR-002, FR-011,",
         "FR-012).",
         "",
-        "Дискримінатор заданий явно: цю інструкцію кличе токен-програма за",
-        "інтерфейсом `spl-transfer-hook-interface`, а не клієнт за іменем, тож",
-        "вісім байтів мусять бути ті, що в інтерфейсі, а не ті, що Anchor вивів би",
-        "з назви."
+        "The discriminator is set explicitly: this instruction is called by the",
+        "token program through the `spl-transfer-hook-interface`, not by a",
+        "client by name, so the eight bytes must be the ones in the interface,",
+        "not the ones Anchor would derive from the name."
       ],
       "discriminator": [
         105,
@@ -2932,15 +2989,16 @@ export const IDL: IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Чинна версія політики. Її адресу резолвить токен-програма з поля",
-            "`policy_version` у `TokenConfig`, тож підсунути іншу версію неможливо;",
-            "перевірка нижче лишається другим замком, а не єдиним."
+            "The current policy version. The token program resolves its address",
+            "from the `policy_version` field in `TokenConfig`, so slipping in",
+            "another version is impossible; the check below remains a second lock,",
+            "not the only one."
           ]
         },
         {
           "name": "senderStatus",
           "docs": [
-            "відмови, а не помилку Anchor."
+            "not an Anchor error."
           ]
         },
         {
@@ -2953,7 +3011,7 @@ export const IDL: IssuerForge = {
         {
           "name": "sasProgram",
           "docs": [
-            "PDA атестацій у переліку."
+            "attestation PDAs in the list refer to it."
           ]
         },
         {
@@ -2973,11 +3031,11 @@ export const IDL: IssuerForge = {
     {
       "name": "initializeExtraAccountMetaList",
       "docs": [
-        "Створює `ExtraAccountMetaList` — перелік акаунтів, які токен-програма",
-        "підкладатиме хуку на кожному переказі (FR-012).",
+        "Creates the `ExtraAccountMetaList` — the list of accounts the token",
+        "program will hand to the hook on every transfer (FR-012).",
         "",
-        "Окремою інструкцією від випуску: перелік належить інтерфейсу хука, а не",
-        "mint. Клієнт кладе обидві в одну транзакцію."
+        "A separate instruction from the issuance: the list belongs to the hook",
+        "interface, not to the mint. The client puts both into one transaction."
       ],
       "discriminator": [
         92,
@@ -2998,7 +3056,8 @@ export const IDL: IssuerForge = {
         {
           "name": "extraAccountMetaList",
           "docs": [
-            "це TLV-буфер `spl-tlv-account-resolution`, а не акаунт Anchor."
+            "There is nothing to type it with — it is a `spl-tlv-account-resolution`",
+            "TLV buffer, not an Anchor account."
           ],
           "writable": true,
           "pda": {
@@ -3070,11 +3129,13 @@ export const IDL: IssuerForge = {
     {
       "name": "initializeIssuer",
       "docs": [
-        "Створює емітента: склад уповноважених, поріг кворуму й межі, у яких",
-        "операційний ключ платформи може діяти (FR-019a, FR-033, FR-035).",
+        "Creates an issuer: the authorised membership, the quorum threshold and",
+        "the bounds within which the platform's operational key may act",
+        "(FR-019a, FR-033, FR-035).",
         "",
-        "Єдина дія емітента, що не проходить кворум, — бо до неї кворуму ще",
-        "немає. Усе, що вона задає, змінюється далі **тільки** кворумом."
+        "The only issuer action that does not go through the quorum — because",
+        "before it there is no quorum yet. Everything it sets is changed from",
+        "then on **only** by quorum."
       ],
       "discriminator": [
         231,
@@ -3113,11 +3174,11 @@ export const IDL: IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто платить оренду. Свідомо відділений від `founder`: гаманець офіцера,",
-            "створений через Privy, законно має нуль SOL, і вимагати від нього",
-            "платити означало б, що вхід без криптодосвіду (FR-034) не працює на",
-            "першому ж кроці. Повноважень цей підпис не дає — жодна перевірка нижче",
-            "його не питає."
+            "Who pays the rent. Deliberately separated from `founder`: an",
+            "officer's wallet created through Privy legitimately has zero SOL, and",
+            "requiring it to pay would mean that login without crypto experience",
+            "(FR-034) fails at the very first step. This signature grants no",
+            "powers — no check below asks for it."
           ],
           "writable": true,
           "signer": true
@@ -3125,8 +3186,8 @@ export const IDL: IssuerForge = {
         {
           "name": "founder",
           "docs": [
-            "Хто засновує. Мусить бути в складі з роллю адміністратора: емітента не",
-            "можна створити від імені людей, серед яких тебе немає."
+            "Who founds. Must be in the membership with the admin role: an issuer",
+            "cannot be created on behalf of people you are not among."
           ],
           "signer": true
         },
@@ -3149,11 +3210,12 @@ export const IDL: IssuerForge = {
     {
       "name": "setHolderStatus",
       "docs": [
-        "Оновлює статус адреси у власному реєстрі емітента (FR-008a, FR-008b1).",
+        "Updates an address's status in the issuer's own registry (FR-008a,",
+        "FR-008b1).",
         "",
-        "Ця інструкція й робить FR-008b1 виконуваним: рахунок лишається",
-        "розмороженим, а переказ із нього перестає проходити тієї ж миті, коли",
-        "статус більше не задовольняє політику."
+        "This instruction is what makes FR-008b1 enforceable: the account stays",
+        "thawed, and a transfer from it stops passing the moment the status no",
+        "longer satisfies the policy."
       ],
       "discriminator": [
         121,
@@ -3214,10 +3276,11 @@ export const IDL: IssuerForge = {
         {
           "name": "holderStatus",
           "docs": [
-            "Без `init`: запису, якого немає, ця інструкція не заводить. Створення",
-            "прив'язане до розморожування, бо статус без розмороженого рахунку нічого",
-            "не означає, а `HolderStatus` без `VelocityCounter` дав би відмову в",
-            "переказі там, де емітент вважає холдера впорядкованим."
+            "Without `init`: this instruction does not create a record that does",
+            "not exist. Creation is tied to the thaw, because a status without a",
+            "thawed account means nothing, and a `HolderStatus` without a",
+            "`VelocityCounter` would give a transfer refusal where the issuer",
+            "considers the holder in order."
           ],
           "writable": true,
           "pda": {
@@ -3264,15 +3327,17 @@ export const IDL: IssuerForge = {
     {
       "name": "setPolicy",
       "docs": [
-        "Записує наступну версію політики й переводить токен на неї (FR-009,",
+        "Writes the next policy version and moves the token onto it (FR-009,",
         "FR-010).",
         "",
-        "Зміна набуває сили без повторного випуску токена й без дій з боку",
-        "холдерів: політика — дані, і хук читає нову версію вже на наступному",
-        "переказі. Попередні версії лишаються на своїх адресах назавжди.",
+        "The change takes effect without re-issuing the token and without any",
+        "action by holders: policy is data, and the hook reads the new version",
+        "on the very next transfer. Previous versions stay at their addresses",
+        "forever.",
         "",
-        "Санкціонує зміну кворум гаманців емітента (FR-035), а не операційний",
-        "ключ платформи: підписи передаються в `remaining_accounts`."
+        "The change is authorised by a quorum of the issuer's wallets (FR-035),",
+        "not by the platform's operational key: the signatures are passed in",
+        "`remaining_accounts`."
       ],
       "discriminator": [
         40,
@@ -3311,8 +3376,8 @@ export const IDL: IssuerForge = {
         {
           "name": "tokenConfig",
           "docs": [
-            "Мусить іти перед `policy_config`: його `mint` є seed'ом наступного",
-            "акаунта, а Anchor перевіряє поля в порядку оголошення."
+            "Must come before `policy_config`: its `mint` is a seed of the next",
+            "account, and Anchor checks fields in declaration order."
           ],
           "writable": true,
           "pda": {
@@ -3338,9 +3403,9 @@ export const IDL: IssuerForge = {
         {
           "name": "policyConfig",
           "docs": [
-            "Нова версія. `init` тут і є незмінністю історії (FR-010): версія, яка вже",
-            "існує, не створюється вдруге, а інструкції, що відкрила б її на запис, у",
-            "програмі немає."
+            "The new version. `init` here is the immutability of history (FR-010):",
+            "a version that already exists is not created a second time, and the",
+            "program has no instruction that would open it for writing."
           ],
           "writable": true,
           "pda": {
@@ -3371,8 +3436,8 @@ export const IDL: IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто платить оренду за нову версію. Повноважень цей підпис не дає — їх",
-            "дає тільки кворум серед `remaining_accounts`."
+            "Who pays the rent for the new version. This signature grants no powers",
+            "— only the quorum among `remaining_accounts` does."
           ],
           "writable": true,
           "signer": true
@@ -3396,12 +3461,13 @@ export const IDL: IssuerForge = {
     {
       "name": "setTokenMetadata",
       "docs": [
-        "Дописує метадані у сам mint (FR-001).",
+        "Writes the metadata into the mint itself (FR-001).",
         "",
-        "Окремою транзакцією від випуску: назва, символ і посилання не вміщаються",
-        "в транзакцію, яка вже несе 384 байти політики й 14 акаунтів. Вказівник",
-        "метаданих на mint ставить `create_token`, тож дописувати нікуди більше,",
-        "ніж у сам токен."
+        "A separate transaction from the issuance: the name, symbol and URI do",
+        "not fit into a transaction that already carries 384 bytes of policy",
+        "and 14 accounts. The metadata pointer on the mint is set by",
+        "`create_token`, so there is nowhere to write but into the token",
+        "itself."
       ],
       "discriminator": [
         218,
@@ -3466,7 +3532,7 @@ export const IDL: IssuerForge = {
         {
           "name": "payer",
           "docs": [
-            "Хто доплачує оренду за виріслий mint. Повноважень не дає."
+            "Who tops up the rent for the grown mint. Grants no powers."
           ],
           "writable": true,
           "signer": true
@@ -3474,7 +3540,7 @@ export const IDL: IssuerForge = {
         {
           "name": "authority",
           "docs": [
-            "Адміністратор складу емітента."
+            "An admin of the issuer's membership."
           ],
           "signer": true
         },
@@ -3500,12 +3566,12 @@ export const IDL: IssuerForge = {
     {
       "name": "thawHolder",
       "docs": [
-        "Розморожує рахунок холдера й заводить обидва акаунти, без яких переказ",
-        "відмовляє: `HolderStatus` і `VelocityCounter` (FR-008b).",
+        "Thaws a holder's account and creates both accounts without which a",
+        "transfer is refused: `HolderStatus` and `VelocityCounter` (FR-008b).",
         "",
-        "Хук не створює акаунтів, тож їх створюють тут — наперед. Саме",
-        "розморожування дозволом на переказ не є (FR-008b1): правила політики",
-        "перевіряються на кожному переказі окремо."
+        "The hook creates no accounts, so they are created here — in advance.",
+        "The thaw itself is not a permission to transfer (FR-008b1): the policy",
+        "rules are checked on every transfer separately."
       ],
       "discriminator": [
         56,
@@ -3570,18 +3636,19 @@ export const IDL: IssuerForge = {
         {
           "name": "tokenAccount",
           "docs": [
-            "Токен-акаунт холдера. Обидві перевірки обов'язкові: адреса акаунта не",
-            "доводить ані його mint, ані власника, а статус виводиться саме з",
-            "`wallet`."
+            "The holder's token account. Both checks are mandatory: the account",
+            "address proves neither its mint nor its owner, and the status is",
+            "derived from `wallet` specifically."
           ],
           "writable": true
         },
         {
           "name": "holderStatus",
           "docs": [
-            "`init_if_needed`, бо рахунок законно розморожують удруге — після",
-            "заморозки офіцером. Повторне створення нічого не переписує: що саме",
-            "пишеться, вирішує `updated_at`, а не наявність акаунта."
+            "`init_if_needed`, because an account is legitimately thawed a second",
+            "time — after an officer's freeze. A repeat creation overwrites",
+            "nothing: what is written is decided by `updated_at`, not by the",
+            "account's existence."
           ],
           "writable": true,
           "pda": {
@@ -3612,10 +3679,11 @@ export const IDL: IssuerForge = {
         {
           "name": "velocityCounter",
           "docs": [
-            "Так само `init_if_needed` — і **жодне значення вікна тут не пишеться**,",
-            "тільки власна ідентичність акаунта. Скидання вікна операційним ключем",
-            "зняло б ліміт за період рутинною дією, тобто дало б повноваження, якого",
-            "в масці делегації немає й не може бути (FR-035a)."
+            "Likewise `init_if_needed` — and **no window value is written here**,",
+            "only the account's own identity. Resetting the window with the",
+            "operational key would lift the period limit with a routine action,",
+            "i.e. grant a power the delegation mask does not have and cannot have",
+            "(FR-035a)."
           ],
           "writable": true,
           "pda": {
@@ -3653,7 +3721,7 @@ export const IDL: IssuerForge = {
         {
           "name": "authority",
           "docs": [
-            "Операційний ключ платформи або уповноважений учасник складу."
+            "The platform's operational key or an authorised member of the membership."
           ],
           "signer": true
         },
@@ -4023,7 +4091,7 @@ export const IDL: IssuerForge = {
           {
             "name": "amount",
             "docs": [
-              "Підтверджена сума в найменшій одиниці валюти резерву."
+              "The attested amount in the smallest unit of the reserve currency."
             ],
             "type": "u64"
           },
@@ -4039,9 +4107,9 @@ export const IDL: IssuerForge = {
           {
             "name": "attestedAt",
             "docs": [
-              "Момент, якого стосується підтвердження. Не «зараз»: атестатор",
-              "підтверджує стан рахунку на певний час, і саме від нього рахується строк",
-              "придатності (FR-023)."
+              "The moment the attestation refers to. Not \"now\": the attestor attests",
+              "the state of the account at a certain time, and the validity period is",
+              "counted from exactly that (FR-023)."
             ],
             "type": "i64"
           }
@@ -4060,9 +4128,10 @@ export const IDL: IssuerForge = {
           {
             "name": "attestationCredential",
             "docs": [
-              "SAS-credential провайдера, атестації якого приймає цей токен, і схема",
-              "тих атестацій. Обидва — незмінні параметри (FR-005): їхні зсуви в",
-              "`TokenConfig` зашиті в `address_config` переліку акаунтів хука."
+              "The SAS credential of the provider whose attestations this token",
+              "accepts, and the schema of those attestations. Both are immutable",
+              "parameters (FR-005): their offsets in `TokenConfig` are baked into the",
+              "`address_config` of the hook's account list."
             ],
             "type": "pubkey"
           },
@@ -4073,7 +4142,7 @@ export const IDL: IssuerForge = {
           {
             "name": "treasury",
             "docs": [
-              "Скарбниця платформи (FR-038)."
+              "The platform treasury (FR-038)."
             ],
             "type": "pubkey"
           },
@@ -4084,14 +4153,14 @@ export const IDL: IssuerForge = {
           {
             "name": "attestationMaxAge",
             "docs": [
-              "Строк придатності атестації резерву, секунди (FR-023b)."
+              "The reserve attestation validity period, seconds (FR-023b)."
             ],
             "type": "i64"
           },
           {
             "name": "reserveCurrency",
             "docs": [
-              "Валюта резерву, вона ж валюта токена."
+              "The reserve currency, which is also the token's currency."
             ],
             "type": {
               "array": [
@@ -4103,23 +4172,25 @@ export const IDL: IssuerForge = {
           {
             "name": "rules",
             "docs": [
-              "Політика версії 1 у канонічній розкладці, рівно `RULES_BYTES` байтів."
+              "Policy version 1 in the canonical layout, exactly `RULES_BYTES` bytes."
             ],
             "type": "bytes"
           },
           {
             "name": "initialSupply",
             "docs": [
-              "Початкова емісія. Проходить ту саму перевірку резерву, що й `mint`",
-              "(T038): інших шляхів появи токенів у програмі немає."
+              "The initial issuance. Goes through the same reserve check as `mint`",
+              "(T038): the program has no other way for tokens to come into",
+              "existence."
             ],
             "type": "u64"
           },
           {
             "name": "reserveAmount",
             "docs": [
-              "Перша атестація резерву: сума й момент, якого вона стосується. Валюта",
-              "береться з `reserve_currency` — двох валют в одній транзакції не буває."
+              "The first reserve attestation: the amount and the moment it refers to.",
+              "The currency is taken from `reserve_currency` — there are never two",
+              "currencies in one transaction."
             ],
             "type": "u64"
           },
@@ -4130,11 +4201,11 @@ export const IDL: IssuerForge = {
           {
             "name": "founderStatus",
             "docs": [
-              "Статус засновника у власному реєстрі емітента.",
+              "The founder's status in the issuer's own registry.",
               "",
-              "Без нього рахунок, на який лягла емісія, не зміг би нічого відправити:",
-              "хук читає статус відправника на кожному переказі й відсутність запису",
-              "вважає відмовою (FR-013)."
+              "Without it the account the issuance landed on could send nothing: the",
+              "hook reads the sender's status on every transfer and treats a missing",
+              "record as a refusal (FR-013)."
             ],
             "type": {
               "defined": {
@@ -4148,23 +4219,27 @@ export const IDL: IssuerForge = {
     {
       "name": "holderStatus",
       "docs": [
-        "Статус адреси у власному реєстрі емітента. PDA: `[\"holder\", mint, wallet]`.",
+        "An address's status in the issuer's own registry. PDA:",
+        "`[\"holder\", mint, wallet]`.",
         "",
-        "Це **одне з двох** джерел статусу (FR-008a); друге — атестація провайдера,",
-        "яку хук читає напряму зі спільного сервісу атестацій (спайк T057).",
+        "This is **one of the two** status sources (FR-008a); the other is the",
+        "provider's attestation, which the hook reads directly from the shared",
+        "attestation service (spike T057).",
         "",
-        "**Двох полів із `docs/PLAN.md` тут немає, і це свідомо:**",
-        "- `source` (issuer/provider) був потрібен, поки статус провайдера планували",
-        "дзеркалити сюди. T057 закрив це питання інакше — атестація читається",
-        "напряму, — тож поле означало б «джерело цього запису в реєстрі емітента",
-        "не емітент», чого не буває.",
-        "- `thawed` був би другим джерелом правди про стан, який авторитетно тримає",
-        "сам токен-акаунт (`DefaultAccountState`, `freeze_account`). Офіцер може",
-        "заморозити рахунок (T026), не торкаючись цього акаунта, і прапорець тут",
-        "одразу став би брехнею. Черга на розморожування (FR-008b2) живе офчейн.",
+        "**Two fields from `docs/PLAN.md` are absent here, deliberately:**",
+        "- `source` (issuer/provider) was needed while the provider status was",
+        "planned to be mirrored here. T057 settled the question differently —",
+        "the attestation is read directly — so the field would mean \"the source",
+        "of this record in the issuer's registry is not the issuer\", which never",
+        "happens.",
+        "- `thawed` would be a second source of truth about a state held",
+        "authoritatively by the token account itself (`DefaultAccountState`,",
+        "`freeze_account`). An officer can freeze an account (T026) without",
+        "touching this account, and the flag here would instantly become a lie.",
+        "The thaw queue (FR-008b2) lives off-chain.",
         "",
-        "Через це `flags` звівся до одного значення й лишився `bool`: бітмаска на",
-        "один біт — це маска, яку читають, звіряючись із коментарем."
+        "Because of that `flags` shrank to one value and stayed a `bool`: a",
+        "one-bit bitmask is a mask read by checking against the comment."
       ],
       "type": {
         "kind": "struct",
@@ -4172,9 +4247,9 @@ export const IDL: IssuerForge = {
           {
             "name": "mint",
             "docs": [
-              "Обидва поля дублюють seeds навмисно: консоль і індексатор шукають",
-              "холдерів через `getProgramAccounts` із фільтром за mint, а зробити такий",
-              "фільтр по seeds неможливо."
+              "Both fields deliberately duplicate the seeds: the console and the",
+              "indexer look for holders through `getProgramAccounts` with a filter by",
+              "mint, and such a filter cannot be made on seeds."
             ],
             "type": "pubkey"
           },
@@ -4185,14 +4260,14 @@ export const IDL: IssuerForge = {
           {
             "name": "tier",
             "docs": [
-              "Рівень верифікації, як його присвоїв емітент."
+              "The verification tier as the issuer assigned it."
             ],
             "type": "u8"
           },
           {
             "name": "jurisdiction",
             "docs": [
-              "Код ISO 3166-1 alpha-2 у верхньому регістрі."
+              "An upper-case ISO 3166-1 alpha-2 code."
             ],
             "type": {
               "array": [
@@ -4204,30 +4279,31 @@ export const IDL: IssuerForge = {
           {
             "name": "denied",
             "docs": [
-              "Заборона емітента. Діє **незалежно** від того, чи приймає політика це",
-              "джерело (FR-008a1): власний реєстр звужує коло, дозволене провайдером, і",
-              "ніколи його не розширює."
+              "The issuer's denial. Applies **regardless** of whether the policy",
+              "accepts this source (FR-008a1): the issuer's own registry narrows the",
+              "circle allowed by the provider and never widens it."
             ],
             "type": "bool"
           },
           {
             "name": "expiresAt",
             "docs": [
-              "Строк придатності запису, unix-секунди. **Нуль означає «без строку»**, а",
-              "не «протерміновано»: запис без строку — дійсний стан реєстру, і саме він",
-              "відрізняє реєстр від атестації, яка строк має завжди."
+              "The record's expiry, unix seconds. **Zero means \"no expiry\"**, not",
+              "\"expired\": a record without an expiry is a valid registry state, and",
+              "it is what distinguishes the registry from an attestation, which always",
+              "has one."
             ],
             "type": "i64"
           },
           {
             "name": "updatedAt",
             "docs": [
-              "Коли запис востаннє писали.",
+              "When the record was last written.",
               "",
-              "Не декорація: **нуль тут означає «запису ще не було»**. Свіжостворений",
-              "акаунт весь нульовий, а жоден справжній запис не має нульового часу",
-              "блоку, тож `thaw_holder` за цим полем відрізняє перше розморожування від",
-              "повторного — і не переписує статус, якого йому не доручали писати."
+              "Not decoration: **zero here means \"no record yet\"**. A freshly created",
+              "account is all zeros, and no real record has a zero block time, so",
+              "`thaw_holder` tells the first thaw from a repeat one by this field —",
+              "and does not overwrite a status it was not entrusted to write."
             ],
             "type": "i64"
           },
@@ -4241,10 +4317,10 @@ export const IDL: IssuerForge = {
     {
       "name": "holderStatusInput",
       "docs": [
-        "Значення статусу, які приносить інструкція.",
+        "The status values an instruction brings.",
         "",
-        "Окремий тип від акаунта: в акаунті є ще й `mint`, `wallet`, `bump` і",
-        "`updated_at`, і жодне з них клієнт не задає."
+        "A separate type from the account: the account also has `mint`, `wallet`,",
+        "`bump` and `updated_at`, and the client sets none of them."
       ],
       "type": {
         "kind": "struct",
@@ -4269,7 +4345,7 @@ export const IDL: IssuerForge = {
           {
             "name": "expiresAt",
             "docs": [
-              "Нуль — без строку."
+              "Zero — no expiry."
             ],
             "type": "i64"
           }
@@ -4284,16 +4360,17 @@ export const IDL: IssuerForge = {
           {
             "name": "issuerId",
             "docs": [
-              "Незмінний ідентифікатор емітента — seed його PDA. Генерується клієнтом і",
-              "нічого не підписує, тож ключем від нього володіти не обов'язково."
+              "The issuer's immutable identifier — the seed of its PDA. Generated by",
+              "the client and signs nothing, so owning its key is not required."
             ],
             "type": "pubkey"
           },
           {
             "name": "members",
             "docs": [
-              "Початковий склад: адреса й маска ролей. Порядок стає індексом у бітмапі",
-              "підписів `ActionProposal`, тому зберігається як переданий."
+              "The initial membership: an address and a role mask. The order becomes",
+              "the index in the `ActionProposal` signature bitmap, so it is stored as",
+              "passed."
             ],
             "type": {
               "vec": {
@@ -4321,7 +4398,7 @@ export const IDL: IssuerForge = {
     {
       "name": "issuerConfig",
       "docs": [
-        "Конфігурація емітента. PDA: `[\"issuer\", issuer_id]`."
+        "The issuer configuration. PDA: `[\"issuer\", issuer_id]`."
       ],
       "type": {
         "kind": "struct",
@@ -4329,17 +4406,18 @@ export const IDL: IssuerForge = {
           {
             "name": "issuerId",
             "docs": [
-              "Незмінний ідентифікатор, з якого виведена адреса цього акаунта. Нічого",
-              "не підписує: його єдина робота — бути seed, який переживає зміну складу."
+              "The immutable identifier this account's address is derived from. Signs",
+              "nothing: its only job is to be the seed that outlives membership",
+              "changes."
             ],
             "type": "pubkey"
           },
           {
             "name": "members",
             "docs": [
-              "Склад фіксованої довжини. Порядок рядків значущий: бітмапа підписів у",
-              "`ActionProposal` індексує саме його, тож видалення учасника не має",
-              "зсувати решту — звільнений слот лишається порожнім."
+              "A fixed-length membership. The row order matters: the signature bitmap",
+              "in `ActionProposal` indexes exactly it, so removing a member must not",
+              "shift the rest — the freed slot stays empty."
             ],
             "type": {
               "array": [
@@ -4355,29 +4433,30 @@ export const IDL: IssuerForge = {
           {
             "name": "memberSlots",
             "docs": [
-              "Скільки слотів зайнято. Не збігається з кількістю непорожніх слотів",
-              "після видалень — це верхня межа обходу, а не лічильник учасників."
+              "How many slots are in use. Not equal to the number of non-empty slots",
+              "after removals — it is the upper bound for iteration, not a member",
+              "count."
             ],
             "type": "u8"
           },
           {
             "name": "quorumN",
             "docs": [
-              "Поріг кворуму (FR-019). Не менший за `MIN_QUORUM`."
+              "The quorum threshold (FR-019). Not below `MIN_QUORUM`."
             ],
             "type": "u8"
           },
           {
             "name": "operationalKey",
             "docs": [
-              "Операційний ключ платформи. Грошей не рухає (FR-035a)."
+              "The platform's operational key. Moves no money (FR-035a)."
             ],
             "type": "pubkey"
           },
           {
             "name": "delegationMask",
             "docs": [
-              "Що саме йому делеговано. Відкликається однією дією (FR-035b)."
+              "What exactly is delegated to it. Revoked with one action (FR-035b)."
             ],
             "type": "u8"
           },
@@ -4388,17 +4467,19 @@ export const IDL: IssuerForge = {
           {
             "name": "tokenCount",
             "docs": [
-              "Скільки токенів емітент випустив. Наступний отримає саме цей номер.",
+              "How many tokens the issuer has issued. The next one gets exactly this",
+              "number.",
               "",
-              "Не статистика: номер стоїть у seeds mint (`[\"mint\", issuer_id, index]`),",
-              "тобто це той лічильник, який робить адресу токена виводимою. Через нього",
-              "два одночасні `create_token` того самого емітента конфліктують по",
-              "акаунту — і це правильно: другий побачить уже зайняту адресу, а не",
-              "створить токен-близнюк.",
+              "Not a statistic: the number is in the mint seeds",
+              "(`[\"mint\", issuer_id, index]`), i.e. it is the counter that makes the",
+              "token address derivable. Through it two concurrent `create_token`s of",
+              "the same issuer conflict on the account — and that is right: the",
+              "second sees an already taken address instead of creating a twin token.",
               "",
-              "Дописане в кінець структури: `IssuerConfig` створюється до першого",
-              "токена, тож жодні зсуви в ньому нікуди не зашиті, але правило «тільки в",
-              "кінець» дешевше тримати завжди, ніж згадувати, де воно потрібне."
+              "Appended at the end of the struct: `IssuerConfig` is created before the",
+              "first token, so no offsets in it are baked in anywhere, but the rule",
+              "\"only at the end\" is cheaper to keep always than to remember where it",
+              "is needed."
             ],
             "type": "u32"
           }
@@ -4408,11 +4489,11 @@ export const IDL: IssuerForge = {
     {
       "name": "member",
       "docs": [
-        "Рядок складу вповноважених: адреса гаманця й маска її ролей.",
+        "A row of the authorised membership: a wallet address and its role mask.",
         "",
-        "Роль прив'язана до адреси, а не до облікового запису входу (FR-034a): зміна",
-        "способу входу не змінює повноважень, а втрата доступу до акаунта не передає",
-        "роль іншій адресі."
+        "A role is bound to the address, not to the login account (FR-034a): a",
+        "change of login method does not change the powers, and losing access to",
+        "the account does not pass the role to another address."
       ],
       "type": {
         "kind": "struct",
@@ -4431,18 +4512,20 @@ export const IDL: IssuerForge = {
     {
       "name": "policyConfig",
       "docs": [
-        "Версія політики. PDA: `[\"policy\", mint, version]`, версія — `u32` LE.",
+        "A policy version. PDA: `[\"policy\", mint, version]`, the version a `u32`",
+        "LE.",
         "",
-        "**Незмінність історії — властивість адреси, а не перевірки в коді.** Кожна",
-        "версія живе за власним PDA й створюється через `init`, тож повторний запис у",
-        "вже існуючу версію відхиляє рантайм, а не наша логіка (FR-010). Перезаписати",
-        "попередню версію нічим: інструкції, яка б відкрила її на запис, у програмі",
-        "немає.",
+        "**The immutability of history is a property of the address, not of a",
+        "check in code.** Every version lives at its own PDA and is created through",
+        "`init`, so a repeat write into an existing version is rejected by the",
+        "runtime, not by our logic (FR-010). There is nothing to overwrite a",
+        "previous version with: the program has no instruction that would open it",
+        "for writing.",
         "",
-        "`zero_copy`, бо хук читає `rules` на **кожному** переказі: десеріалізація",
-        "Borsh 384 байтів у CU-бюджеті хука коштувала б дорожче за саму перевірку.",
-        "Звідси `#[repr(C)]`, явна набивка до восьми байтів і `AccountLoader` замість",
-        "`Account` на боці інструкцій."
+        "`zero_copy`, because the hook reads `rules` on **every** transfer: Borsh",
+        "deserialisation of 384 bytes within the hook's CU budget would cost more",
+        "than the check itself. Hence `#[repr(C)]`, explicit padding to eight",
+        "bytes and `AccountLoader` instead of `Account` on the instruction side."
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -4454,7 +4537,7 @@ export const IDL: IssuerForge = {
           {
             "name": "activatedAt",
             "docs": [
-              "Час активації, unix-секунди — половина того, чого вимагає FR-010."
+              "The activation time, unix seconds — half of what FR-010 requires."
             ],
             "type": "i64"
           },
@@ -4465,32 +4548,35 @@ export const IDL: IssuerForge = {
           {
             "name": "mint",
             "docs": [
-              "Mint, чию політику ця версія описує.",
+              "The mint whose policy this version describes.",
               "",
-              "Дублює seeds, і це **вимога хука**, а не зручність. Хук читає політику",
-              "через `AccountLoader`, а полів `AccountLoader` не видно в атрибутах",
-              "`#[account(...)]`, тож прив'язати акаунт до mint можна або цим",
-              "порівнянням, або `create_program_address` — а той коштує 1500 CU на",
-              "кожному переказі (SC-003). Тридцять два байти на версію політики дешевші."
+              "Duplicates the seeds, and that is a **requirement of the hook**, not a",
+              "convenience. The hook reads the policy through `AccountLoader`, and",
+              "`AccountLoader` fields are not visible in `#[account(...)]`",
+              "attributes, so the account can be tied to the mint either by this",
+              "comparison or by `create_program_address` — and the latter costs",
+              "1500 CU on every transfer (SC-003). Thirty-two bytes per policy",
+              "version are cheaper."
             ],
             "type": "pubkey"
           },
           {
             "name": "author",
             "docs": [
-              "Хто ініціював зміну — перший підпис із зібраного кворуму.",
+              "Who initiated the change — the first signature of the collected",
+              "quorum.",
               "",
-              "Поіменний склад усіх, хто санкціонував дію (FR-019c), тут не лежить",
-              "навмисно: він належить журналу й `ActionProposal` (T025, T029), а",
-              "шістнадцять адрес у кожній версії політики були б третім дзеркалом того",
-              "самого факту."
+              "The named list of everyone who authorised the action (FR-019c) is",
+              "deliberately not here: it belongs to the journal and `ActionProposal`",
+              "(T025, T029), and sixteen addresses in every policy version would be a",
+              "third mirror of the same fact."
             ],
             "type": "pubkey"
           },
           {
             "name": "rules",
             "docs": [
-              "Правила у канонічній розкладці. Порядок і межі тримає `rules::layout`."
+              "The rules in the canonical layout. `rules::layout` holds the order and the bounds."
             ],
             "type": {
               "array": [
@@ -4506,10 +4592,12 @@ export const IDL: IssuerForge = {
           {
             "name": "rulesHash",
             "docs": [
-              "sha256 над усім полем `rules`, порахований програмою при записі.",
+              "sha256 over the whole `rules` field, computed by the program at write",
+              "time.",
               "",
-              "Рахується тут, а не приймається від клієнта: хеш, який приніс той самий,",
-              "хто приніс байти, доводить лише те, що клієнт уміє рахувати хеші."
+              "Computed here rather than accepted from the client: a hash brought by",
+              "the same party that brought the bytes proves only that the client",
+              "knows how to compute hashes."
             ],
             "type": {
               "array": [
@@ -4525,8 +4613,9 @@ export const IDL: IssuerForge = {
           {
             "name": "padding",
             "docs": [
-              "Явна набивка до вирівнювання 8. Без неї `bytemuck::Pod` не виводиться, а",
-              "мовчазна набивка компілятора потрапила б у хеш акаунта як сміття."
+              "Explicit padding to alignment 8. Without it `bytemuck::Pod` cannot be",
+              "derived, and the compiler's silent padding would end up in the account",
+              "hash as garbage."
             ],
             "type": {
               "array": [
@@ -4541,20 +4630,22 @@ export const IDL: IssuerForge = {
     {
       "name": "reserveAttestation",
       "docs": [
-        "Атестація резерву. PDA: `[\"reserve\", mint, index]`, індекс — `u64` LE.",
+        "A reserve attestation. PDA: `[\"reserve\", mint, index]`, the index a `u64`",
+        "LE.",
         "",
-        "**Append-only, і це властивість адреси, а не перевірки** (FR-026): кожен",
-        "індекс — власний PDA, створений через `init`, тож переписати запис нічим.",
-        "Інструкції, яка б відкрила попередню атестацію на запис, у програмі немає, і",
-        "заміна атестатора (FR-024a) історії не чіпає — вона змінює те, хто підпише",
-        "**наступну**.",
+        "**Append-only, and that is a property of the address, not of a check**",
+        "(FR-026): every index is its own PDA created through `init`, so there is",
+        "nothing to overwrite a record with. The program has no instruction that",
+        "would open a previous attestation for writing, and replacing the attestor",
+        "(FR-024a) does not touch history — it changes who signs the **next**",
+        "one.",
         "",
-        "**`expires_at` тут немає, попри `docs/PLAN.md`.** Строк придатності задається",
-        "при випуску й змінюється кворумом (FR-023b), тобто живе в",
-        "`TokenConfig.attestation_max_age`. Знімок цього строку в кожному записі був би",
-        "другою відповіддю на питання «чи протермінована атестація», і при зміні",
-        "строку дві відповіді розійшлися б. Публічна сторінка рахує",
-        "`attested_at + max_age` — так само, як програма."
+        "**There is no `expires_at` here, despite `docs/PLAN.md`.** The validity",
+        "period is set at issuance and changed by quorum (FR-023b), i.e. it lives",
+        "in `TokenConfig.attestation_max_age`. A snapshot of that period in every",
+        "record would be a second answer to \"is the attestation expired\", and on a",
+        "change of the period the two answers would diverge. The public page",
+        "computes `attested_at + max_age` — the same way the program does."
       ],
       "type": {
         "kind": "struct",
@@ -4566,18 +4657,20 @@ export const IDL: IssuerForge = {
           {
             "name": "index",
             "docs": [
-              "Позиція в послідовності. Індекс і є історія: він адресує «попередню",
-              "атестацію», а не змушує шукати її перебором."
+              "The position in the sequence. The index is the history: it addresses",
+              "\"the previous attestation\" rather than forcing a search for it."
             ],
             "type": "u64"
           },
           {
             "name": "amount",
             "docs": [
-              "Підтверджена сума в найменшій одиниці **валюти резерву** — вона ж",
-              "найменша одиниця токена, бо `currency` мусить збігтися з валютою токена",
-              "(`TokenConfig.reserve_currency`). Без цієї рівності порівняння «емісія +",
-              "обіг ≤ атестованого» вимагало б курсу, якого в програмі немає й не буде."
+              "The attested amount in the smallest unit of the **reserve currency** —",
+              "which is also the token's smallest unit, because `currency` must match",
+              "the token's currency (`TokenConfig.reserve_currency`). Without that",
+              "equality the comparison \"issuance + circulation ≤ attested\" would",
+              "require an exchange rate, which the program does not have and never",
+              "will."
             ],
             "type": "u64"
           },
@@ -4593,8 +4686,8 @@ export const IDL: IssuerForge = {
           {
             "name": "attestor",
             "docs": [
-              "Хто підписав. Лишається в записі назавжди: після заміни атестатора",
-              "(FR-024a) видно, хто підтверджував резерв тоді."
+              "Who signed. Stays in the record forever: after the attestor is replaced",
+              "(FR-024a) it is visible who attested the reserve back then."
             ],
             "type": "pubkey"
           },
@@ -4612,7 +4705,7 @@ export const IDL: IssuerForge = {
     {
       "name": "ruleSlot",
       "docs": [
-        "Один слот правила, як він лежить в акаунті."
+        "One rule slot, as it lies in the account."
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -4669,19 +4762,19 @@ export const IDL: IssuerForge = {
           {
             "name": "version",
             "docs": [
-              "Номер нової версії. Мусить бути рівно наступним за чинною: пропуск",
-              "зробив би «попередню версію» невиводимою з номера, а історію — переліком",
-              "з дірками, який нічим не звірити."
+              "The new version number. Must be exactly the next after the current",
+              "one: a skip would make \"the previous version\" underivable from the",
+              "number, and the history a list with gaps that nothing can verify."
             ],
             "type": "u32"
           },
           {
             "name": "rules",
             "docs": [
-              "Правила в канонічній розкладці, рівно `RULES_BYTES` байтів.",
+              "The rules in the canonical layout, exactly `RULES_BYTES` bytes.",
               "",
-              "`Vec<u8>`, а не масив: Borsh описує його як `bytes`, і IDL лишається",
-              "читабельним для клієнта. Довжину перевіряє програма."
+              "A `Vec<u8>`, not an array: Borsh describes it as `bytes`, and the IDL",
+              "stays readable for the client. The program checks the length."
             ],
             "type": "bytes"
           }
@@ -4716,20 +4809,20 @@ export const IDL: IssuerForge = {
           {
             "name": "wallet",
             "docs": [
-              "Власник рахунку. Мусить збігтися з `owner` токен-акаунта — інакше",
-              "статус ліг би за адресою, якої переказ ніколи не прочитає."
+              "The account owner. Must match the token account's `owner` — otherwise",
+              "the status would land at an address a transfer never reads."
             ],
             "type": "pubkey"
           },
           {
             "name": "status",
             "docs": [
-              "Початковий статус — тільки для **першого** розморожування.",
+              "The initial status — only for the **first** thaw.",
               "",
-              "`None` означає «запис уже є, я його не чіпаю»: так виглядає повторне",
-              "розморожування після заморозки офіцером (T026). Розбіжність між",
-              "наміром і станом акаунта відхиляється, а не тлумачиться, тож жоден",
-              "виклик не змінює статусу мовчки."
+              "`None` means \"the record already exists, I am not touching it\": that",
+              "is what a repeat thaw after an officer's freeze looks like (T026). A",
+              "mismatch between the intent and the account state is rejected, not",
+              "interpreted, so no call changes the status silently."
             ],
             "type": {
               "option": {
@@ -4745,20 +4838,23 @@ export const IDL: IssuerForge = {
     {
       "name": "tokenConfig",
       "docs": [
-        "Конфігурація випущеного токена. PDA: `[\"token\", mint]`.",
+        "The configuration of an issued token. PDA: `[\"token\", mint]`.",
         "",
-        "**Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт",
-        "атестації провайдера через `ExtraAccountMetaList`, а її адреса виводиться з",
-        "seeds `[\"attestation\", credential, schema, nonce]` (спайк T057). Два",
-        "32-байтові літерали в 32-байтовий `address_config` не вміщаються ніколи, тож",
-        "`credential` і `schema` беруться **зрізами даних цього акаунта** — а зсув у",
-        "seed `AccountData` має розмір рівно одного байта.",
+        "**The field order here is part of the protocol, not style.** The hook",
+        "receives the provider attestation account through `ExtraAccountMetaList`,",
+        "and its address is derived from the seeds",
+        "`[\"attestation\", credential, schema, nonce]` (spike T057). Two 32-byte",
+        "literals never fit into a 32-byte `address_config`, so `credential` and",
+        "`schema` are taken as **slices of this account's data** — and the offset",
+        "in an `AccountData` seed is exactly one byte wide.",
         "",
-        "Звідси два обмеження, які тепер є вимогами до розкладки:",
-        "- обидва поля мусять лежати в перших 256 байтах акаунта;",
-        "- їхні зсуви зашиті в `address_config` уже створених `ExtraAccountMetaList`,",
-        "тож вставка нового поля **перед ними** мовчки перенаправить хук на чужі",
-        "32 байти. Тест `token_config_offsets_are_pinned` існує саме проти цього."
+        "Hence two constraints that are now requirements on the layout:",
+        "- both fields must lie within the first 256 bytes of the account;",
+        "- their offsets are baked into the `address_config` of every",
+        "`ExtraAccountMetaList` already created, so inserting a new field",
+        "**before them** silently redirects the hook to someone else's 32 bytes.",
+        "The test `token_config_offsets_are_pinned` exists precisely against",
+        "that."
       ],
       "type": {
         "kind": "struct",
@@ -4774,62 +4870,64 @@ export const IDL: IssuerForge = {
           {
             "name": "attestationCredential",
             "docs": [
-              "SAS-credential провайдера верифікації, атестації якого приймає цей токен."
+              "The SAS credential of the verification provider whose attestations this token accepts."
             ],
             "type": "pubkey"
           },
           {
             "name": "attestationSchema",
             "docs": [
-              "SAS-schema тих атестацій."
+              "The SAS schema of those attestations."
             ],
             "type": "pubkey"
           },
           {
             "name": "attestor",
             "docs": [
-              "Чинний атестатор резерву **цього токена** (FR-024b).",
+              "The current reserve attestor **of this token** (FR-024b).",
               "",
-              "Живе тут, а не в `IssuerConfig`, попри `docs/PLAN.md`: FR-024b перевіряє",
-              "підпис проти атестатора конкретного токена, і емітент із двома токенами",
-              "законно має для них різних атестаторів."
+              "Lives here rather than in `IssuerConfig`, despite `docs/PLAN.md`:",
+              "FR-024b checks the signature against the attestor of a specific token,",
+              "and an issuer with two tokens legitimately has different attestors for",
+              "them."
             ],
             "type": "pubkey"
           },
           {
             "name": "treasury",
             "docs": [
-              "Скарбниця платформи: сюди йде комісія з емісії й погашення (FR-038)."
+              "The platform treasury: the fee on issuance and redemption goes here (FR-038)."
             ],
             "type": "pubkey"
           },
           {
             "name": "policyVersion",
             "docs": [
-              "Версія політики, на яку налаштований mint. Розбіжність — перша перевірка",
-              "хука й перший код відмови."
+              "The policy version the mint is configured with. A mismatch is the",
+              "hook's first check and the first refusal code."
             ],
             "type": "u32"
           },
           {
             "name": "feeBps",
             "docs": [
-              "Оголошена ставка комісії (FR-038a)."
+              "The declared fee rate (FR-038a)."
             ],
             "type": "u16"
           },
           {
             "name": "attestationMaxAge",
             "docs": [
-              "Строк придатності атестації, секунди (FR-023b)."
+              "The attestation validity period, seconds (FR-023b)."
             ],
             "type": "i64"
           },
           {
             "name": "pausedAt",
             "docs": [
-              "Дзеркало стану паузи для журналу й екранів; `0` — не на паузі.",
-              "Авторитетним лишається розширення `Pausable` на самому mint (FR-016)."
+              "A mirror of the pause state for the journal and the screens; `0` — not",
+              "paused. The `Pausable` extension on the mint itself remains",
+              "authoritative (FR-016)."
             ],
             "type": "i64"
           },
@@ -4840,27 +4938,30 @@ export const IDL: IssuerForge = {
           {
             "name": "attestationCount",
             "docs": [
-              "Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.",
+              "How many reserve attestations have been published. The next one gets",
+              "exactly this index.",
               "",
-              "Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,",
-              "який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**",
-              "атестація остання. Старіша атестація з більшою сумою — це емісія понад",
-              "резерв, і без лічильника її нічим відрізнити від свіжої.",
+              "A counter, not an amount: the attested amount and time are read from",
+              "the same account the journal verifier reads (SC-006), and here lies",
+              "only **which** attestation is the latest. An older attestation with a",
+              "larger amount is an issuance beyond the reserve, and without the",
+              "counter there is nothing to tell it from a fresh one.",
               "",
-              "Дописане в кінець структури: зсуви `credential`, `schema` й",
-              "`policy_version` зашиті в `address_config` кожного створеного",
-              "`ExtraAccountMetaList` і не мають рухатись ніколи."
+              "Appended at the end of the struct: the offsets of `credential`,",
+              "`schema` and `policy_version` are baked into the `address_config` of",
+              "every `ExtraAccountMetaList` created and must never move."
             ],
             "type": "u64"
           },
           {
             "name": "reserveCurrency",
             "docs": [
-              "Валюта резерву, вона ж валюта самого токена.",
+              "The reserve currency, which is also the currency of the token itself.",
               "",
-              "Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює",
-              "два числа, і якби вони були в різних валютах, порівняння вимагало б",
-              "курсу — а курсу в програмі немає й не буде."
+              "The equality is mandatory: the check \"issuance + circulation ≤",
+              "attested\" compares two numbers, and if they were in different",
+              "currencies the comparison would require an exchange rate — which the",
+              "program does not have and never will."
             ],
             "type": {
               "array": [
@@ -4875,15 +4976,16 @@ export const IDL: IssuerForge = {
     {
       "name": "velocityCounter",
       "docs": [
-        "Лічильник ліміту за період. PDA: `[\"velocity\", mint, wallet]`.",
+        "The per-period limit counter. PDA: `[\"velocity\", mint, wallet]`.",
         "",
-        "**Виправлення до першої редакції цього файла (T016).** Спершу тут не було",
-        "`mint` і `wallet`: лічильник читає лише хук за виведеною адресою, і сканувати",
-        "його за фільтром нікому не треба. Аргумент виявився неповним — хук приймає",
-        "цей акаунт **нетипізованим** (його відсутність мусить давати наш код відмови,",
-        "а не помилку Anchor), тож прив'язати його до холдера можна або цими двома",
-        "полями, або `create_program_address`, а той коштує 1500 CU на кожному",
-        "переказі (SC-003). Шістдесят чотири байти оренди дешевші за це."
+        "**A correction to the first edition of this file (T016).** At first",
+        "there was no `mint` and `wallet` here: only the hook reads the counter, by",
+        "the derived address, and nobody needs to scan it by filter. The argument",
+        "turned out incomplete — the hook takes this account **untyped** (its",
+        "absence must yield our refusal code, not an Anchor error), so it can be",
+        "tied to the holder either by these two fields or by",
+        "`create_program_address`, and the latter costs 1500 CU on every transfer",
+        "(SC-003). Sixty-four bytes of rent are cheaper than that."
       ],
       "type": {
         "kind": "struct",
@@ -4899,7 +5001,7 @@ export const IDL: IssuerForge = {
           {
             "name": "windowStart",
             "docs": [
-              "Початок поточного вікна. Нуль означає, що вікна ще не було."
+              "The start of the current window. Zero means there has been no window yet."
             ],
             "type": "i64"
           },

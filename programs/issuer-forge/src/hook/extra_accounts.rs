@@ -1,21 +1,22 @@
-//! `ExtraAccountMetaList` — перелік акаунтів, які токен-програма мусить
-//! підкласти хуку на кожному переказі.
+//! `ExtraAccountMetaList` — the list of accounts the token program must hand
+//! to the hook on every transfer.
 //!
-//! Це і є те, що робить FR-012 можливим: перелік лежить ончейн, і токен-програма
-//! резолвить його **сама**, хто б не ініціював переказ — гаманець, чужа програма
-//! через CPI чи делегат. Клієнт нічого не «додає»: він може лише не додати, і
-//! тоді переказ не відбудеться.
+//! This is what makes FR-012 possible: the list lives on chain, and the
+//! token program resolves it **itself**, whoever initiated the transfer — a
+//! wallet, a foreign program through CPI or a delegate. The client "adds"
+//! nothing: it can only fail to add, and then the transfer does not happen.
 //!
-//! **Розкладка seeds — результат спайка T057**, і кожен її рядок є обмеженням, а
-//! не вибором:
-//! - `credential` і `schema` беруться **зрізами даних `TokenConfig`**: два
-//!   32-байтові літерали дають 68 байтів і в 32-байтовий `address_config` не
-//!   вміщаються ніколи;
-//! - версія політики теж береться зрізом даних, а не числом від клієнта —
-//!   інакше переказ можна було б провести проти старої версії;
-//! - гаманець сторони береться зрізом поля `owner` її токен-акаунта;
-//! - програма SAS стоїть окремим акаунтом, бо зовнішній PDA задається
-//!   дискримінатором «128 + індекс акаунта програми».
+//! **The seed layout is the result of spike T057**, and every line of it is
+//! a constraint, not a choice:
+//! - `credential` and `schema` are taken as **slices of `TokenConfig`
+//!   data**: two 32-byte literals make 68 bytes and never fit into a 32-byte
+//!   `address_config`;
+//! - the policy version is also taken as a data slice, not as a number from
+//!   the client — otherwise a transfer could be run against an old version;
+//! - a party's wallet is taken as a slice of the `owner` field of its token
+//!   account;
+//! - the SAS program is a separate account, because an external PDA is
+//!   specified by the discriminator "128 + the program account's index".
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, CreateAccount};
 use anchor_spl::token_interface::Mint;
@@ -31,24 +32,25 @@ use crate::state::{
     TOKEN_CONFIG_SCHEMA_OFFSET,
 };
 
-/// Індекси акаунтів, які токен-програма передає хуку завжди.
+/// The indices of the accounts the token program always passes to the hook.
 ///
-/// Порядок задає інтерфейс `spl-transfer-hook-interface`, не ми; числа стоять
-/// тут іменами, бо вони ж є `account_index` у кожному seed нижче, і безіменна
-/// двійка серед них читалась би як що завгодно.
+/// The order is set by the `spl-transfer-hook-interface`, not by us; the
+/// numbers are named here because they are also the `account_index` in every
+/// seed below, and an unnamed two among them would read as anything.
 const SOURCE_TOKEN: u8 = 0;
 const MINT: u8 = 1;
 const DESTINATION_TOKEN: u8 = 2;
 
-/// Індекси наших акаунтів у тому ж списку. Порядок мусить збігатися з полями
-/// `Execute` — інакше хук читатиме не те, що резолвила токен-програма.
+/// The indices of our accounts in the same list. The order must match the
+/// `Execute` fields — otherwise the hook reads something other than what the
+/// token program resolved.
 const TOKEN_CONFIG: u8 = 5;
 const SAS_PROGRAM: u8 = 10;
 
-/// Зсув поля `owner` у токен-акаунті SPL: `mint` займає перші 32 байти.
+/// The offset of the `owner` field in an SPL token account: `mint` takes the first 32 bytes.
 const TOKEN_ACCOUNT_OWNER_OFFSET: u8 = 32;
 
-/// Скільки акаунтів ми додаємо понад ті, що передає токен-програма.
+/// How many accounts we add beyond those the token program passes.
 pub const EXTRA_ACCOUNT_COUNT: usize = 8;
 
 fn wallet_seed(token_account_index: u8) -> Seed {
@@ -79,10 +81,10 @@ fn holder_meta(token_account_index: u8, seed: &[u8], writable: bool) -> Result<E
     )?)
 }
 
-/// Перелік у тому самому порядку, у якому його читає `Execute`.
+/// The list in the same order `Execute` reads it in.
 pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
     Ok(vec![
-        // 5: TokenConfig — з нього беруться credential, schema й версія політики.
+        // 5: TokenConfig — the credential, the schema and the policy version are taken from it.
         ExtraAccountMeta::new_with_seeds(
             &[
                 Seed::Literal {
@@ -93,8 +95,9 @@ pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
             false,
             false,
         )?,
-        // 6: чинна версія політики. Номер береться з даних TokenConfig, тож
-        // підсунути стару версію неможливо — її адреса просто не зійдеться.
+        // 6: the current policy version. The number is taken from TokenConfig
+        // data, so slipping in an old version is impossible — its address
+        // simply will not match.
         ExtraAccountMeta::new_with_seeds(
             &[
                 Seed::Literal {
@@ -106,19 +109,20 @@ pub fn extra_account_metas() -> Result<Vec<ExtraAccountMeta>> {
             false,
             false,
         )?,
-        // 7, 8: статус відправника й лічильник його вікна. Лічильник — єдиний
-        // акаунт, який хук пише.
+        // 7, 8: the sender's status and their window counter. The counter is
+        // the only account the hook writes.
         holder_meta(SOURCE_TOKEN, HOLDER_SEED, false)?,
         holder_meta(SOURCE_TOKEN, VELOCITY_SEED, true)?,
-        // 9: статус отримувача. Лічильник отримувача не потрібен: ліміт за
-        // період обмежує того, хто відправляє.
+        // 9: the recipient's status. The recipient's counter is not needed:
+        // the period limit restricts whoever sends.
         holder_meta(DESTINATION_TOKEN, HOLDER_SEED, false)?,
-        // 10: сама програма SAS — вона мусить бути акаунтом у списку, щоб на неї
-        // могли послатися зовнішні PDA нижче.
+        // 10: the SAS program itself — it must be an account in the list so
+        // the external PDAs below can refer to it.
         ExtraAccountMeta::new_with_pubkey(&SAS_PROGRAM_ID, false, false)?,
-        // 11, 12: атестації сторін. Обидві присутні **завжди**, незалежно від
-        // того, чи приймає політика джерело `provider`: заборона діє з
-        // будь-якого джерела (FR-008a1), тож не подивитись у нього не можна.
+        // 11, 12: the parties' attestations. Both are present **always**,
+        // regardless of whether the policy accepts the `provider` source: a
+        // denial applies from any source (FR-008a1), so not looking into it
+        // is not an option.
         ExtraAccountMeta::new_external_pda_with_seeds(
             SAS_PROGRAM,
             &attestation_seeds(SOURCE_TOKEN),
@@ -145,19 +149,21 @@ fn attestation_seeds(token_account_index: u8) -> [Seed; 4] {
     ]
 }
 
-/// Створення переліку для щойно випущеного токена.
+/// Creating the list for a freshly issued token.
 ///
-/// Окремою інструкцією, а не всередині `create_token`: перелік належить
-/// **інтерфейсу хука**, а не випуску, і оновлювати його доведеться незалежно від
-/// mint (наприклад, коли з'явиться новий вид джерела статусу). Клієнт кладе
-/// обидві інструкції в одну транзакцію (T020).
+/// A separate instruction rather than inside `create_token`: the list
+/// belongs to the **hook interface**, not to the issuance, and it will have
+/// to be updated independently of the mint (for instance when a new kind of
+/// status source appears). The client puts both instructions into one
+/// transaction (T020).
 #[derive(Accounts)]
 pub struct InitializeExtraAccountMetaList<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
 
-    /// CHECK: адресу задають seeds, вміст пише ця інструкція. Типізувати нічим —
-    /// це TLV-буфер `spl-tlv-account-resolution`, а не акаунт Anchor.
+    /// CHECK: the seeds set the address, this instruction writes the content.
+    /// There is nothing to type it with — it is a `spl-tlv-account-resolution`
+    /// TLV buffer, not an Anchor account.
     #[account(
         mut,
         seeds = [b"extra-account-metas", token_config.mint.as_ref()],
@@ -209,16 +215,17 @@ pub(crate) fn handler(ctx: Context<InitializeExtraAccountMetaList>) -> Result<()
 mod tests {
     use super::*;
 
-    /// Кожен `address_config` — рівно 32 байти, і жодна конфігурація в них не
-    /// «майже» вміщається: та, що не вмістилась, не створюється взагалі.
+    /// Every `address_config` is exactly 32 bytes, and no configuration
+    /// "almost" fits in them: one that did not fit is not created at all.
     #[test]
     fn every_configuration_fits_the_address_config() {
         let metas = extra_account_metas().expect("builds");
         assert_eq!(metas.len(), EXTRA_ACCOUNT_COUNT);
     }
 
-    /// Атестація — найтісніша конфігурація: 13 + 4 + 4 + 4 = 25 із 32 (T057).
-    /// Наївний варіант із двома літералами дає 68 і не вміщається ніколи.
+    /// The attestation is the tightest configuration: 13 + 4 + 4 + 4 = 25 of
+    /// 32 (T057). The naive variant with two literals gives 68 and never
+    /// fits.
     #[test]
     fn the_attestation_seeds_stay_inside_the_budget() {
         let seeds = attestation_seeds(SOURCE_TOKEN);
@@ -227,8 +234,9 @@ mod tests {
         assert!(packed <= 32);
     }
 
-    /// Лічильник відправника — єдиний акаунт, який хук пише. Зайвий writable у
-    /// списку означав би, що переказ блокує акаунт, якого не змінює.
+    /// The sender's counter is the only account the hook writes. A stray
+    /// writable in the list would mean the transfer locks an account it does
+    /// not change.
     #[test]
     fn only_the_senders_counter_is_writable() {
         let metas = extra_account_metas().expect("builds");

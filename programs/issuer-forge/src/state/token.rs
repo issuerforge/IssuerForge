@@ -2,84 +2,94 @@ use anchor_lang::prelude::*;
 
 use crate::state::reserve::CURRENCY_BYTES;
 
-/// Конфігурація випущеного токена. PDA: `["token", mint]`.
+/// The configuration of an issued token. PDA: `["token", mint]`.
 ///
-/// **Порядок полів тут — частина протоколу, а не стиль.** Хук отримує акаунт
-/// атестації провайдера через `ExtraAccountMetaList`, а її адреса виводиться з
-/// seeds `["attestation", credential, schema, nonce]` (спайк T057). Два
-/// 32-байтові літерали в 32-байтовий `address_config` не вміщаються ніколи, тож
-/// `credential` і `schema` беруться **зрізами даних цього акаунта** — а зсув у
-/// seed `AccountData` має розмір рівно одного байта.
+/// **The field order here is part of the protocol, not style.** The hook
+/// receives the provider attestation account through `ExtraAccountMetaList`,
+/// and its address is derived from the seeds
+/// `["attestation", credential, schema, nonce]` (spike T057). Two 32-byte
+/// literals never fit into a 32-byte `address_config`, so `credential` and
+/// `schema` are taken as **slices of this account's data** — and the offset
+/// in an `AccountData` seed is exactly one byte wide.
 ///
-/// Звідси два обмеження, які тепер є вимогами до розкладки:
-/// - обидва поля мусять лежати в перших 256 байтах акаунта;
-/// - їхні зсуви зашиті в `address_config` уже створених `ExtraAccountMetaList`,
-///   тож вставка нового поля **перед ними** мовчки перенаправить хук на чужі
-///   32 байти. Тест `token_config_offsets_are_pinned` існує саме проти цього.
+/// Hence two constraints that are now requirements on the layout:
+/// - both fields must lie within the first 256 bytes of the account;
+/// - their offsets are baked into the `address_config` of every
+///   `ExtraAccountMetaList` already created, so inserting a new field
+///   **before them** silently redirects the hook to someone else's 32 bytes.
+///   The test `token_config_offsets_are_pinned` exists precisely against
+///   that.
 #[account]
 #[derive(InitSpace)]
 pub struct TokenConfig {
     pub issuer: Pubkey,
     pub mint: Pubkey,
-    /// SAS-credential провайдера верифікації, атестації якого приймає цей токен.
+    /// The SAS credential of the verification provider whose attestations this token accepts.
     pub attestation_credential: Pubkey,
-    /// SAS-schema тих атестацій.
+    /// The SAS schema of those attestations.
     pub attestation_schema: Pubkey,
-    /// Чинний атестатор резерву **цього токена** (FR-024b).
+    /// The current reserve attestor **of this token** (FR-024b).
     ///
-    /// Живе тут, а не в `IssuerConfig`, попри `docs/PLAN.md`: FR-024b перевіряє
-    /// підпис проти атестатора конкретного токена, і емітент із двома токенами
-    /// законно має для них різних атестаторів.
+    /// Lives here rather than in `IssuerConfig`, despite `docs/PLAN.md`:
+    /// FR-024b checks the signature against the attestor of a specific token,
+    /// and an issuer with two tokens legitimately has different attestors for
+    /// them.
     pub attestor: Pubkey,
-    /// Скарбниця платформи: сюди йде комісія з емісії й погашення (FR-038).
+    /// The platform treasury: the fee on issuance and redemption goes here (FR-038).
     pub treasury: Pubkey,
-    /// Версія політики, на яку налаштований mint. Розбіжність — перша перевірка
-    /// хука й перший код відмови.
+    /// The policy version the mint is configured with. A mismatch is the
+    /// hook's first check and the first refusal code.
     pub policy_version: u32,
-    /// Оголошена ставка комісії (FR-038a).
+    /// The declared fee rate (FR-038a).
     pub fee_bps: u16,
-    /// Строк придатності атестації, секунди (FR-023b).
+    /// The attestation validity period, seconds (FR-023b).
     pub attestation_max_age: i64,
-    /// Дзеркало стану паузи для журналу й екранів; `0` — не на паузі.
-    /// Авторитетним лишається розширення `Pausable` на самому mint (FR-016).
+    /// A mirror of the pause state for the journal and the screens; `0` — not
+    /// paused. The `Pausable` extension on the mint itself remains
+    /// authoritative (FR-016).
     pub paused_at: i64,
     pub bump: u8,
-    /// Скільки атестацій резерву опубліковано. Наступна отримає саме цей індекс.
+    /// How many reserve attestations have been published. The next one gets
+    /// exactly this index.
     ///
-    /// Лічильник, а не сума: підтверджені суму й час читає той самий акаунт,
-    /// який читає верифікатор журналу (SC-006), а тут лежить лише те, **котра**
-    /// атестація остання. Старіша атестація з більшою сумою — це емісія понад
-    /// резерв, і без лічильника її нічим відрізнити від свіжої.
+    /// A counter, not an amount: the attested amount and time are read from
+    /// the same account the journal verifier reads (SC-006), and here lies
+    /// only **which** attestation is the latest. An older attestation with a
+    /// larger amount is an issuance beyond the reserve, and without the
+    /// counter there is nothing to tell it from a fresh one.
     ///
-    /// Дописане в кінець структури: зсуви `credential`, `schema` й
-    /// `policy_version` зашиті в `address_config` кожного створеного
-    /// `ExtraAccountMetaList` і не мають рухатись ніколи.
+    /// Appended at the end of the struct: the offsets of `credential`,
+    /// `schema` and `policy_version` are baked into the `address_config` of
+    /// every `ExtraAccountMetaList` created and must never move.
     pub attestation_count: u64,
-    /// Валюта резерву, вона ж валюта самого токена.
+    /// The reserve currency, which is also the currency of the token itself.
     ///
-    /// Рівність обов'язкова: перевірка «емісія + обіг ≤ атестованого» порівнює
-    /// два числа, і якби вони були в різних валютах, порівняння вимагало б
-    /// курсу — а курсу в програмі немає й не буде.
+    /// The equality is mandatory: the check "issuance + circulation ≤
+    /// attested" compares two numbers, and if they were in different
+    /// currencies the comparison would require an exchange rate — which the
+    /// program does not have and never will.
     pub reserve_currency: [u8; CURRENCY_BYTES],
 }
 
-/// Зсув `attestation_credential` від початку акаунта, з дискримінатором Anchor.
+/// The offset of `attestation_credential` from the start of the account,
+/// including the Anchor discriminator.
 ///
-/// `u8` навмисно: тип збігається з полем `data_index` у seed `AccountData`, тож
-/// поле, яке не влізе в перші 256 байтів, не скомпілюється, а не зламається на
-/// девнеті.
+/// `u8` on purpose: the type matches the `data_index` field of an
+/// `AccountData` seed, so a field that does not fit in the first 256 bytes
+/// fails to compile rather than breaking on devnet.
 pub const TOKEN_CONFIG_CREDENTIAL_OFFSET: u8 = 8 + 32 + 32;
 
-/// Зсув `attestation_schema`.
+/// The offset of `attestation_schema`.
 pub const TOKEN_CONFIG_SCHEMA_OFFSET: u8 = TOKEN_CONFIG_CREDENTIAL_OFFSET + 32;
 
-/// Зсув `policy_version`.
+/// The offset of `policy_version`.
 ///
-/// Теж адресується з seeds: `PolicyConfig` живе за `["policy", mint, version]`, і
-/// хук мусить дістати чинну версію з даних цього акаунта, а не отримати її
-/// числом від клієнта. Ті самі два обмеження, що й вище: до 256 байтів і без
-/// вставок перед цим полем.
-/// Три ключі: сама `attestation_schema`, за нею `attestor` і `treasury`.
+/// Also addressed from seeds: `PolicyConfig` lives at
+/// `["policy", mint, version]`, and the hook must get the current version
+/// from this account's data rather than receive it as a number from the
+/// client. The same two constraints as above: within 256 bytes and with no
+/// insertions before this field.
+/// Three keys: `attestation_schema` itself, then `attestor` and `treasury`.
 pub const TOKEN_CONFIG_POLICY_VERSION_OFFSET: u8 = TOKEN_CONFIG_SCHEMA_OFFSET + 32 * 3;
 
 #[cfg(test)]
@@ -115,9 +125,10 @@ mod tests {
         buffer
     }
 
-    /// Зсуви зашиті в `address_config` кожного вже створеного
-    /// `ExtraAccountMetaList`. Зміна розкладки не ламає збірку й не падає в
-    /// тестах хука — вона просто починає читати чужі 32 байти як credential.
+    /// The offsets are baked into the `address_config` of every
+    /// `ExtraAccountMetaList` already created. A layout change breaks neither
+    /// the build nor the hook tests — it simply starts reading someone else's
+    /// 32 bytes as the credential.
     #[test]
     fn token_config_offsets_are_pinned() {
         let data = serialised();
@@ -131,8 +142,9 @@ mod tests {
         assert_eq!(&data[version..version + 4], &7u32.to_le_bytes());
     }
 
-    /// Зсув у seed `AccountData` — один байт. Поле за межею 256 байтів
-    /// виражається в seeds не більше, ніж літералом, тобто ніяк.
+    /// The offset in an `AccountData` seed is one byte. A field beyond the
+    /// 256-byte boundary is no more expressible in seeds than a literal is —
+    /// i.e. not at all.
     #[test]
     fn seed_addressable_fields_stay_in_the_first_256_bytes() {
         assert!(TOKEN_CONFIG_SCHEMA_OFFSET as usize + 32 <= 256);

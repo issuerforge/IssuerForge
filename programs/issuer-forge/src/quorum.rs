@@ -1,25 +1,26 @@
-//! Кворум 2-з-N: перевірка, що дію санкціонувала потрібна кількість
-//! уповноважених гаманців (FR-019).
+//! The 2-of-N quorum: the check that an action was authorised by the
+//! required number of authorised wallets (FR-019).
 //!
-//! **Тут кворум зібраний підписами однієї транзакції.** `ActionProposal` із
-//! `propose`/`approve` і строком відкликання — це FR-019b, тобто можливість
-//! зібрати підписи **в різний час**, і вона приходить із T025. Перевірка порогу
-//! від цього не змінюється: T025 приносить асинхронність, а не кворум, і кличе
-//! ці ж дві функції.
+//! **Here the quorum is collected from the signatures of one transaction.**
+//! `ActionProposal` with `propose`/`approve` and a revocation period is
+//! FR-019b, i.e. the ability to collect signatures **at different times**,
+//! and it arrives with T025. The threshold check does not change because of
+//! that: T025 brings asynchrony, not the quorum, and calls these same two
+//! functions.
 //!
-//! Розділення на дві функції не косметичне: `check` — чиста, і саме вона несе
-//! правило, тому перевіряється модульними тестами без рантайму. `approvals_from`
-//! торкається `AccountInfo` і не вирішує нічого.
+//! The split into two functions is not cosmetic: `check` is pure, and it is
+//! what carries the rule, so it is tested with unit tests without a runtime.
+//! `approvals_from` touches `AccountInfo` and decides nothing.
 use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
 use crate::state::{role, IssuerConfig};
 
-/// Ключі тих, хто підписав транзакцію, у порядку передачі.
+/// The keys of those who signed the transaction, in the order passed.
 ///
-/// Непідписаний акаунт відхиляється тут, а не ігнорується: акаунт у переліку
-/// санкціонувальних, який нічого не підписав, — це або помилка клієнта, або
-/// спроба добрати кворум чужими адресами.
+/// An unsigned account is rejected here, not ignored: an account in the
+/// authorising list that signed nothing is either a client mistake or an
+/// attempt to fill the quorum with someone else's addresses.
 pub fn approvals_from(accounts: &[AccountInfo]) -> Result<Vec<Pubkey>> {
     accounts
         .iter()
@@ -30,13 +31,13 @@ pub fn approvals_from(accounts: &[AccountInfo]) -> Result<Vec<Pubkey>> {
         .collect()
 }
 
-/// Чи достатньо цих підписів для дії від імені емітента.
+/// Whether these signatures are enough for an action on the issuer's behalf.
 ///
-/// Кожен підпис мусить належати учаснику складу з роллю, що дає право
-/// санкціонувати (`role::AUTHORISING`); спостерігач і атестатор у кворум не
-/// рахуються ніколи. Повтор адреси відхиляється, а не згортається: інакше
-/// кворум 2-з-N збирався б одним гаманцем, переданим двічі, — рівно те, що
-/// міряє SC-013.
+/// Every signature must belong to a member of the membership with a role that
+/// grants the right to authorise (`role::AUTHORISING`); an observer and an
+/// attestor never count towards the quorum. A repeated address is rejected,
+/// not collapsed: otherwise a 2-of-N quorum would be collected with one
+/// wallet passed twice — exactly what SC-013 measures.
 pub fn check(issuer: &IssuerConfig, approvals: &[Pubkey]) -> Result<()> {
     for (index, wallet) in approvals.iter().enumerate() {
         require!(
@@ -108,7 +109,7 @@ mod tests {
 
     #[test]
     fn refuses_one_signature_out_of_two() {
-        // SC-013 міряє саме це: дія з одним підписом не має ончейн-ефекту.
+        // SC-013 measures exactly this: an action with one signature has no on-chain effect.
         assert_eq!(
             err(check(&two_admins(), &[wallet(1)])),
             code(ForgeError::QuorumNotReached)
@@ -118,7 +119,7 @@ mod tests {
 
     #[test]
     fn refuses_the_same_wallet_counted_twice() {
-        // Інакше кворум 2-з-N збирався б одним гаманцем, переданим двічі.
+        // Otherwise a 2-of-N quorum would be collected with one wallet passed twice.
         assert_eq!(
             err(check(&two_admins(), &[wallet(1), wallet(1)])),
             code(ForgeError::DuplicateApproval)
@@ -135,8 +136,8 @@ mod tests {
 
     #[test]
     fn does_not_count_observers_or_attestors() {
-        // Спостерігач не має права дії, атестатор не має інших повноважень
-        // (FR-024) — жоден із них не добирає кворум.
+        // An observer has no right to act, an attestor has no other powers
+        // (FR-024) — neither of them fills the quorum.
         let config = issuer(
             &[
                 (1, role::ADMIN),
