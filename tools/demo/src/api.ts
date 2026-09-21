@@ -18,7 +18,7 @@ import type {
   SimulatePolicyResponse,
 } from '@forge/api/contracts'
 import { createTokenResponseSchema, simulatePolicyResponseSchema } from '@forge/api/contracts'
-import { ISSUER_HEADER } from '@forge/shared/api'
+import { ISSUER_HEADER, type Session, sessionSchema } from '@forge/shared/api'
 
 export interface ApiClientOptions {
   readonly baseUrl: string
@@ -50,6 +50,8 @@ export class ApiRefused extends Error {
 }
 
 export interface ApiClient {
+  /** Who the api takes this login for. 401 until the indexer has mirrored the membership. */
+  session(): Promise<Session>
   simulate(body: SimulatePolicyBody): Promise<SimulatePolicyResponse>
   createToken(body: CreateTokenBody): Promise<CreateTokenResponse>
   queueHolder(mint: string, body: QueueHolderBody): Promise<void>
@@ -97,6 +99,10 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
   }
 
   return {
+    async session() {
+      return await call('GET', '/api/session', undefined, (value) => sessionSchema.parse(value))
+    },
+
     async simulate(body) {
       return await call('POST', '/api/policy/simulate', body, (value) =>
         simulatePolicyResponseSchema.parse(value),

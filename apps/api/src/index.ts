@@ -3,6 +3,7 @@
 // passes ready values around.
 import { createDatabase } from '@forge/db'
 import { createLogger } from '@forge/shared/log'
+import { startWorker } from '@forge/worker'
 import { serve } from '@hono/node-server'
 import { Connection } from '@solana/web3.js'
 import { createChainReader, fetchWithTimeout } from './chain.ts'
@@ -14,7 +15,7 @@ import { createOperationalSigner } from './operational.ts'
 import { createPrivyClient } from './privy.ts'
 import { createServer } from './server.ts'
 
-function main() {
+async function main() {
   const config = loadConfig()
   const logger = createLogger({ level: config.logLevel, service: 'api' })
   const database = createDatabase(config.databaseUrl)
@@ -43,18 +44,32 @@ function main() {
     logger.info({ port: info.port, origins: config.webOrigins }, 'api listening')
   })
 
+  // The indexer, in this process, on the same pool: the free Render instance
+  // runs one process and nothing else. It starts after the port is taken so
+  // that a long first backfill does not keep the health check waiting — the
+  // routes answer from the mirror as it is, and the mirror fills in behind.
+  const worker = config.runWorker
+    ? await startWorker({
+        rpcUrl: config.rpcUrl,
+        logger: logger.child({ service: 'worker' }),
+        database,
+      })
+    : undefined
+
   // The host sends SIGTERM on every deploy. Without this the process runs out
   // the timeout, and in-flight requests are cut off mid-response.
   for (const signal of ['SIGTERM', 'SIGINT'] as const) {
     process.once(signal, () => {
       logger.info({ signal }, 'shutting down')
-      server.close(() => process.exit(0))
+      server.close(() => {
+        void (worker?.stop() ?? Promise.resolve()).then(() => process.exit(0))
+      })
     })
   }
 }
 
 try {
-  main()
+  await main()
 } catch (error) {
   // A broken config is a deployment error, and it must be readable without the
   // JSON logger: it is seen by eye in the hosting console, not in a log

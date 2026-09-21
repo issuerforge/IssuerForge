@@ -35,6 +35,9 @@ importers:
       '@forge/shared':
         specifier: workspace:^
         version: link:../../packages/shared
+      '@forge/worker':
+        specifier: workspace:^
+        version: link:../worker
       '@hono/node-server':
         specifier: ^1.19.9
         version: 1.19.17(hono@4.13.5)
@@ -43,7 +46,7 @@ importers:
         version: 0.9.1(hono@4.13.5)(zod@4.5.4)
       '@solana/web3.js':
         specifier: ^1.98.4
-        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(postgres@3.4.9)
@@ -123,21 +126,36 @@ importers:
 
   apps/worker:
     dependencies:
+      '@coral-xyz/anchor':
+        specifier: ^0.32.1
+        version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@forge/chain':
         specifier: workspace:^
         version: link:../../packages/chain
       '@forge/db':
         specifier: workspace:^
         version: link:../../packages/db
+      '@forge/policy':
+        specifier: workspace:^
+        version: link:../../packages/policy
       '@forge/shared':
         specifier: workspace:^
         version: link:../../packages/shared
+      '@solana/spl-token':
+        specifier: ^0.4.15
+        version: 0.4.15(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@5.0.10)
       '@solana/web3.js':
         specifier: ^1.98.4
-        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(postgres@3.4.9)
       pino:
         specifier: ^10.3.1
         version: 10.3.1
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/chain:
     dependencies:
@@ -202,9 +220,6 @@ importers:
       '@forge/chain':
         specifier: workspace:^
         version: link:../../packages/chain
-      '@forge/db':
-        specifier: workspace:^
-        version: link:../../packages/db
       '@forge/policy':
         specifier: workspace:^
         version: link:../../packages/policy

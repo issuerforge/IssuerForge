@@ -136,6 +136,15 @@ describe('config', () => {
     )
   })
 
+  it('runs the worker only on the word "true"', () => {
+    expect(loadConfig(env()).runWorker).toBe(false)
+    expect(loadConfig(env({ RUN_WORKER: 'true' })).runWorker).toBe(true)
+    expect(loadConfig(env({ RUN_WORKER: 'false' })).runWorker).toBe(false)
+    // "1" and "yes" are neither: a flag that guesses is a flag that starts
+    // the indexer on a line meant to turn it off.
+    expect(issuesOf({ RUN_WORKER: '1' })[0]).toMatch(/^RUN_WORKER:/)
+  })
+
   it('accepts the operational key and does not alter it on the way', () => {
     expect(loadConfig(env()).operationalSecretKey).toBe(OPERATIONAL_SECRET)
   })

@@ -5,7 +5,8 @@
 // arrive with their tasks. Otherwise the process would fail at start-up over
 // a missing value nobody reads — and the team would learn to put anything in
 // there just to get it running. `OPERATIONAL_SECRET_KEY` arrived with its own
-// task (T022): the first delegated operation is signed with it.
+// task (T022): the first delegated operation is signed with it; `RUN_WORKER`
+// with the indexer (T031).
 //
 // There is deliberately no `PROGRAM_ID` here: the program address is taken
 // **only** from the vendored IDL (`packages/chain`, decision T007). A second
@@ -95,6 +96,16 @@ const operationalKeySchema = secret('OPERATIONAL_SECRET_KEY').refine((value) => 
   return length === SECRET_KEY_BYTES
 }, `expected a base58 ed25519 secret key of ${SECRET_KEY_BYTES} bytes`)
 
+/**
+ * A flag that is a word, not a presence: `RUN_WORKER=false` must mean off.
+ * A schema that only checked "is the variable set" would start the indexer
+ * on the line someone wrote to turn it off.
+ */
+const flagSchema = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true')
+
 const databaseUrlSchema = secret('DATABASE_URL').refine(
   (v) => v.startsWith('postgres://') || v.startsWith('postgresql://'),
   'expected a postgres:// connection string',
@@ -115,6 +126,12 @@ export const configSchema = z.object({
   PRIVY_VERIFICATION_KEY: verificationKeySchema,
   /** The base URL of the Privy REST API. The variable exists so that a host change is not a code change. */
   PRIVY_API_URL: httpUrlSchema.default('https://auth.privy.io'),
+  /**
+   * Whether the indexer runs inside this process. On the free Render
+   * instance there is no second process to run it in (`render.yaml`);
+   * locally it is a choice — `pnpm dev` runs the worker on its own.
+   */
+  RUN_WORKER: flagSchema,
 })
 
 export interface Config {
@@ -131,6 +148,7 @@ export interface Config {
     verificationKey: string
     apiUrl: string
   }
+  runWorker: boolean
 }
 
 export class ConfigError extends Error {
@@ -175,5 +193,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       verificationKey: e.PRIVY_VERIFICATION_KEY,
       apiUrl: e.PRIVY_API_URL.replace(/\/+$/, ''),
     },
+    runWorker: e.RUN_WORKER,
   }
 }

@@ -17,9 +17,8 @@
 // they measure the rule, and http would be noise in that measurement.
 import { buildTransfer } from '@forge/chain'
 import type { PolicyRules } from '@forge/policy/model'
-import { DELEGATION } from '@forge/shared/api'
 import { type Keypair, PublicKey } from '@solana/web3.js'
-import { type ApiClient, createApiClient } from './api.ts'
+import { type ApiClient, ApiRefused, createApiClient } from './api.ts'
 import { runAttacks } from './attacks.ts'
 import {
   createContext,
@@ -37,7 +36,6 @@ import { createIssuer } from './issuer.ts'
 import { type LoginSession, startLogin } from './login.ts'
 import { checkParity, type Party, type Scenario } from './parity.ts'
 import { attemptOverReserve } from './reserve.ts'
-import { closeDatabase, openDatabase, seedIssuer } from './seed.ts'
 import { submitPlan } from './send.ts'
 
 /** The relay program for the CPI vector. The address is the one in `Anchor.toml`. */
@@ -99,30 +97,57 @@ function required(name: string): string {
 }
 
 /**
+ * How long the demo waits for the api to know the issuer it just created.
+ *
+ * The membership reaches the database through the indexer alone — the demo
+ * writes none of it. The indexer runs inside the api (`RUN_WORKER`), reads
+ * the confirmed `initialize_issuer` from the node and mirrors it; on devnet
+ * that is a few seconds, with the backfill timer (30 s) as the slow path if
+ * the socket dropped the notification. A minute is well past both.
+ */
+const MEMBERSHIP_TIMEOUT_MS = 60_000
+const MEMBERSHIP_POLL_MS = 2_000
+
+/**
+ * Polls the session until the api answers with the issuer, i.e. until the
+ * indexer has mirrored the membership. Any other refusal is a real one and
+ * is thrown as it is.
+ */
+async function awaitMembership(api: ApiClient, issuerId: string): Promise<void> {
+  const deadline = Date.now() + MEMBERSHIP_TIMEOUT_MS
+  for (;;) {
+    try {
+      const session = await api.session()
+      if (session.issuerId === issuerId) return
+    } catch (error) {
+      if (!(error instanceof ApiRefused && error.status === 401)) throw error
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `the api did not learn about issuer ${issuerId} within ${MEMBERSHIP_TIMEOUT_MS / 1000} s — is it running with RUN_WORKER=true?`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, MEMBERSHIP_POLL_MS))
+  }
+}
+
+/**
  * Everything needed for the demo to log into the api the same way the
  * console does.
  *
- * Three steps, and none of them is a login bypass: the membership is written
- * to the database (the job of indexer T031, which does not exist yet), the
- * fixture answers the same request Privy does, and the token is signed with
- * the key whose public half the api reads from the environment and verifies
- * itself.
+ * Two steps, and neither is a login bypass: the fixture answers the same
+ * request Privy does, and the token is signed with the key whose public
+ * half the api reads from the environment and verifies itself. The
+ * membership itself is not written here at all — the api's own indexer
+ * mirrors it from the chain, and the demo waits for that like any client
+ * would.
  */
 async function openApiSession(
   context: ReturnType<typeof createContext>,
   issuerId: PublicKey,
   baseUrl: string,
 ): Promise<{ api: ApiClient; login: LoginSession; close: () => Promise<void> }> {
-  const { keys, connection } = context
-
-  const db = openDatabase(required('DATABASE_URL'))
-  await seedIssuer(db, {
-    issuerId,
-    keys,
-    quorumN: 2,
-    delegationMask: DELEGATION.THAW_HOLDER | DELEGATION.SET_HOLDER_STATUS,
-    slot: await connection.getSlot('confirmed'),
-  })
+  const { keys } = context
 
   // The port is taken from the same address the api reads: two numbers would
   // diverge silently, and the api would call into the void.
@@ -148,15 +173,17 @@ async function openApiSession(
     accessToken: login.accessToken,
     issuerId: issuerId.toBase58(),
   })
+  const waited = Date.now()
+  await awaitMembership(api, issuerId.toBase58())
+  console.log(`mirror:  membership indexed after ${((Date.now() - waited) / 1000).toFixed(1)} s`)
 
   return {
     api,
     login,
-    // Both resources hold the event loop: without this the process does not
+    // The fixture holds the event loop: without this the process does not
     // exit even when all the numbers are already printed.
     close: async () => {
       await login.close()
-      await closeDatabase(db)
     },
   }
 }

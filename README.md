@@ -52,9 +52,11 @@ validator.
   published by our own key acting as attestor — the mechanism is real, the
   content is a fixture. Holder statuses (tier, jurisdiction, denial) are
   written by the issuer's own register; there is no KYC provider integration.
-- **No indexer.** Tokens and holders reach the database through the API; the
-  worker that mirrors on-chain state back into it is M2 (`apps/worker` is a
-  stub today).
+- **The indexer mirrors, it does not yet serve.** `apps/worker` reads the
+  program's and the token program's transactions into Postgres — membership,
+  tokens, holders, and every transfer, refusal, thaw, status change and
+  attestation as an event with its signature. The routes that show those
+  events (the live feed, the NDJSON journal, the verifier) are M2.
 
 ## Design rules the code is built around
 
@@ -100,7 +102,8 @@ apps/api                Hono. Login (Privy), roster, policy simulation, token
                         issuance (unsigned transactions), holder onboarding
 apps/web                React console: issuance wizard with live simulation,
                         three signatures shown as three
-apps/worker             Indexer stub (M2)
+apps/worker             Indexer: chain → Postgres mirror and event log; runs
+                        inside the api behind RUN_WORKER, or on its own
 tools/demo              The measurement script behind the table above
 tools/spikes            Feasibility spikes kept with their tests (can the hook
                         resolve a provider attestation directly? — it can)
@@ -180,19 +183,21 @@ node --env-file=.env tools/demo/src/main.ts \
   --rpc https://api.devnet.solana.com --payer ~/.config/solana/id.json
 
 # the same, with issuance and onboarding routed through the API
-# (requires the API running and DATABASE_URL set)
+# (requires the API running with RUN_WORKER=true)
 node --env-file=.env tools/demo/src/main.ts \
   --rpc https://api.devnet.solana.com --payer ~/.config/solana/id.json \
   --api http://127.0.0.1:8787
 ```
 
-With `--api` the demo replaces two things it cannot have on a fresh run. It
-writes the issuer's roster into the database itself (the indexer that will do
-this is M2), and it stands in for Privy through `PRIVY_API_URL`: a fixture
-answers the same `GET /api/v1/users/<did>` request with the run's wallets, and
-the access token is signed with the key whose public half is in
-`PRIVY_VERIFICATION_KEY`. The API's authentication code is not modified — it
-verifies signature, audience and expiry exactly as in production.
+With `--api` the demo stands in for one thing it cannot have on a fresh run:
+Privy. Through `PRIVY_API_URL` a fixture answers the same
+`GET /api/v1/users/<did>` request with the run's wallets, and the access token
+is signed with the key whose public half is in `PRIVY_VERIFICATION_KEY`. The
+API's authentication code is not modified — it verifies signature, audience
+and expiry exactly as in production. The issuer's roster is not written by
+the demo at all: it creates the issuer on chain and then polls
+`GET /api/session` until the API's own indexer has mirrored the membership,
+the way any client would.
 
 Public devnet RPC rate-limits aggressively; the demo paces its requests with a
 token bucket, and `web3.js` retries on `429`. Expect a handful of retry lines
@@ -235,8 +240,10 @@ pings `/health` every 5 minutes, which the 750 free hours a month cover.
 GitHub disables the schedule after 60 days without a commit — re-enable it
 under *Actions* if the repository goes quiet.
 
-The indexer (M2) will run inside the api process behind a flag rather than
-as a second service: Render's free plan has no background workers.
+The indexer runs inside the api process (`RUN_WORKER=true` in the
+blueprint) rather than as a second service: Render's free plan has no
+background workers. Its cursor lives in the database, so a spin-down costs
+latency, not records.
 
 ## What comes next
 

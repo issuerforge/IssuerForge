@@ -1,11 +1,12 @@
 # Render Blueprint: the api as one free web service.
 #
 # The free instance is the only one Render gives away, and it cannot run a
-# background worker — when the indexer arrives (T031, M2) it will run inside
-# this process behind a RUN_WORKER flag rather than as a second service. The
-# instance spins down after 15 minutes without traffic; the keepalive workflow
-# pings /health every 5 minutes, and the 750 free instance hours a month cover
-# one service around the clock.
+# background worker — so the indexer runs inside this process behind
+# RUN_WORKER rather than as a second service. The instance spins down after
+# 15 minutes without traffic; the keepalive workflow pings /health every
+# 5 minutes, and the 750 free instance hours a month cover one service
+# around the clock. A spin-down also stops the indexer: its cursor is in the
+# database, and the next start resumes from it.
 #
 # Values marked sync: false are entered in the Render dashboard, never here.
 # The console on GitHub Pages reaches this service through VITE_API_URL.
@@ -35,6 +36,10 @@ services:
         value: "26"
       - key: LOG_LEVEL
         value: info
+      # The indexer, in this process (see above). The word "true", not a
+      # presence: "false" is how it is turned off without deleting the line.
+      - key: RUN_WORKER
+        value: "true"
       # The Pages origin — scheme and host only, no path:
       # https://issuerforge.github.io
       - key: WEB_ORIGIN

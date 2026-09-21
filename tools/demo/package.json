@@ -12,7 +12,6 @@
     "@coral-xyz/anchor": "^0.32.1",
     "@forge/api": "workspace:^",
     "@forge/chain": "workspace:^",
-    "@forge/db": "workspace:^",
     "@forge/policy": "workspace:^",
     "@forge/shared": "workspace:^",
     "@solana/spl-token": "^0.4.15",
