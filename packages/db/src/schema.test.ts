@@ -7,6 +7,15 @@ import * as schema from './schema.ts'
 
 const tables = Object.values(schema).filter((value) => is(value, PgTable))
 
+/**
+ * Tables that hold no tenant's rows. The indexer cursor is the only one:
+ * there is no row of it an issuer could be shown, so `issuer_id` has nothing
+ * to point at. The list is explicit so that adding to it is a decision, not
+ * an omission.
+ */
+const PLATFORM_TABLES = new Set(['indexer_state'])
+const tenantTables = tables.filter((table) => !PLATFORM_TABLES.has(getTableConfig(table).name))
+
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url))
 const migrationSql = readdirSync(migrationsDir)
   .filter((file) => file.endsWith('.sql'))
@@ -21,7 +30,7 @@ describe('tenant isolation', () => {
   // FR-036 cannot be enforced by an RLS policy on a table with nothing to hold
   // on to. This check catches a new table without `issuer_id` on the day it is
   // added, not at SC-011 in the Polish phase.
-  it.each(tables.map((table) => [getTableConfig(table).name, table] as const))(
+  it.each(tenantTables.map((table) => [getTableConfig(table).name, table] as const))(
     '%s carries issuer_id',
     (_name, table) => {
       const columns = getTableConfig(table).columns.map((column) => column.name)

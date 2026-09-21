@@ -29,6 +29,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -69,9 +70,16 @@ export const issuers = pgTable(
      * `source_slot` is nullable.
      */
     issuerId: text('issuer_id').primaryKey(),
-    legalName: text('legal_name').notNull(),
+    /**
+     * Nullable, because the row is written by the indexer from
+     * `initialize_issuer`, and the chain carries neither a legal name nor a
+     * jurisdiction. Both are filled in by the onboarding screen in its own
+     * task; until then the console shows the issuer by its key, not by an
+     * invented name that would read as a real one.
+     */
+    legalName: text('legal_name'),
     /** ISO 3166-1 alpha-2. */
-    jurisdiction: text('jurisdiction').notNull(),
+    jurisdiction: text('jurisdiction'),
     /** Who founded it. Grants no powers — the membership lives in `role_assignments`. */
     founderWallet: text('founder_wallet').notNull(),
     quorumN: smallint('quorum_n').notNull(),
@@ -84,7 +92,10 @@ export const issuers = pgTable(
   (t) => [
     check('issuers_issuer_id_is_base58', sql`char_length(${t.issuerId}) ${BASE58_LENGTH}`),
     check('issuers_founder_is_base58', sql`char_length(${t.founderWallet}) ${BASE58_LENGTH}`),
-    check('issuers_jurisdiction_is_alpha2', sql`${t.jurisdiction} ~ '^[A-Z]{2}$'`),
+    check(
+      'issuers_jurisdiction_is_alpha2',
+      sql`${t.jurisdiction} is null or ${t.jurisdiction} ~ '^[A-Z]{2}$'`,
+    ),
     // `MIN_QUORUM` from constants.rs. The program rejects a quorum of 1, so
     // there is no point in the database being able to store it (FR-019).
     check('issuers_quorum_at_least_two', sql`${t.quorumN} >= 2`),
@@ -211,6 +222,84 @@ export const holders = pgTable(
   ],
 ).enableRLS()
 
+/**
+ * The kinds of `events.kind`. A copy of the `kind` literals in
+ * `@forge/shared/events`, and a copy on purpose: the database package does
+ * not import the schemas (it would pull Zod into every script that only
+ * wants a connection), and an enum in Postgres is what keeps a row with a
+ * kind nobody reads from being written at all. `events.test.ts` in the
+ * worker checks the two lists against each other.
+ */
+export const eventKind = pgEnum('event_kind', [
+  'transfer',
+  'refusal',
+  'compliance',
+  'attestation',
+  'thaw',
+  'holder_status',
+])
+
+/**
+ * Everything the indexer pulls out of the logs (docs/PLAN.md → "Indexing"):
+ * transfers, refusals, compliance actions, attestations, thaws and registry
+ * changes. **One table, not the four in the plan's table list**: the feed
+ * (FR-037), the journal export (FR-018) and the verifier (SC-006) all
+ * consume one discriminated union, and four tables would make the journal a
+ * union of four selects that must agree on ordering and paging by hand.
+ *
+ * The envelope is columns — it is what queries filter and order by. The
+ * rest of the event is the `payload`, validated by the union schema before
+ * it is written and again when it is read: the column set does not have to
+ * change when a kind gains a field.
+ *
+ * The key is the pair `(signature, event_index)`, the same identity as
+ * `eventKey` in `@forge/shared/events`: the indexer re-reads after a dropped
+ * connection, and the second write of the same event must be a no-op.
+ */
+export const events = pgTable(
+  'events',
+  {
+    signature: text('signature').notNull(),
+    /** Ordinal of the event inside the transaction, from zero. */
+    eventIndex: smallint('event_index').notNull(),
+    kind: eventKind('kind').notNull(),
+    issuerId: text('issuer_id').notNull(),
+    mint: text('mint').notNull(),
+    slot: bigint('slot', { mode: 'number' }).notNull(),
+    /** Unix seconds; null where the node did not report it. */
+    blockTime: bigint('block_time', { mode: 'number' }),
+    /** The whole event as `@forge/shared/events` defines it, envelope included. */
+    payload: jsonb('payload').notNull(),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.signature, t.eventIndex] }),
+    // The feed and the journal read one token in chain order; the export
+    // adds a slot range on top of the same index.
+    index('events_mint_slot_idx').on(t.mint, t.slot, t.eventIndex),
+    index('events_issuer_slot_idx').on(t.issuerId, t.slot),
+    check('events_signature_is_base58', sql`char_length(${t.signature}) between 64 and 88`),
+    check('events_mint_is_base58', sql`char_length(${t.mint}) ${BASE58_LENGTH}`),
+    check('events_slot_non_negative', sql`${t.slot} >= 0`),
+  ],
+).enableRLS()
+
+/**
+ * Where the indexer stopped: the last transaction applied, so that a
+ * restart resumes from it instead of from the program's first slot.
+ *
+ * One row per program address. The only table without `issuer_id`: the
+ * cursor belongs to the platform, not to a tenant, and there is no row of it
+ * an issuer could be shown. RLS is on all the same — nobody but
+ * `service_role` reads it.
+ */
+export const indexerState = pgTable('indexer_state', {
+  programId: text('program_id').primaryKey(),
+  lastSignature: text('last_signature').notNull(),
+  lastSlot: bigint('last_slot', { mode: 'number' }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}).enableRLS()
+
 export type Issuer = typeof issuers.$inferSelect
 export type NewIssuer = typeof issuers.$inferInsert
 export type RoleAssignment = typeof roleAssignments.$inferSelect
@@ -219,3 +308,6 @@ export type Token = typeof tokens.$inferSelect
 export type NewToken = typeof tokens.$inferInsert
 export type Holder = typeof holders.$inferSelect
 export type NewHolder = typeof holders.$inferInsert
+export type EventRow = typeof events.$inferSelect
+export type NewEventRow = typeof events.$inferInsert
+export type IndexerState = typeof indexerState.$inferSelect

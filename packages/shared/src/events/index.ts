@@ -88,8 +88,8 @@ export const refusalEventSchema = z.object({
  *
  * Thawing an account during onboarding is **not** among them: it has no case,
  * is signed by the operational key within its delegation (FR-035) and is a
- * change of the status registry, not a compliance action. Its place is the
- * thaw queue (FR-008b2), tasks T022 and T031.
+ * change of the status registry, not a compliance action. It has its own
+ * kind below (`thawEventSchema`), as does a registry change.
  */
 export const COMPLIANCE_ACTIONS = [
   'freeze',
@@ -153,10 +153,64 @@ export const attestationEventSchema = z.object({
 })
 
 /**
+ * A holder's status in the issuer's own registry, as an instruction carries
+ * it (FR-008a).
+ *
+ * `expiresAt` is `null` for "no expiry": on chain that is a zero, but a zero
+ * in the journal would read as the epoch, i.e. as long expired.
+ */
+export const holderStatusSchema = z.object({
+  tier: z.number().int().min(0).max(255),
+  jurisdiction: z.string().regex(/^[A-Z]{2}$/),
+  denied: z.boolean(),
+  expiresAt: unixSecondsSchema.nullable(),
+})
+
+/**
+ * An account let in from the thaw queue (FR-008b2).
+ *
+ * Deliberately **not** a compliance event: an onboarding thaw has no case and
+ * no reason code, and putting it into `complianceEventSchema` would make
+ * every onboarding invent one. It still belongs in the feed and the journal —
+ * "who was let in, when and by whom" is exactly what a regulator asks after
+ * a refusal — so it is its own kind, with the signature to verify it by.
+ *
+ * `status` is the registry entry written with the first thaw, or `null` on
+ * a repeat thaw of an account that already has one.
+ */
+export const thawEventSchema = z.object({
+  kind: z.literal('thaw'),
+  ...envelope,
+  wallet: addressSchema,
+  tokenAccount: addressSchema,
+  /** Who authorised it: the operational key within its delegation, or a member (FR-035). */
+  authority: addressSchema,
+  status: holderStatusSchema.nullable(),
+})
+
+/**
+ * A change of an address's entry in the issuer's own registry (FR-008a,
+ * FR-008b1).
+ *
+ * The change freezes nothing and admits nothing; a transfer from the address
+ * simply stops passing the moment the entry no longer satisfies the policy.
+ * That is why it is neither a thaw nor a compliance action, and why it is
+ * still recorded: a denial written here is the reason behind the next
+ * `SENDER_DENIED` in the feed.
+ */
+export const holderStatusEventSchema = z.object({
+  kind: z.literal('holder_status'),
+  ...envelope,
+  wallet: addressSchema,
+  authority: addressSchema,
+  status: holderStatusSchema,
+})
+
+/**
  * The union of everything indexed up to and including M2.
  *
  * Action proposals (FR-019b) and redemptions (US4) are not in it yet — they
- * arrive with their own tasks (T031/T032 and T048). The `kind` discriminator
+ * arrive with their own tasks (T032 and T048). The `kind` discriminator
  * makes extension a matter of adding a member: existing consumers do not
  * break on a new one.
  */
@@ -165,12 +219,17 @@ export const indexedEventSchema = z.discriminatedUnion('kind', [
   refusalEventSchema,
   complianceEventSchema,
   attestationEventSchema,
+  thawEventSchema,
+  holderStatusEventSchema,
 ])
 
+export type HolderStatus = z.infer<typeof holderStatusSchema>
 export type TransferEvent = z.infer<typeof transferEventSchema>
 export type RefusalEvent = z.infer<typeof refusalEventSchema>
 export type ComplianceEvent = z.infer<typeof complianceEventSchema>
 export type AttestationEvent = z.infer<typeof attestationEventSchema>
+export type ThawEvent = z.infer<typeof thawEventSchema>
+export type HolderStatusEvent = z.infer<typeof holderStatusEventSchema>
 export type IndexedEvent = z.infer<typeof indexedEventSchema>
 
 export type IndexedEventKind = IndexedEvent['kind']

@@ -3,8 +3,10 @@ import {
   attestationEventSchema,
   complianceEventSchema,
   eventKey,
+  holderStatusEventSchema,
   indexedEventSchema,
   refusalEventSchema,
+  thawEventSchema,
   transferEventSchema,
 } from './index.ts'
 
@@ -65,15 +67,34 @@ const attestation = {
   expiresAt: 1_772_674_400,
 } as const
 
+const thaw = {
+  kind: 'thaw',
+  ...envelope,
+  eventIndex: 0,
+  wallet: B,
+  tokenAccount: A,
+  authority: A,
+  status: { tier: 2, jurisdiction: 'NG', denied: false, expiresAt: null },
+} as const
+
+const holderStatus = {
+  kind: 'holder_status',
+  ...envelope,
+  eventIndex: 0,
+  wallet: B,
+  authority: A,
+  status: { tier: 2, jurisdiction: 'NG', denied: true, expiresAt: 1_772_674_400 },
+} as const
+
 describe('indexedEventSchema', () => {
-  it('parses each of the four kinds', () => {
-    for (const event of [transfer, refusal, compliance, attestation]) {
+  it('parses each of the six kinds', () => {
+    for (const event of [transfer, refusal, compliance, attestation, thaw, holderStatus]) {
       expect(indexedEventSchema.parse(event)).toEqual(event)
     }
   })
 
   it('rejects a kind that is not indexed yet', () => {
-    // Redemptions arrive at M4 (T048), proposals at M2 (T031/T032). Until
+    // Redemptions arrive at M4 (T048), proposals at M2 (T032). Until
     // then they must not silently pass as an event of unknown shape.
     expect(indexedEventSchema.safeParse({ ...transfer, kind: 'redemption' }).success).toBe(false)
   })
@@ -168,6 +189,33 @@ describe('attestation event', () => {
 
   it('rejects a currency that is not a currency code', () => {
     expect(attestationEventSchema.safeParse({ ...attestation, currency: '' }).success).toBe(false)
+  })
+})
+
+describe('thaw and holder status events', () => {
+  it('a repeat thaw carries no status', () => {
+    expect(thawEventSchema.parse({ ...thaw, status: null }).status).toBeNull()
+  })
+
+  it('a registry change always carries the status it wrote', () => {
+    expect(holderStatusEventSchema.safeParse({ ...holderStatus, status: null }).success).toBe(false)
+  })
+
+  it('takes "no expiry" as null', () => {
+    // On chain "no expiry" is a zero; in the journal a zero would read as
+    // long expired. The indexer translates, the schema admits the translation.
+    const status = { ...thaw.status, expiresAt: null }
+    expect(thawEventSchema.parse({ ...thaw, status }).status?.expiresAt).toBeNull()
+  })
+
+  it('rejects a jurisdiction that is not an alpha-2 code', () => {
+    const status = { ...holderStatus.status, jurisdiction: 'ng' }
+    expect(holderStatusEventSchema.safeParse({ ...holderStatus, status }).success).toBe(false)
+  })
+
+  it('is not a compliance action', () => {
+    // FR-017: a compliance action needs a case; an onboarding thaw has none.
+    expect(complianceEventSchema.safeParse({ ...compliance, action: 'thaw' }).success).toBe(false)
   })
 })
 
