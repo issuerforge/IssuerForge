@@ -8,6 +8,7 @@ import type { ChainReader } from '../chain.ts'
 import type { Directory, RosterEntry } from '../directory.ts'
 import type { HolderStore } from '../holders.ts'
 import type { IssuanceStore, Reservation } from '../issuance.ts'
+import type { JournalStore } from '../journal.ts'
 import type { OperationalSigner } from '../operational.ts'
 import type { PrivyClient } from '../privy.ts'
 import { createServer, MAX_BODY_BYTES, type ServerDeps } from '../server.ts'
@@ -97,6 +98,14 @@ function app(fakes: Fakes = {}) {
     },
   }
 
+  // The journal has its own test file; it appears here only because the server
+  // is assembled as a whole.
+  const journal = new Proxy({} as JournalStore, {
+    get: (_, key) => () => {
+      throw new Error(`the journal is not read on this path (${String(key)})`)
+    },
+  })
+
   const deps: ServerDeps = {
     logger: createLogger({ level: 'silent', service: 'test' }),
     webOrigins: ['https://console.example'],
@@ -104,6 +113,7 @@ function app(fakes: Fakes = {}) {
     now: () => fakes.now ?? NOW,
     privy,
     directory,
+    journal,
     chain,
     issuance,
     holders,

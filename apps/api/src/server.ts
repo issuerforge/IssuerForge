@@ -17,8 +17,10 @@ import type { AppEnv } from './env.ts'
 import { invalidInput, onError, onNotFound } from './errors.ts'
 import type { HolderStore } from './holders.ts'
 import type { IssuanceStore } from './issuance.ts'
+import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
 import { createHolderRoutes } from './routes/holders.ts'
+import { createJournalRoutes } from './routes/journal.ts'
 import { createTokenRoutes } from './routes/tokens.ts'
 import { requireSession, type SessionDeps } from './session.ts'
 
@@ -28,6 +30,7 @@ export interface ServerDeps extends SessionDeps {
   chain: ChainReader
   issuance: IssuanceStore
   holders: HolderStore
+  journal: JournalStore
   /**
    * The platform's operational key. The only server dependency that can sign
    * — and that is exactly why it is passed in from outside like everything
@@ -38,6 +41,8 @@ export interface ServerDeps extends SessionDeps {
   requestId?: () => string
   /** The clock. Swapped in tests so that the simulation is reproducible. */
   now?: () => Date
+  /** The feed's poll interval. Swapped in tests so a poll is not a second of waiting. */
+  feedPollMs?: number
 }
 
 /** The largest request body that makes sense. The largest legitimate one is an issuance, ~2 KB. */
@@ -110,6 +115,7 @@ export function createServer(deps: ServerDeps) {
   const now = deps.now ?? (() => new Date())
   app.route('/api', createTokenRoutes({ ...deps, now }))
   app.route('/api', createHolderRoutes({ ...deps, now }))
+  app.route('/api', createJournalRoutes({ ...deps, now }))
 
   return app
 }

@@ -276,7 +276,16 @@ export const events = pgTable(
     primaryKey({ columns: [t.signature, t.eventIndex] }),
     // The feed and the journal read one token in chain order; the export
     // adds a slot range on top of the same index.
-    index('events_mint_slot_idx').on(t.mint, t.slot, t.eventIndex),
+    //
+    // **`signature` is in the key, and it is not decoration.** The pair
+    // `(slot, event_index)` is not unique — two transactions in one slot both
+    // have an event zero — so it cannot order a keyset walk, and the journal
+    // is read page by page exactly that way (T032). The triple
+    // `(slot, signature, event_index)` is a total order, because the last two
+    // are the primary key; the order inside a slot is then arbitrary but
+    // stable, which is the most the mirror can promise: the position of a
+    // transaction within a block is not stored anywhere here.
+    index('events_mint_slot_idx').on(t.mint, t.slot, t.signature, t.eventIndex),
     index('events_issuer_slot_idx').on(t.issuerId, t.slot),
     check('events_signature_is_base58', sql`char_length(${t.signature}) between 64 and 88`),
     check('events_mint_is_base58', sql`char_length(${t.mint}) ${BASE58_LENGTH}`),

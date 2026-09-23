@@ -11,6 +11,7 @@ import { ConfigError, loadConfig } from './config.ts'
 import { createDirectory } from './directory.ts'
 import { createHolderStore } from './holders.ts'
 import { createIssuanceStore } from './issuance.ts'
+import { createJournalStore } from './journal.ts'
 import { createOperationalSigner } from './operational.ts'
 import { createPrivyClient } from './privy.ts'
 import { createServer } from './server.ts'
@@ -36,6 +37,7 @@ async function main() {
     directory: createDirectory(database),
     issuance: createIssuanceStore(database),
     holders: createHolderStore(database),
+    journal: createJournalStore(database),
     chain: createChainReader(connection),
     operational: createOperationalSigner(connection, config.operationalSecretKey),
   })

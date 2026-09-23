@@ -52,11 +52,19 @@ validator.
   published by our own key acting as attestor — the mechanism is real, the
   content is a fixture. Holder statuses (tier, jurisdiction, denial) are
   written by the issuer's own register; there is no KYC provider integration.
-- **The indexer mirrors, it does not yet serve.** `apps/worker` reads the
-  program's and the token program's transactions into Postgres — membership,
-  tokens, holders, and every transfer, refusal, thaw, status change and
-  attestation as an event with its signature. The routes that show those
-  events (the live feed, the NDJSON journal, the verifier) are M2.
+- **The journal can be read, but not yet checked by a stranger.**
+  `apps/worker` reads the program's and the token program's transactions into
+  Postgres — membership, tokens, holders, and every transfer, refusal, thaw,
+  status change and attestation as an event with its signature. Two routes
+  serve them: `GET /api/tokens/:mint/journal` exports a period as NDJSON and
+  `GET /api/tokens/:mint/stream` follows them live over SSE. The independent
+  verifier that reconciles an exported file against the network without
+  talking to us (`tools/verify-journal`) is still to come, and until it exists
+  the claim "every record is confirmed on chain" is ours rather than proven.
+- **No compliance actions on chain yet.** Freezing, seizure, pause, reason
+  codes and the deferred quorum are M2 work that has not started, so the
+  journal today carries transfers, refusals, thaws, status changes and
+  attestations — and no `compliance` events.
 
 ## Design rules the code is built around
 
@@ -165,6 +173,20 @@ against the TypeScript rules model lives in `tests/rules.rs`.
 ```bash
 pnpm --filter @forge/api start   # http://localhost:8787, reads ../../.env
 pnpm --filter @forge/web dev     # http://localhost:5173
+```
+
+Reading the journal and the feed of a token (both need a session token):
+
+```bash
+# A period, as NDJSON. `from`/`to` take either a slot number or an ISO date;
+# the first line is a manifest with the slot window and the line count.
+curl -H "authorization: Bearer $TOKEN" \
+  "http://localhost:8787/api/tokens/$MINT/journal?from=2026-09-01&to=2026-09-30"
+
+# The live feed. Read with `fetch`/`curl`, not `EventSource`: the session
+# travels in the header, never in the query string.
+curl -N -H "authorization: Bearer $TOKEN" \
+  "http://localhost:8787/api/tokens/$MINT/stream?backlog=20"
 ```
 
 ### The demo / measurement script

@@ -5,5 +5,6 @@
 export * from './api/index.ts'
 export * from './errors.ts'
 export * from './events/index.ts'
+export * from './journal/index.ts'
 export * from './primitives.ts'
 export * from './refusal.ts'

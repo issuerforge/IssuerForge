@@ -1,0 +1,701 @@
+{
+  "id": "d6b9c0da-42f5-4408-abf9-1d854048aff5",
+  "prevId": "61e8881b-076b-4962-a549-ff9ae3042494",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.events": {
+      "name": "events",
+      "schema": "",
+      "columns": {
+        "signature": {
+          "name": "signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_index": {
+          "name": "event_index",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "event_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slot": {
+          "name": "slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "block_time": {
+          "name": "block_time",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "indexed_at": {
+          "name": "indexed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "events_mint_slot_idx": {
+          "name": "events_mint_slot_idx",
+          "columns": [
+            {
+              "expression": "mint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "signature",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_issuer_slot_idx": {
+          "name": "events_issuer_slot_idx",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "slot",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "events_signature_event_index_pk": {
+          "name": "events_signature_event_index_pk",
+          "columns": ["signature", "event_index"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "events_signature_is_base58": {
+          "name": "events_signature_is_base58",
+          "value": "char_length(\"events\".\"signature\") between 64 and 88"
+        },
+        "events_mint_is_base58": {
+          "name": "events_mint_is_base58",
+          "value": "char_length(\"events\".\"mint\") between 32 and 44"
+        },
+        "events_slot_non_negative": {
+          "name": "events_slot_non_negative",
+          "value": "\"events\".\"slot\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.holders": {
+      "name": "holders",
+      "schema": "",
+      "columns": {
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wallet": {
+          "name": "wallet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "holder_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "tier": {
+          "name": "tier",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "jurisdiction": {
+          "name": "jurisdiction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status_source": {
+          "name": "status_source",
+          "type": "status_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "denied": {
+          "name": "denied",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thawed_at": {
+          "name": "thawed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "source_slot": {
+          "name": "source_slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "holders_queue_idx": {
+          "name": "holders_queue_idx",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "holders_token_fk": {
+          "name": "holders_token_fk",
+          "tableFrom": "holders",
+          "tableTo": "tokens",
+          "columnsFrom": ["mint", "issuer_id"],
+          "columnsTo": ["mint", "issuer_id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "holders_mint_wallet_pk": {
+          "name": "holders_mint_wallet_pk",
+          "columns": ["mint", "wallet"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "holders_wallet_is_base58": {
+          "name": "holders_wallet_is_base58",
+          "value": "char_length(\"holders\".\"wallet\") between 32 and 44"
+        },
+        "holders_tier_in_range": {
+          "name": "holders_tier_in_range",
+          "value": "\"holders\".\"tier\" is null or \"holders\".\"tier\" between 0 and 255"
+        },
+        "holders_jurisdiction_is_alpha2": {
+          "name": "holders_jurisdiction_is_alpha2",
+          "value": "\"holders\".\"jurisdiction\" is null or \"holders\".\"jurisdiction\" ~ '^[A-Z]{2}$'"
+        },
+        "holders_thawed_at_matches_state": {
+          "name": "holders_thawed_at_matches_state",
+          "value": "(\"holders\".\"state\" = 'pending') = (\"holders\".\"thawed_at\" is null)"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.indexer_state": {
+      "name": "indexer_state",
+      "schema": "",
+      "columns": {
+        "program_id": {
+          "name": "program_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_signature": {
+          "name": "last_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_slot": {
+          "name": "last_slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.issuers": {
+      "name": "issuers",
+      "schema": "",
+      "columns": {
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "legal_name": {
+          "name": "legal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "jurisdiction": {
+          "name": "jurisdiction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "founder_wallet": {
+          "name": "founder_wallet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quorum_n": {
+          "name": "quorum_n",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "operational_key": {
+          "name": "operational_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delegation_mask": {
+          "name": "delegation_mask",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "source_slot": {
+          "name": "source_slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "issuers_issuer_id_is_base58": {
+          "name": "issuers_issuer_id_is_base58",
+          "value": "char_length(\"issuers\".\"issuer_id\") between 32 and 44"
+        },
+        "issuers_founder_is_base58": {
+          "name": "issuers_founder_is_base58",
+          "value": "char_length(\"issuers\".\"founder_wallet\") between 32 and 44"
+        },
+        "issuers_jurisdiction_is_alpha2": {
+          "name": "issuers_jurisdiction_is_alpha2",
+          "value": "\"issuers\".\"jurisdiction\" is null or \"issuers\".\"jurisdiction\" ~ '^[A-Z]{2}$'"
+        },
+        "issuers_quorum_at_least_two": {
+          "name": "issuers_quorum_at_least_two",
+          "value": "\"issuers\".\"quorum_n\" >= 2"
+        },
+        "issuers_delegation_mask_known": {
+          "name": "issuers_delegation_mask_known",
+          "value": "\"issuers\".\"delegation_mask\" between 0 and 7"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.role_assignments": {
+      "name": "role_assignments",
+      "schema": "",
+      "columns": {
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_index": {
+          "name": "member_index",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wallet": {
+          "name": "wallet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "roles": {
+          "name": "roles",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_slot": {
+          "name": "source_slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "role_assignments_issuer_wallet_key": {
+          "name": "role_assignments_issuer_wallet_key",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "wallet",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "role_assignments_wallet_idx": {
+          "name": "role_assignments_wallet_idx",
+          "columns": [
+            {
+              "expression": "wallet",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_assignments_issuer_id_issuers_issuer_id_fk": {
+          "name": "role_assignments_issuer_id_issuers_issuer_id_fk",
+          "tableFrom": "role_assignments",
+          "tableTo": "issuers",
+          "columnsFrom": ["issuer_id"],
+          "columnsTo": ["issuer_id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "role_assignments_issuer_id_member_index_pk": {
+          "name": "role_assignments_issuer_id_member_index_pk",
+          "columns": ["issuer_id", "member_index"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "role_assignments_wallet_is_base58": {
+          "name": "role_assignments_wallet_is_base58",
+          "value": "char_length(\"role_assignments\".\"wallet\") between 32 and 44"
+        },
+        "role_assignments_member_index_in_range": {
+          "name": "role_assignments_member_index_in_range",
+          "value": "\"role_assignments\".\"member_index\" between 0 and 7"
+        },
+        "role_assignments_roles_not_empty": {
+          "name": "role_assignments_roles_not_empty",
+          "value": "\"role_assignments\".\"roles\" between 1 and 15"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.tokens": {
+      "name": "tokens",
+      "schema": "",
+      "columns": {
+        "mint": {
+          "name": "mint",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "symbol": {
+          "name": "symbol",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decimals": {
+          "name": "decimals",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "policy_version": {
+          "name": "policy_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "state": {
+          "name": "state",
+          "type": "token_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "source_slot": {
+          "name": "source_slot",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "synced_at": {
+          "name": "synced_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "tokens_issuer_idx": {
+          "name": "tokens_issuer_idx",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tokens_issuer_id_issuers_issuer_id_fk": {
+          "name": "tokens_issuer_id_issuers_issuer_id_fk",
+          "tableFrom": "tokens",
+          "tableTo": "issuers",
+          "columnsFrom": ["issuer_id"],
+          "columnsTo": ["issuer_id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tokens_mint_issuer_key": {
+          "name": "tokens_mint_issuer_key",
+          "nullsNotDistinct": false,
+          "columns": ["mint", "issuer_id"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tokens_mint_is_base58": {
+          "name": "tokens_mint_is_base58",
+          "value": "char_length(\"tokens\".\"mint\") between 32 and 44"
+        },
+        "tokens_decimals_in_range": {
+          "name": "tokens_decimals_in_range",
+          "value": "\"tokens\".\"decimals\" between 0 and 9"
+        },
+        "tokens_policy_version_non_negative": {
+          "name": "tokens_policy_version_non_negative",
+          "value": "\"tokens\".\"policy_version\" >= 0"
+        }
+      },
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.event_kind": {
+      "name": "event_kind",
+      "schema": "public",
+      "values": ["transfer", "refusal", "compliance", "attestation", "thaw", "holder_status"]
+    },
+    "public.holder_state": {
+      "name": "holder_state",
+      "schema": "public",
+      "values": ["pending", "thawed", "frozen"]
+    },
+    "public.status_source": {
+      "name": "status_source",
+      "schema": "public",
+      "values": ["issuer", "provider"]
+    },
+    "public.token_state": {
+      "name": "token_state",
+      "schema": "public",
+      "values": ["pending", "live", "paused"]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -13,6 +13,7 @@ import type { Directory } from './directory.ts'
 import { unauthorized } from './errors.ts'
 import type { HolderStore } from './holders.ts'
 import type { IssuanceStore } from './issuance.ts'
+import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
 import type { PrivyClient, PrivyUser } from './privy.ts'
 import { createServer, type ServerDeps } from './server.ts'
@@ -56,6 +57,14 @@ const holders: HolderStore = {
   saveStatus: unreachable('the holder database'),
 }
 
+const journal: JournalStore = {
+  frontier: unreachable('the journal'),
+  bracket: unreachable('the journal'),
+  count: unreachable('the journal'),
+  page: unreachable('the journal'),
+  tail: unreachable('the journal'),
+}
+
 /** No key is needed here: none of these tests gets as far as signing. */
 const operational: OperationalSigner = {
   publicKey: undefined as unknown as OperationalSigner['publicKey'],
@@ -91,6 +100,7 @@ function app(
     chain,
     issuance,
     holders,
+    journal,
     operational,
     ...overrides,
     privy,
