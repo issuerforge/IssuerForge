@@ -20,6 +20,14 @@ pub const TOKEN_SEED: &[u8] = b"token";
 /// on the client in `packages/chain/src/pda.ts`.
 pub const POLICY_SEED: &[u8] = b"policy";
 
+/// `["proposal", mint, nonce]` — a deferred action of the issuer's quorum,
+/// the nonce a `u64` LE.
+///
+/// The nonce is chosen by the client and is not a counter: two proposals
+/// raised at the same time must not compete for the next number. Pinned on
+/// the client in `packages/chain/src/pda.ts`.
+pub const PROPOSAL_SEED: &[u8] = b"proposal";
+
 /// `["holder", mint, wallet]` — an address's status in the issuer's own registry.
 pub const HOLDER_SEED: &[u8] = b"holder";
 
@@ -58,8 +66,13 @@ pub const FIRST_POLICY_VERSION: u32 = 1;
 /// The ceiling on the authorised membership.
 ///
 /// The number is fixed here, not in configuration: it sets both the size of
-/// `IssuerConfig` and the width of the signature bitmap in `ActionProposal`.
+/// `IssuerConfig` and the capacity of the approval list in `ActionProposal`.
 /// Raising it after deploy means migrating every issuer's accounts.
+///
+/// **A list of addresses, not the bitmap this comment promised before T025.**
+/// A bitmap indexes a slot, and a slot outlives its occupant: a freed slot
+/// later taken by another wallet would inherit the approval stored against
+/// it. The reasoning is in `state/proposal.rs`.
 pub const MAX_MEMBERS: usize = 8;
 
 /// The minimum quorum. FR-019: actions with funds are executed **only** by a

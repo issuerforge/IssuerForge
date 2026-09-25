@@ -4,7 +4,9 @@ use crate::constants::{FIRST_POLICY_VERSION, ISSUER_SEED, POLICY_SEED, TOKEN_SEE
 use crate::error::ForgeError;
 use crate::quorum;
 use crate::rules::layout::RULES_BYTES;
-use crate::state::{IssuerConfig, PolicyConfig, TokenConfig, POLICY_CONFIG_LEN};
+use crate::state::{
+    ActionKind, ActionProposal, IssuerConfig, PolicyConfig, TokenConfig, POLICY_CONFIG_LEN,
+};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct SetPolicyArgs {
@@ -25,6 +27,12 @@ pub struct SetPolicyArgs {
 /// without migrating holders and without any action on their part: on the
 /// next transfer the hook reads the new version, because
 /// `TokenConfig.policy_version` already points at it.
+///
+/// **The quorum comes from one of two places, never from both** (T025). Either
+/// the authorising wallets sign this very transaction and arrive in
+/// `remaining_accounts`, or they signed an `ActionProposal` on different days
+/// and it arrives in `proposal`. The threshold rule is the same one in both
+/// cases — `quorum::check` does not know which path it is serving.
 #[derive(Accounts)]
 #[instruction(args: SetPolicyArgs)]
 pub struct SetPolicy<'info> {
@@ -57,15 +65,29 @@ pub struct SetPolicy<'info> {
     pub policy_config: AccountLoader<'info, PolicyConfig>,
 
     /// Who pays the rent for the new version. This signature grants no powers
-    /// — only the quorum among `remaining_accounts` does.
+    /// — only the quorum does, whichever of the two paths it came by.
     #[account(mut)]
     pub payer: Signer<'info>,
 
     pub system_program: Program<'info, System>,
-    // `remaining_accounts` are the wallets authorising the change. Each must
-    // sign the transaction and be in the issuer's membership with a role
-    // that grants the right to authorise; there must be at least `quorum_n`
-    // of them.
+
+    /// A matured proposal, on the deferred path (FR-019b).
+    ///
+    /// No `seeds` constraint on it, and that is deliberate rather than an
+    /// omission: an optional account cannot name its own fields in a seed
+    /// expression, and it does not need to. `Account<ActionProposal>` already
+    /// proves the owner and the discriminator, `propose_action` is the only
+    /// way such an account comes to exist, and it creates it through `init`
+    /// at its PDA — so every `ActionProposal` is at its address by
+    /// construction. What still has to be checked is that it is **this**
+    /// issuer's and **this** token's, and the handler checks exactly that.
+    #[account(mut)]
+    pub proposal: Option<Box<Account<'info, ActionProposal>>>,
+    // `remaining_accounts` are the wallets authorising the change on the
+    // immediate path. Each must sign the transaction and be in the issuer's
+    // membership with a role that grants the right to authorise; there must
+    // be at least `quorum_n` of them. On the deferred path there must be
+    // none.
 }
 
 pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
@@ -87,13 +109,47 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         ForgeError::PolicyVersionNotNext
     );
 
+    let now = Clock::get()?.unix_timestamp;
+
     // FR-035: a policy change is an action of the issuer's wallets by quorum,
     // and the program checks it, not the console.
-    let approvals = quorum::approvals_from(ctx.remaining_accounts)?;
+    let approvals = match &ctx.accounts.proposal {
+        Some(proposal) => {
+            // One source of authorisation, never two. A union of the two
+            // would let a proposal one signature short be finished by a
+            // co-signer in this transaction — defensible on its own, but it
+            // would also make "who authorised this" two lists that the
+            // journal has to join, and the wallet that appears in both would
+            // read as a duplicate.
+            require!(
+                ctx.remaining_accounts.is_empty(),
+                ForgeError::QuorumSourceAmbiguous
+            );
+            require!(
+                proposal.issuer == ctx.accounts.issuer_config.key(),
+                ForgeError::ProposalNotForThisIssuer
+            );
+            require!(
+                proposal.mint == ctx.accounts.token_config.mint,
+                ForgeError::ProposalNotForThisToken
+            );
+            proposal.live(now)?;
+            // The digest is recomputed from the bytes this transaction
+            // carries, by the same function that computed it at proposal
+            // time. That is what binds the execution to exactly the rules the
+            // approvers were shown, and it is why the proposal needs to store
+            // only 32 bytes of them.
+            require!(
+                ActionKind::set_policy(args.version, &args.rules)? == proposal.action,
+                ForgeError::ProposalBodyMismatch
+            );
+            proposal.approvals().to_vec()
+        }
+        None => quorum::approvals_from(ctx.remaining_accounts)?,
+    };
     quorum::check(&ctx.accounts.issuer_config, &approvals)?;
 
     let author = approvals[0];
-    let now = Clock::get()?.unix_timestamp;
     let bump = ctx.bumps.policy_config;
 
     {
@@ -108,9 +164,13 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         )?;
     }
 
-    // The last action: until this line the previous version stays current,
-    // so a refusal at any check above does not leave the token on a policy
-    // the program just rejected.
+    // The last actions: until these lines the previous version stays current
+    // and the proposal stays unexecuted, so a refusal at any check above does
+    // not leave the token on a policy the program just rejected, nor burn a
+    // proposal that never took effect.
     ctx.accounts.token_config.policy_version = args.version;
+    if let Some(proposal) = ctx.accounts.proposal.as_mut() {
+        proposal.executed_at = now;
+    }
     Ok(())
 }

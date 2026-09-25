@@ -150,6 +150,24 @@ pub enum ForgeError {
     TokenMetadataTooLong,
     #[msg("fee rate cannot exceed one hundred per cent")]
     FeeRateOutOfRange,
+    #[msg("proposal term is outside the bounds this program accepts")]
+    ProposalTermOutOfRange,
+    #[msg("proposal is past its term and is revoked")]
+    ProposalExpired,
+    #[msg("proposal has already been executed")]
+    ProposalAlreadyExecuted,
+    #[msg("proposal already holds as many approvals as it can")]
+    ProposalApprovalsFull,
+    #[msg("proposal does not belong to this issuer")]
+    ProposalNotForThisIssuer,
+    #[msg("proposal was raised for a different token")]
+    ProposalNotForThisToken,
+    #[msg("action does not match the one this proposal carries")]
+    ProposalBodyMismatch,
+    #[msg("proposal is still within its term and has not been executed")]
+    ProposalStillLive,
+    #[msg("approvals come either from a proposal or from this transaction, not both")]
+    QuorumSourceAmbiguous,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -238,6 +256,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::FeeRateOutOfRange),
             VALIDATION_ERROR_BASE + 37
+        );
+        // The first and the last of those added by T025.
+        assert_eq!(
+            u32::from(ForgeError::ProposalTermOutOfRange),
+            VALIDATION_ERROR_BASE + 38
+        );
+        assert_eq!(
+            u32::from(ForgeError::QuorumSourceAmbiguous),
+            VALIDATION_ERROR_BASE + 46
         );
     }
 }

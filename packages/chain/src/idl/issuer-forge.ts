@@ -19,6 +19,88 @@ export type IssuerForge = {
   },
   "instructions": [
     {
+      "name": "approveAction",
+      "docs": [
+        "Adds a signature to a proposal already raised (FR-019b).",
+        "",
+        "Whether the signature still counts is decided at execution, not here:",
+        "`quorum::check` reads the membership as it is at the moment of the",
+        "action, so a member removed in between stops filling the quorum",
+        "(FR-019a)."
+      ],
+      "discriminator": [
+        200,
+        117,
+        44,
+        13,
+        133,
+        139,
+        131,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "approver",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "attestReserve",
       "docs": [
         "Publishes a reserve attestation (FR-021, FR-024, FR-026).",
@@ -127,6 +209,102 @@ export type IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "closeActionProposal",
+      "docs": [
+        "Returns the rent of a proposal that is over — executed, or past its",
+        "term.",
+        "",
+        "Revokes nothing: the revocation is the passage of the term. The named",
+        "record of who authorised the action stays in the journal, which is",
+        "built from the `propose` and `approve` instructions themselves",
+        "(FR-019c)."
+      ],
+      "discriminator": [
+        98,
+        176,
+        4,
+        224,
+        31,
+        57,
+        214,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rentRecipient",
+          "docs": [
+            "Whoever paid the rent gets it back. Pinned to the address in the",
+            "account, so closing is not a way to collect other people's lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "member",
+          "docs": [
+            "A member who may authorise actions. Closing decides nothing, but",
+            "leaving it open to anyone would let a stranger erase the account the",
+            "console reads a finished action from."
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "createToken",
@@ -703,6 +881,137 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "proposeAction",
+      "docs": [
+        "Raises a deferred action of the issuer's quorum (FR-019b).",
+        "",
+        "The proposer's signature is the first approval. The proposal",
+        "authorises nothing by itself: it holds the action's body, the",
+        "addresses that have signed it so far and the term after which it is",
+        "revoked. The on-chain effect belongs to the instruction of the action,",
+        "which takes this account and refuses unless the quorum is in it."
+      ],
+      "discriminator": [
+        49,
+        249,
+        251,
+        197,
+        25,
+        74,
+        36,
+        5
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "The token the action is about. Present so that a proposal cannot be",
+            "raised against a mint this issuer does not own: an approver reading",
+            "the console must not have to check that themselves."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Who pays the rent. Separate from `proposer` on purpose: the platform",
+            "may carry the cost of a proposal, and paying for it must grant nothing."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "proposer",
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "proposeActionArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setHolderStatus",
       "docs": [
         "Updates an address's status in the issuer's own registry (FR-008a,",
@@ -831,8 +1140,11 @@ export type IssuerForge = {
         "forever.",
         "",
         "The change is authorised by a quorum of the issuer's wallets (FR-035),",
-        "not by the platform's operational key: the signatures are passed in",
-        "`remaining_accounts`."
+        "not by the platform's operational key. The signatures come from one of",
+        "two places: `remaining_accounts`, when the wallets sign this very",
+        "transaction, or a matured `ActionProposal` in the optional `proposal`",
+        "account, when they signed on different days (FR-019b). Both paths run",
+        "the same threshold check."
       ],
       "discriminator": [
         40,
@@ -932,7 +1244,7 @@ export type IssuerForge = {
           "name": "payer",
           "docs": [
             "Who pays the rent for the new version. This signature grants no powers",
-            "— only the quorum among `remaining_accounts` does."
+            "— only the quorum does, whichever of the two paths it came by."
           ],
           "writable": true,
           "signer": true
@@ -940,6 +1252,23 @@ export type IssuerForge = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path (FR-019b).",
+            "",
+            "No `seeds` constraint on it, and that is deliberate rather than an",
+            "omission: an optional account cannot name its own fields in a seed",
+            "expression, and it does not need to. `Account<ActionProposal>` already",
+            "proves the owner and the discriminator, `propose_action` is the only",
+            "way such an account comes to exist, and it creates it through `init`",
+            "at its PDA — so every `ActionProposal` is at its address by",
+            "construction. What still has to be checked is that it is **this**",
+            "issuer's and **this** token's, and the handler checks exactly that."
+          ],
+          "writable": true,
+          "optional": true
         }
       ],
       "args": [
@@ -1241,6 +1570,19 @@ export type IssuerForge = {
     }
   ],
   "accounts": [
+    {
+      "name": "actionProposal",
+      "discriminator": [
+        144,
+        192,
+        194,
+        210,
+        241,
+        173,
+        240,
+        41
+      ]
+    },
     {
       "name": "holderStatus",
       "discriminator": [
@@ -1575,9 +1917,214 @@ export type IssuerForge = {
       "code": 6050,
       "name": "feeRateOutOfRange",
       "msg": "fee rate cannot exceed one hundred per cent"
+    },
+    {
+      "code": 6051,
+      "name": "proposalTermOutOfRange",
+      "msg": "proposal term is outside the bounds this program accepts"
+    },
+    {
+      "code": 6052,
+      "name": "proposalExpired",
+      "msg": "proposal is past its term and is revoked"
+    },
+    {
+      "code": 6053,
+      "name": "proposalAlreadyExecuted",
+      "msg": "proposal has already been executed"
+    },
+    {
+      "code": 6054,
+      "name": "proposalApprovalsFull",
+      "msg": "proposal already holds as many approvals as it can"
+    },
+    {
+      "code": 6055,
+      "name": "proposalNotForThisIssuer",
+      "msg": "proposal does not belong to this issuer"
+    },
+    {
+      "code": 6056,
+      "name": "proposalNotForThisToken",
+      "msg": "proposal was raised for a different token"
+    },
+    {
+      "code": 6057,
+      "name": "proposalBodyMismatch",
+      "msg": "action does not match the one this proposal carries"
+    },
+    {
+      "code": 6058,
+      "name": "proposalStillLive",
+      "msg": "proposal is still within its term and has not been executed"
+    },
+    {
+      "code": 6059,
+      "name": "quorumSourceAmbiguous",
+      "msg": "approvals come either from a proposal or from this transaction, not both"
     }
   ],
   "types": [
+    {
+      "name": "actionKind",
+      "docs": [
+        "What the proposal account stores: the action with its body reduced to a",
+        "digest.",
+        "",
+        "**Variants are only ever appended at the end** — the same rule as in",
+        "`ForgeError`, and for a stronger reason: Borsh encodes the variant by its",
+        "position, so an insertion in the middle would re-read proposals already on",
+        "chain as a different action entirely.",
+        "",
+        "The account is sized by the largest variant (`InitSpace` on an enum is",
+        "`1 + max`), so a variant that carries a lot makes every proposal pay for",
+        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "setPolicy",
+            "fields": [
+              {
+                "name": "version",
+                "type": "u32"
+              },
+              {
+                "name": "rulesHash",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "actionProposal",
+      "docs": [
+        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", mint, nonce]`,",
+        "the nonce a `u64` LE.",
+        "",
+        "**This account is what T025 brings; the quorum itself came with T014.**",
+        "`quorum::check` is called over `approvals()` exactly as `set_policy` calls",
+        "it over the signers of one transaction — the threshold rule does not know",
+        "which of the two it is serving. What is new here is only that the",
+        "signatures may arrive on different days (FR-019b).",
+        "",
+        "**The approvals are addresses, not a bitmap over `IssuerConfig.members`.**",
+        "A bitmap indexes a slot, and a slot outlives its occupant: once membership",
+        "changes are implemented (FR-019a), a freed slot taken by another wallet",
+        "would silently inherit the approval stored against it. Addresses cost 256",
+        "bytes and make the check at execution time the same one that runs on the",
+        "immediate path — a member removed between `propose` and execution stops",
+        "counting, because `quorum::check` reads the membership as it is **now**."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The token this action is about. Every kind that exists is per-token.",
+              "",
+              "Issuer-level actions — changing the membership and the threshold",
+              "(FR-019a) — have no mint, and they are not here yet. When they arrive",
+              "the choice is between a second seed family (`[\"issuer-proposal\",",
+              "issuer, nonce]`) and generalising this field to a scope; it is not",
+              "made in advance, because either one is cheap while no such proposal",
+              "exists and neither is guessable before the action is specified."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "issuer",
+            "docs": [
+              "The `IssuerConfig` this proposal belongs to.",
+              "",
+              "Stored rather than derived: `approve_action` and the executing",
+              "instruction both take an `IssuerConfig` account, and without this",
+              "comparison either could be pointed at a different issuer's config —",
+              "one whose membership happens to contain the signer."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent, and who gets it back when the proposal is closed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "docs": [
+              "The client-chosen number in the seeds. Not a counter: two proposals",
+              "raised at the same time must not compete for the next number, the same",
+              "reason as `RedemptionEscrow.request_id`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": {
+              "defined": {
+                "name": "actionKind"
+              }
+            }
+          },
+          {
+            "name": "approvals",
+            "docs": [
+              "The wallets that have authorised it, in the order they signed.",
+              "`approvals[0]` is the proposer."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "approvalCount",
+            "docs": [
+              "How many entries of `approvals` are in use. Never above `MAX_MEMBERS`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "After this moment the proposal is revoked (FR-019b): it can no longer",
+              "gather signatures and can no longer be executed. Revocation is the",
+              "passage of time, not an instruction someone has to remember to send."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "executedAt",
+            "docs": [
+              "When it was executed, or zero. Zero is a safe sentinel: the Unix epoch",
+              "is not a slot time any Solana cluster produces."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "attestReserveArgs",
       "type": {
@@ -2118,6 +2665,78 @@ export type IssuerForge = {
                 3
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "proposeActionArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce",
+            "docs": [
+              "The client-chosen number in the seeds."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "termSeconds",
+            "docs": [
+              "How long the proposal may gather signatures, in seconds from now.",
+              "Bounds in `state::proposal`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "action",
+            "docs": [
+              "The action with its body in full. What the account keeps is the body's",
+              "digest; the body itself stays in this instruction's data, which is",
+              "where this project's indexer reads everything from."
+            ],
+            "type": {
+              "defined": {
+                "name": "proposedAction"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "proposedAction",
+      "docs": [
+        "What is proposed, as the proposer states it — **with the bodies**.",
+        "",
+        "The argument type of `propose_action`, not a stored one. The difference",
+        "from `ActionKind` is exactly one thing: here an action carries whatever it",
+        "needs in full, there the same action carries a digest of it.",
+        "",
+        "The body is not lost by that. The propose instruction lands on chain like",
+        "any other, and this project's indexer reconstructs everything from",
+        "instruction data rather than from logs (`apps/worker/src/indexer/decode.ts`",
+        "— the program writes neither `emit!` nor `msg!`). So the rules an approver",
+        "is asked to authorise are readable from the transaction that proposed",
+        "them, and the digest in the account is what binds the execution to exactly",
+        "those bytes."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "setPolicy",
+            "fields": [
+              {
+                "name": "version",
+                "type": "u32"
+              },
+              {
+                "name": "rules",
+                "type": "bytes"
+              }
+            ]
           }
         ]
       }
@@ -2524,6 +3143,88 @@ export const IDL: IssuerForge = {
   },
   "instructions": [
     {
+      "name": "approveAction",
+      "docs": [
+        "Adds a signature to a proposal already raised (FR-019b).",
+        "",
+        "Whether the signature still counts is decided at execution, not here:",
+        "`quorum::check` reads the membership as it is at the moment of the",
+        "action, so a member removed in between stops filling the quorum",
+        "(FR-019a)."
+      ],
+      "discriminator": [
+        200,
+        117,
+        44,
+        13,
+        133,
+        139,
+        131,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "approver",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "attestReserve",
       "docs": [
         "Publishes a reserve attestation (FR-021, FR-024, FR-026).",
@@ -2632,6 +3333,102 @@ export const IDL: IssuerForge = {
           }
         }
       ]
+    },
+    {
+      "name": "closeActionProposal",
+      "docs": [
+        "Returns the rent of a proposal that is over — executed, or past its",
+        "term.",
+        "",
+        "Revokes nothing: the revocation is the passage of the term. The named",
+        "record of who authorised the action stays in the journal, which is",
+        "built from the `propose` and `approve` instructions themselves",
+        "(FR-019c)."
+      ],
+      "discriminator": [
+        98,
+        176,
+        4,
+        224,
+        31,
+        57,
+        214,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rentRecipient",
+          "docs": [
+            "Whoever paid the rent gets it back. Pinned to the address in the",
+            "account, so closing is not a way to collect other people's lamports."
+          ],
+          "writable": true
+        },
+        {
+          "name": "member",
+          "docs": [
+            "A member who may authorise actions. Closing decides nothing, but",
+            "leaving it open to anyone would let a stranger erase the account the",
+            "console reads a finished action from."
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "createToken",
@@ -3208,6 +4005,137 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "proposeAction",
+      "docs": [
+        "Raises a deferred action of the issuer's quorum (FR-019b).",
+        "",
+        "The proposer's signature is the first approval. The proposal",
+        "authorises nothing by itself: it holds the action's body, the",
+        "addresses that have signed it so far and the term after which it is",
+        "revoked. The on-chain effect belongs to the instruction of the action,",
+        "which takes this account and refuses unless the quorum is in it."
+      ],
+      "discriminator": [
+        49,
+        249,
+        251,
+        197,
+        25,
+        74,
+        36,
+        5
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "The token the action is about. Present so that a proposal cannot be",
+            "raised against a mint this issuer does not own: an approver reading",
+            "the console must not have to check that themselves."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Who pays the rent. Separate from `proposer` on purpose: the platform",
+            "may carry the cost of a proposal, and paying for it must grant nothing."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "proposer",
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "proposeActionArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setHolderStatus",
       "docs": [
         "Updates an address's status in the issuer's own registry (FR-008a,",
@@ -3336,8 +4264,11 @@ export const IDL: IssuerForge = {
         "forever.",
         "",
         "The change is authorised by a quorum of the issuer's wallets (FR-035),",
-        "not by the platform's operational key: the signatures are passed in",
-        "`remaining_accounts`."
+        "not by the platform's operational key. The signatures come from one of",
+        "two places: `remaining_accounts`, when the wallets sign this very",
+        "transaction, or a matured `ActionProposal` in the optional `proposal`",
+        "account, when they signed on different days (FR-019b). Both paths run",
+        "the same threshold check."
       ],
       "discriminator": [
         40,
@@ -3437,7 +4368,7 @@ export const IDL: IssuerForge = {
           "name": "payer",
           "docs": [
             "Who pays the rent for the new version. This signature grants no powers",
-            "— only the quorum among `remaining_accounts` does."
+            "— only the quorum does, whichever of the two paths it came by."
           ],
           "writable": true,
           "signer": true
@@ -3445,6 +4376,23 @@ export const IDL: IssuerForge = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path (FR-019b).",
+            "",
+            "No `seeds` constraint on it, and that is deliberate rather than an",
+            "omission: an optional account cannot name its own fields in a seed",
+            "expression, and it does not need to. `Account<ActionProposal>` already",
+            "proves the owner and the discriminator, `propose_action` is the only",
+            "way such an account comes to exist, and it creates it through `init`",
+            "at its PDA — so every `ActionProposal` is at its address by",
+            "construction. What still has to be checked is that it is **this**",
+            "issuer's and **this** token's, and the handler checks exactly that."
+          ],
+          "writable": true,
+          "optional": true
         }
       ],
       "args": [
@@ -3746,6 +4694,19 @@ export const IDL: IssuerForge = {
     }
   ],
   "accounts": [
+    {
+      "name": "actionProposal",
+      "discriminator": [
+        144,
+        192,
+        194,
+        210,
+        241,
+        173,
+        240,
+        41
+      ]
+    },
     {
       "name": "holderStatus",
       "discriminator": [
@@ -4080,9 +5041,214 @@ export const IDL: IssuerForge = {
       "code": 6050,
       "name": "feeRateOutOfRange",
       "msg": "fee rate cannot exceed one hundred per cent"
+    },
+    {
+      "code": 6051,
+      "name": "proposalTermOutOfRange",
+      "msg": "proposal term is outside the bounds this program accepts"
+    },
+    {
+      "code": 6052,
+      "name": "proposalExpired",
+      "msg": "proposal is past its term and is revoked"
+    },
+    {
+      "code": 6053,
+      "name": "proposalAlreadyExecuted",
+      "msg": "proposal has already been executed"
+    },
+    {
+      "code": 6054,
+      "name": "proposalApprovalsFull",
+      "msg": "proposal already holds as many approvals as it can"
+    },
+    {
+      "code": 6055,
+      "name": "proposalNotForThisIssuer",
+      "msg": "proposal does not belong to this issuer"
+    },
+    {
+      "code": 6056,
+      "name": "proposalNotForThisToken",
+      "msg": "proposal was raised for a different token"
+    },
+    {
+      "code": 6057,
+      "name": "proposalBodyMismatch",
+      "msg": "action does not match the one this proposal carries"
+    },
+    {
+      "code": 6058,
+      "name": "proposalStillLive",
+      "msg": "proposal is still within its term and has not been executed"
+    },
+    {
+      "code": 6059,
+      "name": "quorumSourceAmbiguous",
+      "msg": "approvals come either from a proposal or from this transaction, not both"
     }
   ],
   "types": [
+    {
+      "name": "actionKind",
+      "docs": [
+        "What the proposal account stores: the action with its body reduced to a",
+        "digest.",
+        "",
+        "**Variants are only ever appended at the end** — the same rule as in",
+        "`ForgeError`, and for a stronger reason: Borsh encodes the variant by its",
+        "position, so an insertion in the middle would re-read proposals already on",
+        "chain as a different action entirely.",
+        "",
+        "The account is sized by the largest variant (`InitSpace` on an enum is",
+        "`1 + max`), so a variant that carries a lot makes every proposal pay for",
+        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "setPolicy",
+            "fields": [
+              {
+                "name": "version",
+                "type": "u32"
+              },
+              {
+                "name": "rulesHash",
+                "type": {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "actionProposal",
+      "docs": [
+        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", mint, nonce]`,",
+        "the nonce a `u64` LE.",
+        "",
+        "**This account is what T025 brings; the quorum itself came with T014.**",
+        "`quorum::check` is called over `approvals()` exactly as `set_policy` calls",
+        "it over the signers of one transaction — the threshold rule does not know",
+        "which of the two it is serving. What is new here is only that the",
+        "signatures may arrive on different days (FR-019b).",
+        "",
+        "**The approvals are addresses, not a bitmap over `IssuerConfig.members`.**",
+        "A bitmap indexes a slot, and a slot outlives its occupant: once membership",
+        "changes are implemented (FR-019a), a freed slot taken by another wallet",
+        "would silently inherit the approval stored against it. Addresses cost 256",
+        "bytes and make the check at execution time the same one that runs on the",
+        "immediate path — a member removed between `propose` and execution stops",
+        "counting, because `quorum::check` reads the membership as it is **now**."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The token this action is about. Every kind that exists is per-token.",
+              "",
+              "Issuer-level actions — changing the membership and the threshold",
+              "(FR-019a) — have no mint, and they are not here yet. When they arrive",
+              "the choice is between a second seed family (`[\"issuer-proposal\",",
+              "issuer, nonce]`) and generalising this field to a scope; it is not",
+              "made in advance, because either one is cheap while no such proposal",
+              "exists and neither is guessable before the action is specified."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "issuer",
+            "docs": [
+              "The `IssuerConfig` this proposal belongs to.",
+              "",
+              "Stored rather than derived: `approve_action` and the executing",
+              "instruction both take an `IssuerConfig` account, and without this",
+              "comparison either could be pointed at a different issuer's config —",
+              "one whose membership happens to contain the signer."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent, and who gets it back when the proposal is closed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "docs": [
+              "The client-chosen number in the seeds. Not a counter: two proposals",
+              "raised at the same time must not compete for the next number, the same",
+              "reason as `RedemptionEscrow.request_id`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "action",
+            "type": {
+              "defined": {
+                "name": "actionKind"
+              }
+            }
+          },
+          {
+            "name": "approvals",
+            "docs": [
+              "The wallets that have authorised it, in the order they signed.",
+              "`approvals[0]` is the proposer."
+            ],
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "approvalCount",
+            "docs": [
+              "How many entries of `approvals` are in use. Never above `MAX_MEMBERS`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
+          },
+          {
+            "name": "expiresAt",
+            "docs": [
+              "After this moment the proposal is revoked (FR-019b): it can no longer",
+              "gather signatures and can no longer be executed. Revocation is the",
+              "passage of time, not an instruction someone has to remember to send."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "executedAt",
+            "docs": [
+              "When it was executed, or zero. Zero is a safe sentinel: the Unix epoch",
+              "is not a slot time any Solana cluster produces."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "attestReserveArgs",
       "type": {
@@ -4623,6 +5789,78 @@ export const IDL: IssuerForge = {
                 3
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "proposeActionArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce",
+            "docs": [
+              "The client-chosen number in the seeds."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "termSeconds",
+            "docs": [
+              "How long the proposal may gather signatures, in seconds from now.",
+              "Bounds in `state::proposal`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "action",
+            "docs": [
+              "The action with its body in full. What the account keeps is the body's",
+              "digest; the body itself stays in this instruction's data, which is",
+              "where this project's indexer reads everything from."
+            ],
+            "type": {
+              "defined": {
+                "name": "proposedAction"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "proposedAction",
+      "docs": [
+        "What is proposed, as the proposer states it — **with the bodies**.",
+        "",
+        "The argument type of `propose_action`, not a stored one. The difference",
+        "from `ActionKind` is exactly one thing: here an action carries whatever it",
+        "needs in full, there the same action carries a digest of it.",
+        "",
+        "The body is not lost by that. The propose instruction lands on chain like",
+        "any other, and this project's indexer reconstructs everything from",
+        "instruction data rather than from logs (`apps/worker/src/indexer/decode.ts`",
+        "— the program writes neither `emit!` nor `msg!`). So the rules an approver",
+        "is asked to authorise are readable from the transaction that proposed",
+        "them, and the digest in the account is what binds the execution to exactly",
+        "those bytes."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "setPolicy",
+            "fields": [
+              {
+                "name": "version",
+                "type": "u32"
+              },
+              {
+                "name": "rules",
+                "type": "bytes"
+              }
+            ]
           }
         ]
       }

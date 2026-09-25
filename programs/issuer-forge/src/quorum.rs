@@ -1,12 +1,16 @@
 //! The 2-of-N quorum: the check that an action was authorised by the
 //! required number of authorised wallets (FR-019).
 //!
-//! **Here the quorum is collected from the signatures of one transaction.**
-//! `ActionProposal` with `propose`/`approve` and a revocation period is
-//! FR-019b, i.e. the ability to collect signatures **at different times**,
-//! and it arrives with T025. The threshold check does not change because of
-//! that: T025 brings asynchrony, not the quorum, and calls these same two
-//! functions.
+//! **The threshold check serves two paths and does not know which.**
+//! `approvals_from` reads the signatures of one transaction; `ActionProposal`
+//! (T025, `state/proposal.rs`) collects addresses over days and hands them to
+//! `check` as a slice. T025 brought asynchrony, not the quorum — which is
+//! why nothing in this file changed when it landed.
+//!
+//! **`check` reads the membership as it is now, not as it was when the
+//! signature was given.** On the deferred path that is the whole of FR-019a:
+//! a member removed between the approval and the action stops filling the
+//! quorum, and nothing has to go looking for their old approvals.
 //!
 //! The split into two functions is not cosmetic: `check` is pure, and it is
 //! what carries the rule, so it is tested with unit tests without a runtime.
@@ -156,6 +160,90 @@ mod tests {
             code(ForgeError::NotAnAuthorisingSigner)
         );
         assert!(check(&config, &[wallet(1), wallet(4)]).is_ok());
+    }
+
+    /// The deferred path (T025) is this file's second caller, and the
+    /// composition is what carries FR-019a: the addresses come out of an
+    /// `ActionProposal` collected over days, and `check` reads the membership
+    /// as it is **now**.
+    mod deferred {
+        use super::*;
+        use crate::state::{ActionKind, ActionProposal};
+
+        fn proposal(approvers: &[u8]) -> ActionProposal {
+            let mut p = ActionProposal {
+                mint: wallet(50),
+                issuer: wallet(51),
+                payer: wallet(52),
+                nonce: 1,
+                action: ActionKind::SetPolicy {
+                    version: 2,
+                    rules_hash: [0u8; 32],
+                },
+                approvals: [Pubkey::default(); MAX_MEMBERS],
+                approval_count: 0,
+                created_at: 1_000,
+                expires_at: 10_000,
+                executed_at: 0,
+                bump: 253,
+            };
+            for seed in approvers {
+                p.add_approval(wallet(*seed)).expect("within capacity");
+            }
+            p
+        }
+
+        #[test]
+        fn signatures_given_on_different_days_fill_the_quorum() {
+            assert!(check(&two_admins(), proposal(&[1, 2]).approvals()).is_ok());
+        }
+
+        #[test]
+        fn one_signature_in_a_proposal_is_still_one_signature() {
+            // FR-019b: an action below the quorum stays a proposal. It is the
+            // same code as on the immediate path, because it is the same check.
+            assert_eq!(
+                err(check(&two_admins(), proposal(&[1]).approvals())),
+                code(ForgeError::QuorumNotReached)
+            );
+        }
+
+        #[test]
+        fn a_member_removed_after_approving_stops_filling_the_quorum() {
+            // The whole reason the proposal stores addresses and not a bitmap
+            // over member slots: the approval is re-read against the
+            // membership of the moment, so nothing has to go hunting for the
+            // approvals of a wallet that was just removed.
+            let collected = proposal(&[1, 2]);
+            let after_removal = issuer(&[(1, role::ADMIN)], 2);
+            assert_eq!(
+                err(check(&after_removal, collected.approvals())),
+                code(ForgeError::NotAnAuthorisingSigner)
+            );
+        }
+
+        #[test]
+        fn a_member_demoted_to_observer_stops_filling_the_quorum() {
+            let collected = proposal(&[1, 2]);
+            let demoted = issuer(&[(1, role::ADMIN), (2, role::OBSERVER)], 2);
+            assert_eq!(
+                err(check(&demoted, collected.approvals())),
+                code(ForgeError::NotAnAuthorisingSigner)
+            );
+        }
+
+        #[test]
+        fn a_threshold_raised_after_the_signatures_were_given_is_the_one_that_applies() {
+            let collected = proposal(&[1, 2]);
+            let raised = issuer(
+                &[(1, role::ADMIN), (2, role::ADMIN), (3, role::ADMIN)],
+                3,
+            );
+            assert_eq!(
+                err(check(&raised, collected.approvals())),
+                code(ForgeError::QuorumNotReached)
+            );
+        }
     }
 
     #[test]

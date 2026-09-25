@@ -79,10 +79,48 @@ pub mod issuer_forge {
     /// forever.
     ///
     /// The change is authorised by a quorum of the issuer's wallets (FR-035),
-    /// not by the platform's operational key: the signatures are passed in
-    /// `remaining_accounts`.
+    /// not by the platform's operational key. The signatures come from one of
+    /// two places: `remaining_accounts`, when the wallets sign this very
+    /// transaction, or a matured `ActionProposal` in the optional `proposal`
+    /// account, when they signed on different days (FR-019b). Both paths run
+    /// the same threshold check.
     pub fn set_policy(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
         instructions::set_policy::handler(ctx, args)
+    }
+
+    /// Raises a deferred action of the issuer's quorum (FR-019b).
+    ///
+    /// The proposer's signature is the first approval. The proposal
+    /// authorises nothing by itself: it holds the action's body, the
+    /// addresses that have signed it so far and the term after which it is
+    /// revoked. The on-chain effect belongs to the instruction of the action,
+    /// which takes this account and refuses unless the quorum is in it.
+    pub fn propose_action(
+        ctx: Context<ProposeAction>,
+        args: ProposeActionArgs,
+    ) -> Result<()> {
+        instructions::proposal::propose_handler(ctx, args)
+    }
+
+    /// Adds a signature to a proposal already raised (FR-019b).
+    ///
+    /// Whether the signature still counts is decided at execution, not here:
+    /// `quorum::check` reads the membership as it is at the moment of the
+    /// action, so a member removed in between stops filling the quorum
+    /// (FR-019a).
+    pub fn approve_action(ctx: Context<ApproveAction>) -> Result<()> {
+        instructions::proposal::approve_handler(ctx)
+    }
+
+    /// Returns the rent of a proposal that is over — executed, or past its
+    /// term.
+    ///
+    /// Revokes nothing: the revocation is the passage of the term. The named
+    /// record of who authorised the action stays in the journal, which is
+    /// built from the `propose` and `approve` instructions themselves
+    /// (FR-019c).
+    pub fn close_action_proposal(ctx: Context<CloseActionProposal>) -> Result<()> {
+        instructions::proposal::close_handler(ctx)
     }
 
     /// Thaws a holder's account and creates both accounts without which a
