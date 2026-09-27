@@ -4,6 +4,7 @@ import type { IndexedEvent } from '@forge/shared/events'
 import { journalLineSchema, journalManifestSchema } from '@forge/shared/journal'
 import { createLogger } from '@forge/shared/log'
 import { describe, expect, it, vi } from 'vitest'
+import type { ActionReader } from '../actions.ts'
 import type { ChainReader } from '../chain.ts'
 import type { Directory } from '../directory.ts'
 import type { HolderStore } from '../holders.ts'
@@ -20,6 +21,15 @@ import type { OperationalSigner } from '../operational.ts'
 import type { PrivyClient } from '../privy.ts'
 import { createServer, type ServerDeps } from '../server.ts'
 import { DEFAULT_BACKLOG, MAX_BACKLOG } from './journal.ts'
+
+/** These routes never read proposals; the reader is here only because the server requires one. */
+const actions: ActionReader = {
+  token: async () => undefined,
+  quorum: async () => undefined,
+  proposals: async () => [],
+  proposal: async () => undefined,
+  body: async () => undefined,
+}
 
 const ISSUER = '11111111111111111111111111111112'
 const ADMIN = 'SysvarC1ock11111111111111111111111111111111'
@@ -144,6 +154,7 @@ function app(fakes: Fakes = {}) {
       ],
       rosterFor: async () => [],
     } as Directory,
+    actions,
     chain: {
       program: undefined as unknown as ChainReader['program'],
       tokenCount: async () => 1,

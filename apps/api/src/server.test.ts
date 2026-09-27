@@ -8,6 +8,7 @@ import {
 import { apiErrorSchema } from '@forge/shared/errors'
 import { createLogger } from '@forge/shared/log'
 import { describe, expect, it, vi } from 'vitest'
+import type { ActionReader } from './actions.ts'
 import type { ChainReader } from './chain.ts'
 import type { Directory } from './directory.ts'
 import { unauthorized } from './errors.ts'
@@ -17,6 +18,15 @@ import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
 import type { PrivyClient, PrivyUser } from './privy.ts'
 import { createServer, type ServerDeps } from './server.ts'
+
+/** These routes never read proposals; the reader is here only because the server requires one. */
+const actions: ActionReader = {
+  token: async () => undefined,
+  quorum: async () => undefined,
+  proposals: async () => [],
+  proposal: async () => undefined,
+  body: async () => undefined,
+}
 
 const ALPHA = '11111111111111111111111111111112'
 const BETA = 'So11111111111111111111111111111111111111112'
@@ -98,6 +108,7 @@ function app(
     webOrigins: ['https://console.example'],
     requestId: () => 'req-fixed',
     chain,
+    actions,
     issuance,
     holders,
     journal,

@@ -1,0 +1,105 @@
+// The contract of the quorum-action handlers (FR-019b, FR-019c): what the api
+// accepts and what it returns.
+//
+// A separate module for the same reason as `tokens.ts`: the officer's screen
+// (T034) reads these schemas, and the route file would drag `hono` into the
+// browser bundle along with them.
+import { policyRulesSchema } from '@forge/policy/model'
+import { addressSchema, u64Schema, unixSecondsSchema } from '@forge/shared/primitives'
+import { z } from 'zod'
+import { unsignedTransactionSchema } from './tokens.ts'
+
+// ─── Bounds taken from the program ───────────────────────────────────────────
+
+/**
+ * `MIN_PROPOSAL_TERM` and `MAX_PROPOSAL_TERM` from `state/proposal.rs`. The
+ * program stays the authority; the copy turns a devnet refusal into a
+ * sentence in the form, as the bounds in `tokens.ts` do.
+ */
+export const MIN_PROPOSAL_TERM_SECONDS = 60 * 60
+export const MAX_PROPOSAL_TERM_SECONDS = 30 * 24 * 60 * 60
+
+// ─── Bodies ──────────────────────────────────────────────────────────────────
+
+/**
+ * What is proposed. The version is **not** in the body: it is the next after
+ * the token's current one, and the api reads that from the chain. A version
+ * typed by a person would only be a second way to be wrong about it.
+ */
+export const proposedActionBodySchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
+])
+
+export const proposeActionBodySchema = z.strictObject({
+  action: proposedActionBodySchema,
+  termSeconds: z
+    .number()
+    .int()
+    .min(MIN_PROPOSAL_TERM_SECONDS, 'a proposal must live at least an hour')
+    .max(MAX_PROPOSAL_TERM_SECONDS, 'a proposal may live at most 30 days'),
+})
+
+export type ProposeActionBody = z.infer<typeof proposeActionBodySchema>
+
+/**
+ * Who signs, as a query parameter — the same shape as the holder routes: it
+ * only narrows the choice among this session's authorising wallets and is not
+ * part of the action.
+ */
+export const signerQuerySchema = z.object({ signer: addressSchema.optional() })
+
+// ─── Responses ───────────────────────────────────────────────────────────────
+
+export const PROPOSAL_STATES = ['open', 'ready', 'blocked', 'executed', 'expired'] as const
+
+export const proposalSchema = z.object({
+  address: addressSchema,
+  mint: addressSchema,
+  nonce: u64Schema,
+  payer: addressSchema,
+  action: z.object({
+    kind: z.literal('set-policy'),
+    version: z.number().int().positive(),
+    rulesHash: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+  /**
+   * Named, in signing order (FR-019c): "two of three" is not an answer to
+   * "who authorised this".
+   */
+  approvals: z.array(addressSchema),
+  state: z.enum(PROPOSAL_STATES),
+  required: z.number().int().nonnegative(),
+  counted: z.number().int().nonnegative(),
+  /** Approvals by wallets that lost their authorising role — why a proposal is `blocked`. */
+  lapsed: z.array(addressSchema),
+  createdAt: unixSecondsSchema,
+  expiresAt: unixSecondsSchema,
+  executedAt: unixSecondsSchema.nullable(),
+})
+
+export type ProposalResponse = z.infer<typeof proposalSchema>
+
+export const proposalListResponseSchema = z.object({ proposals: z.array(proposalSchema) })
+
+/** One proposal with its body — what an approver reads before signing. */
+export const proposalDetailResponseSchema = z.object({
+  proposal: proposalSchema,
+  body: z.object({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
+})
+
+/** Every handler that assembles a transaction answers in this shape. */
+export const actionTransactionResponseSchema = z.object({
+  proposal: addressSchema,
+  signer: addressSchema,
+  blockhash: z.string().min(1),
+  transaction: unsignedTransactionSchema,
+})
+
+export type ActionTransactionResponse = z.infer<typeof actionTransactionResponseSchema>
+
+export const proposeActionResponseSchema = actionTransactionResponseSchema.extend({
+  nonce: u64Schema,
+  version: z.number().int().positive(),
+})
+
+export type ProposeActionResponse = z.infer<typeof proposeActionResponseSchema>

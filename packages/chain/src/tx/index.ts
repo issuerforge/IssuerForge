@@ -6,4 +6,5 @@
 export * from './holders.ts'
 export * from './issue.ts'
 export * from './plan.ts'
+export * from './proposal.ts'
 export * from './transfer.ts'

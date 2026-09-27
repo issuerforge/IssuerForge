@@ -32,6 +32,10 @@ export const TX_STEPS = [
   'thaw-holder',
   'set-holder-status',
   'transfer',
+  'propose-action',
+  'approve-action',
+  'close-action-proposal',
+  'set-policy',
 ] as const
 
 export type TxStep = (typeof TX_STEPS)[number]

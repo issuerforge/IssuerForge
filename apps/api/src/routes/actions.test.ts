@@ -1,0 +1,368 @@
+import {
+  actionProposalPda,
+  createForgeProgram,
+  decodeProposedAction,
+  fromBase64,
+  issuerConfigPda,
+} from '@forge/chain'
+import { encodeRules, rulesHash, toHex } from '@forge/policy/layout'
+import { OPEN_POLICY, type PolicyRules } from '@forge/policy/model'
+import { ROLE } from '@forge/shared/api'
+import { createLogger } from '@forge/shared/log'
+import { Connection, PublicKey } from '@solana/web3.js'
+import { describe, expect, it } from 'vitest'
+import type { ActionReader, ProposalView, QuorumView, TokenView } from '../actions.ts'
+import type { ChainReader } from '../chain.ts'
+import type { Directory, RosterEntry } from '../directory.ts'
+import type { HolderStore } from '../holders.ts'
+import type { IssuanceStore } from '../issuance.ts'
+import type { JournalStore } from '../journal.ts'
+import type { OperationalSigner } from '../operational.ts'
+import type { PrivyClient } from '../privy.ts'
+import { createServer } from '../server.ts'
+
+const ISSUER = '11111111111111111111111111111112'
+const OTHER_ISSUER = 'Stake11111111111111111111111111111111111111'
+const ADMIN = 'SysvarC1ock11111111111111111111111111111111'
+const OFFICER = 'SysvarS1otHashes111111111111111111111111111'
+const WATCHER = 'SysvarRent111111111111111111111111111111111'
+const MINT = 'So11111111111111111111111111111111111111112'
+const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
+const SYNCED_AT = '2026-09-27T10:00:00.000Z'
+const NOW = new Date('2026-09-27T12:00:00.000Z')
+const NOW_S = Math.floor(NOW.getTime() / 1000)
+const NONCE = 0xdead_beefn
+const PROPOSAL = actionProposalPda(new PublicKey(MINT), NONCE).toBase58()
+const OWN_CONFIG = issuerConfigPda(new PublicKey(ISSUER)).toBase58()
+
+const STRICT: PolicyRules = { ...OPEN_POLICY, status: { ...OPEN_POLICY.status, minTier: 2 } }
+
+const unused = <T extends object>(name: string) =>
+  new Proxy({} as T, {
+    get: (_, key) => () => {
+      throw new Error(`${name} is not read on this path (${String(key)})`)
+    },
+  })
+
+const proposal = (over: Partial<ProposalView> = {}): ProposalView => ({
+  address: PROPOSAL,
+  mint: MINT,
+  issuerConfig: OWN_CONFIG,
+  payer: ADMIN,
+  nonce: NONCE,
+  action: { kind: 'set-policy', version: 2, rulesHash: toHex(rulesHash(STRICT)) },
+  approvals: [ADMIN],
+  createdAt: NOW_S - 3_600,
+  expiresAt: NOW_S + 86_400,
+  executedAt: null,
+  ...over,
+})
+
+type Fakes = {
+  wallets?: string[]
+  roles?: number
+  roster?: readonly (readonly [string, number])[]
+  token?: TokenView | undefined
+  quorum?: QuorumView
+  proposal?: ProposalView | undefined
+  body?: PolicyRules | undefined
+}
+
+function app(fakes: Fakes = {}) {
+  const wallets = fakes.wallets ?? [ADMIN]
+  const rosterEntries = fakes.roster ?? [
+    [ADMIN, ROLE.ADMIN],
+    [OFFICER, ROLE.COMPLIANCE],
+    [WATCHER, ROLE.OBSERVER],
+  ]
+  const roster: RosterEntry[] = rosterEntries.map(([wallet, roles], memberIndex) => ({
+    wallet,
+    roles,
+    memberIndex,
+  }))
+
+  const actions: ActionReader = {
+    token: async () =>
+      'token' in fakes ? fakes.token : { issuerConfig: OWN_CONFIG, policyVersion: 1 },
+    quorum: async () =>
+      fakes.quorum ?? {
+        quorumN: 2,
+        members: roster.map(({ wallet, roles }) => ({ wallet, roles })),
+      },
+    proposals: async () => (fakes.proposal === undefined ? [] : [fakes.proposal]),
+    proposal: async (address) =>
+      'proposal' in fakes
+        ? fakes.proposal
+        : address.toBase58() === PROPOSAL
+          ? proposal()
+          : undefined,
+    body: async (view) => {
+      const policy = 'body' in fakes ? fakes.body : STRICT
+      return policy === undefined
+        ? undefined
+        : { kind: 'set-policy', version: view.action.version, policy }
+    },
+  }
+
+  const chain: ChainReader = {
+    program: createForgeProgram(new Connection('http://127.0.0.1:8899')),
+    tokenCount: async () => 1,
+    issuerConfig: async () => undefined,
+    holderStatusWritten: async () => false,
+    latestBlockhash: async () => BLOCKHASH,
+  }
+
+  const privy: PrivyClient = { authenticate: async () => ({ userId: 'did:privy:test', wallets }) }
+  const directory: Directory = {
+    membershipsFor: async () => [
+      { issuerId: ISSUER, roles: fakes.roles ?? ROLE.ADMIN, wallets, syncedAt: SYNCED_AT },
+    ],
+    rosterFor: async () => roster,
+  }
+
+  return createServer({
+    logger: createLogger({ level: 'silent', service: 'test' }),
+    webOrigins: ['https://console.example'],
+    requestId: () => 'req-fixed',
+    now: () => NOW,
+    nonce: () => NONCE,
+    privy,
+    directory,
+    chain,
+    actions,
+    issuance: unused<IssuanceStore>('issuance'),
+    holders: unused<HolderStore>('the holder store'),
+    journal: unused<JournalStore>('the journal'),
+    operational: unused<OperationalSigner>('the operational key'),
+  })
+}
+
+const headers = { authorization: 'Bearer token', 'content-type': 'application/json' }
+
+const get = (fakes: Fakes, path: string) => app(fakes).request(path, { headers })
+
+const post = (fakes: Fakes, path: string, json?: unknown) =>
+  app(fakes).request(path, { method: 'POST', headers, body: JSON.stringify(json ?? {}) })
+
+type Json = Record<string, never>
+const jsonOf = async (response: Response) => (await response.json()) as Json
+
+const errorOf = async (response: Response) =>
+  ((await response.json()) as { error: { code: string; message: string; details?: Json } }).error
+
+type TxJson = { base64: string; signers: string[]; step: string }
+
+/** The one instruction of an assembled transaction, with its account keys resolved. */
+function instructionOf(transaction: TxJson) {
+  const message = fromBase64(transaction.base64).message
+  const keys = message.getAccountKeys()
+  const [instruction, ...rest] = message.compiledInstructions
+  if (instruction === undefined || rest.length > 0) throw new Error('expected one instruction')
+  return {
+    data: instruction.data,
+    accounts: instruction.accountKeyIndexes.map((index) => keys.get(index)?.toBase58()),
+  }
+}
+
+const proposeBody = { action: { kind: 'set-policy', policy: STRICT }, termSeconds: 3 * 86_400 }
+
+describe('raising a proposal', () => {
+  it('proposes the next version at the nonce the server chose, signed by the proposer alone', async () => {
+    const response = await post({}, `/api/tokens/${MINT}/actions`, proposeBody)
+    expect(response.status).toBe(200)
+
+    const body = await jsonOf(response)
+    expect(body.proposal).toBe(PROPOSAL)
+    expect(body.nonce).toBe(NONCE.toString())
+    expect(body.version).toBe(2)
+    expect(body.signer).toBe(ADMIN)
+
+    const transaction = body.transaction as unknown as TxJson
+    expect(transaction.step).toBe('propose-action')
+    expect(transaction.signers).toEqual([ADMIN])
+
+    const decoded = decodeProposedAction(instructionOf(transaction).data)
+    expect(decoded?.nonce).toBe(NONCE)
+    expect(decoded?.action.version).toBe(2)
+    expect(toHex(rulesHash(decoded?.action.policy ?? OPEN_POLICY))).toBe(toHex(rulesHash(STRICT)))
+  })
+
+  it('an observer cannot raise one', async () => {
+    const response = await post(
+      { wallets: [WATCHER], roles: ROLE.OBSERVER },
+      `/api/tokens/${MINT}/actions`,
+      proposeBody,
+    )
+    expect(response.status).toBe(401)
+  })
+
+  it('a wallet the mirror still lists but the chain has dropped is refused before signing', async () => {
+    const response = await post(
+      { quorum: { quorumN: 2, members: [{ wallet: OFFICER, roles: ROLE.COMPLIANCE }] } },
+      `/api/tokens/${MINT}/actions`,
+      proposeBody,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).message).toMatch(/not an authorising member on chain/)
+  })
+
+  it('a term outside the program’s bounds is a 400', async () => {
+    for (const termSeconds of [3_599, 30 * 86_400 + 1]) {
+      const response = await post({}, `/api/tokens/${MINT}/actions`, {
+        ...proposeBody,
+        termSeconds,
+      })
+      expect(response.status).toBe(400)
+    }
+  })
+
+  it('another issuer’s token does not exist for this session', async () => {
+    const response = await post(
+      {
+        token: {
+          issuerConfig: issuerConfigPda(new PublicKey(OTHER_ISSUER)).toBase58(),
+          policyVersion: 1,
+        },
+      },
+      `/api/tokens/${MINT}/actions`,
+      proposeBody,
+    )
+    expect(response.status).toBe(404)
+  })
+})
+
+describe('reading proposals', () => {
+  it('lists them with the approvers named and the standing computed', async () => {
+    const response = await get({ proposal: proposal() }, `/api/tokens/${MINT}/actions`)
+    const [listed] = (await jsonOf(response)).proposals as unknown as Json[]
+
+    expect(listed).toMatchObject({
+      address: PROPOSAL,
+      approvals: [ADMIN],
+      state: 'open',
+      required: 2,
+      counted: 1,
+      nonce: NONCE.toString(),
+      executedAt: null,
+    })
+  })
+
+  it('one proposal comes with the body its approvers sign for', async () => {
+    const body = await jsonOf(await get({}, `/api/actions/${PROPOSAL}`))
+    const policy = (body.body as unknown as { policy: PolicyRules }).policy
+
+    expect(Buffer.from(encodeRules(policy))).toEqual(Buffer.from(encodeRules(STRICT)))
+  })
+
+  it('a body the node no longer has is an internal failure, not an empty policy', async () => {
+    const response = await get({ body: undefined }, `/api/actions/${PROPOSAL}`)
+    expect(response.status).toBe(500)
+  })
+
+  it('another issuer’s proposal does not exist for this session', async () => {
+    const foreign = proposal({
+      issuerConfig: issuerConfigPda(new PublicKey(OTHER_ISSUER)).toBase58(),
+    })
+    expect((await get({ proposal: foreign }, `/api/actions/${PROPOSAL}`)).status).toBe(404)
+  })
+})
+
+describe('approving', () => {
+  it('a second member approves with one signature, their own', async () => {
+    const response = await post(
+      { wallets: [OFFICER], roles: ROLE.COMPLIANCE },
+      `/api/actions/${PROPOSAL}/approve`,
+    )
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    expect(transaction.step).toBe('approve-action')
+    expect(transaction.signers).toEqual([OFFICER])
+    expect(instructionOf(transaction).accounts[1]).toBe(PROPOSAL)
+  })
+
+  it('the same wallet twice is refused before it is signed', async () => {
+    const response = await post({}, `/api/actions/${PROPOSAL}/approve`)
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).message).toMatch(/already approved/)
+  })
+
+  it('a proposal past its term takes no more signatures', async () => {
+    const response = await post(
+      { wallets: [OFFICER], roles: ROLE.COMPLIANCE, proposal: proposal({ expiresAt: NOW_S - 1 }) },
+      `/api/actions/${PROPOSAL}/approve`,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toEqual({ state: 'expired' })
+  })
+
+  it('a blocked proposal is not offered a signature that cannot help', async () => {
+    const response = await post(
+      {
+        wallets: [OFFICER],
+        roles: ROLE.COMPLIANCE,
+        proposal: proposal({ approvals: [WATCHER] }),
+      },
+      `/api/actions/${PROPOSAL}/approve`,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toEqual({ lapsed: [WATCHER] })
+  })
+})
+
+describe('executing', () => {
+  const ready = proposal({ approvals: [ADMIN, OFFICER] })
+
+  it('assembles set_policy on the deferred path: the proposal in its slot, only the payer signs', async () => {
+    const response = await post({ proposal: ready }, `/api/actions/${PROPOSAL}/execute`)
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    const { data, accounts } = instructionOf(transaction)
+
+    expect(transaction.step).toBe('set-policy')
+    expect(transaction.signers).toEqual([ADMIN])
+    expect(accounts).toHaveLength(6)
+    expect(accounts[5]).toBe(PROPOSAL)
+    // The bytes the digest was computed over, and no other encoding of them.
+    expect(Buffer.from(data).includes(Buffer.from(encodeRules(STRICT)))).toBe(true)
+  })
+
+  it('one approval of two is not executed, and the answer says how far it got', async () => {
+    const response = await post({}, `/api/actions/${PROPOSAL}/execute`)
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toMatchObject({
+      state: 'open',
+      required: 2,
+      counted: 1,
+    })
+  })
+
+  it('a proposal for a version that is no longer next can only lapse', async () => {
+    const response = await post(
+      { proposal: ready, token: { issuerConfig: OWN_CONFIG, policyVersion: 2 } },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toEqual({ proposed: 2, current: 2 })
+  })
+})
+
+describe('closing', () => {
+  it('a live proposal cannot be closed: revocation belongs to the clock', async () => {
+    const response = await post({}, `/api/actions/${PROPOSAL}/close`)
+    expect(response.status).toBe(400)
+  })
+
+  it('an expired one returns the rent to its payer, whoever closes it', async () => {
+    const response = await post(
+      { wallets: [OFFICER], roles: ROLE.COMPLIANCE, proposal: proposal({ expiresAt: NOW_S - 1 }) },
+      `/api/actions/${PROPOSAL}/close`,
+    )
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    expect(transaction.signers).toEqual([OFFICER])
+    expect(instructionOf(transaction).accounts[2]).toBe(ADMIN)
+  })
+})

@@ -4,6 +4,7 @@ import { ISSUER_HEADER, ROLE } from '@forge/shared/api'
 import { createLogger } from '@forge/shared/log'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { describe, expect, it, vi } from 'vitest'
+import type { ActionReader } from '../actions.ts'
 import type { ChainReader } from '../chain.ts'
 import type { Directory, RosterEntry } from '../directory.ts'
 import type { HolderStore } from '../holders.ts'
@@ -13,6 +14,15 @@ import type { OperationalSigner } from '../operational.ts'
 import type { PrivyClient } from '../privy.ts'
 import { createServer, MAX_BODY_BYTES, type ServerDeps } from '../server.ts'
 import { createTokenBodySchema } from './tokens.ts'
+
+/** These routes never read proposals; the reader is here only because the server requires one. */
+const actions: ActionReader = {
+  token: async () => undefined,
+  quorum: async () => undefined,
+  proposals: async () => [],
+  proposal: async () => undefined,
+  body: async () => undefined,
+}
 
 const ISSUER = '11111111111111111111111111111112'
 const ADMIN = 'SysvarC1ock11111111111111111111111111111111'
@@ -115,6 +125,7 @@ function app(fakes: Fakes = {}) {
     directory,
     journal,
     chain,
+    actions,
     issuance,
     holders,
     operational,

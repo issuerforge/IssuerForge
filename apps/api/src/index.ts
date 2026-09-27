@@ -6,6 +6,7 @@ import { createLogger } from '@forge/shared/log'
 import { startWorker } from '@forge/worker'
 import { serve } from '@hono/node-server'
 import { Connection } from '@solana/web3.js'
+import { createActionReader } from './actions.ts'
 import { createChainReader, fetchWithTimeout } from './chain.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createDirectory } from './directory.ts'
@@ -30,6 +31,8 @@ async function main() {
     fetch: fetchWithTimeout(),
   })
 
+  const chain = createChainReader(connection)
+
   const app = createServer({
     logger,
     webOrigins: config.webOrigins,
@@ -38,7 +41,8 @@ async function main() {
     issuance: createIssuanceStore(database),
     holders: createHolderStore(database),
     journal: createJournalStore(database),
-    chain: createChainReader(connection),
+    chain,
+    actions: createActionReader(connection, chain.program),
     operational: createOperationalSigner(connection, config.operationalSecretKey),
   })
 
