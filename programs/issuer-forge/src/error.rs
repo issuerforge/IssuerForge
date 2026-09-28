@@ -168,6 +168,14 @@ pub enum ForgeError {
     ProposalStillLive,
     #[msg("approvals come either from a proposal or from this transaction, not both")]
     QuorumSourceAmbiguous,
+    #[msg("a compliance action must state its reason code")]
+    ReasonCodeMissing,
+    #[msg("case reference must be printable ASCII, then zeros, and not empty")]
+    CaseReferenceInvalid,
+    #[msg("signer is not a compliance officer of this issuer")]
+    NotAnOfficer,
+    #[msg("an officer froze this account; only an officer can lift the freeze")]
+    HolderFrozenByOfficer,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -265,6 +273,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::QuorumSourceAmbiguous),
             VALIDATION_ERROR_BASE + 46
+        );
+        // The first and the last of those added by T026.
+        assert_eq!(
+            u32::from(ForgeError::ReasonCodeMissing),
+            VALIDATION_ERROR_BASE + 47
+        );
+        assert_eq!(
+            u32::from(ForgeError::HolderFrozenByOfficer),
+            VALIDATION_ERROR_BASE + 50
         );
     }
 }

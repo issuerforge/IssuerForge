@@ -25,8 +25,8 @@ import { type TxPlan, toPlan } from './plan.ts'
 /**
  * What is proposed, with its body in full — the TS side of `ProposedAction`.
  *
- * A union with one member rather than a bare policy: `T026…T029` each append
- * their kind, and a caller that switches over `kind` then fails to compile
+ * A union with one member rather than a bare policy: seizure and pause
+ * (`T027`, `T028`) each append their kind — the freeze takes no quorum — and a caller that switches over `kind` then fails to compile
  * instead of silently treating a seizure as a policy change.
  */
 export type ProposedActionInput = {

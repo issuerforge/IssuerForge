@@ -1,9 +1,9 @@
 import { encodeRules } from '@forge/policy/layout'
 import { OPEN_POLICY } from '@forge/policy/model'
-import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import { Connection, PublicKey, type TransactionInstruction } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
-import { extraAccountMetaListPda, mintPda, tokenConfigPda } from '../pda.ts'
+import { extraAccountMetaListPda, freezeRecordPda, mintPda, tokenConfigPda } from '../pda.ts'
 import { createForgeProgram } from '../program.ts'
 import { buildSetHolderStatus, buildThawHolder } from './holders.ts'
 import {
@@ -287,6 +287,22 @@ describe('holder onboarding', () => {
     expect(transactionBytes(compileTransaction(plan, BLOCKHASH))).toBeLessThanOrEqual(
       MAX_TRANSACTION_BYTES,
     )
+  })
+
+  it("a thaw names where an officer's freeze of the account would be, last", async () => {
+    const plan = await buildThawHolder(program, {
+      issuerId: ISSUER_ID,
+      mint,
+      wallet: TREASURY,
+      payer: FOUNDER,
+      authority: ATTESTOR,
+      status: null,
+    })
+    const account = getAssociatedTokenAddressSync(mint, TREASURY, false, TOKEN_2022_PROGRAM_ID)
+    // Last, so every position the indexer reads stays where it was.
+    expect(only(plan).keys).toHaveLength(11)
+    expect(keyAt(plan, 3).equals(account)).toBe(true)
+    expect(keyAt(plan, 10).equals(freezeRecordPda(account))).toBe(true)
   })
 
   it('a status change does not touch the token account — freezing is a separate action', async () => {

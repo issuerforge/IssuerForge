@@ -4,6 +4,7 @@ import { IDL } from './idl/issuer-forge.ts'
 import {
   actionProposalPda,
   extraAccountMetaListPda,
+  freezeRecordPda,
   holderStatusPda,
   issuerConfigPda,
   mintPda,
@@ -79,6 +80,7 @@ describe('seed labels', () => {
       proposal: 'proposal',
       reserve: 'reserve',
       redemption: 'redemption',
+      freeze: 'freeze',
     })
   })
 })
@@ -109,6 +111,8 @@ describe('PDA addresses', () => {
       reserveAttestationPda(MINT, 3n),
       'FK1U9P45qLBpLm7ZjNMc9vxmxkTy4TzB4b4nAL25qyjc',
     ],
+    // The token account here is `WALLET`: the seeds do not care what the key is.
+    ['FreezeRecord', freezeRecordPda(WALLET), '7xCgAupTggYwuFKfMXkAYSBjXUn4EJT3pHe3MqHENLkk'],
     [
       'RedemptionEscrow',
       redemptionEscrowPda(MINT, ISSUER_ID),
@@ -128,6 +132,19 @@ describe('PDA addresses', () => {
     const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
     expect(declared && 'value' in declared ? Uint8Array.from(declared.value) : undefined).toEqual(
       SEED.mint,
+    )
+  })
+
+  // The same check for the freeze: `thaw_holder` derives the record from its
+  // seeds, and a label that drifted would point it at an address that is
+  // always empty — every officer's freeze would be thawable by the routine
+  // path again.
+  it('`freeze` matches what the IDL declares for the thaw', () => {
+    const instruction = IDL.instructions.find((ix) => ix.name === 'thawHolder')
+    const account = instruction?.accounts.find((a) => a.name === 'freezeRecord')
+    const declared = account && 'pda' in account ? account.pda.seeds[0] : undefined
+    expect(declared && 'value' in declared ? Uint8Array.from(declared.value) : undefined).toEqual(
+      SEED.freeze,
     )
   })
 

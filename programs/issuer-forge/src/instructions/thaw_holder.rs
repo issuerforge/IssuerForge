@@ -5,7 +5,7 @@ use anchor_spl::token_interface::{
 };
 
 use crate::authority::require_routine;
-use crate::constants::{HOLDER_SEED, ISSUER_SEED, TOKEN_SEED, VELOCITY_SEED};
+use crate::constants::{FREEZE_SEED, HOLDER_SEED, ISSUER_SEED, TOKEN_SEED, VELOCITY_SEED};
 use crate::error::ForgeError;
 use crate::state::{delegation, HolderStatus, HolderStatusInput, IssuerConfig, TokenConfig, VelocityCounter};
 
@@ -17,7 +17,8 @@ pub struct ThawHolderArgs {
     /// The initial status — only for the **first** thaw.
     ///
     /// `None` means "the record already exists, I am not touching it": that
-    /// is what a repeat thaw after an officer's freeze looks like (T026). A
+    /// is what thawing a second token account of an onboarded holder looks
+    /// like. A
     /// mismatch between the intent and the account state is rejected, not
     /// interpreted, so no call changes the status silently.
     pub status: Option<HolderStatusInput>,
@@ -66,10 +67,10 @@ pub struct ThawHolder<'info> {
     )]
     pub token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// `init_if_needed`, because an account is legitimately thawed a second
-    /// time — after an officer's freeze. A repeat creation overwrites
-    /// nothing: what is written is decided by `updated_at`, not by the
-    /// account's existence.
+    /// `init_if_needed`, because a holder is legitimately thawed a second
+    /// time — for another token account of the same wallet, which starts
+    /// frozen like any other. A repeat creation overwrites nothing: what is
+    /// written is decided by `updated_at`, not by the account's existence.
     #[account(
         init_if_needed,
         payer = payer,
@@ -101,6 +102,19 @@ pub struct ThawHolder<'info> {
 
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+
+    /// Where an officer's freeze of this token account would be (T026). Only
+    /// its emptiness is read: while the record exists, the account is frozen
+    /// by a compliance action, and a routine thaw — which the operational key
+    /// may sign — must not lift it. `unfreeze_holder` does, with the
+    /// officer's signature.
+    ///
+    /// Last in the list, so that the accounts before it keep the positions
+    /// the indexer already reads them at.
+    /// CHECK: the address is pinned by the seeds; nothing but the length of
+    /// its data is read, and only this program can put data at it.
+    #[account(seeds = [FREEZE_SEED, token_account.key().as_ref()], bump)]
+    pub freeze_record: UncheckedAccount<'info>,
 }
 
 pub(crate) fn thaw_handler(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Result<()> {
@@ -109,6 +123,10 @@ pub(crate) fn thaw_handler(ctx: Context<ThawHolder>, args: ThawHolderArgs) -> Re
         &ctx.accounts.authority.key(),
         delegation::THAW_HOLDER,
     )?;
+    require!(
+        ctx.accounts.freeze_record.data_is_empty(),
+        ForgeError::HolderFrozenByOfficer
+    );
 
     let now = Clock::get()?.unix_timestamp;
     let holder = &mut ctx.accounts.holder_status;

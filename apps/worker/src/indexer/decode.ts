@@ -23,6 +23,7 @@ import { IDL, PROGRAM_ID } from '@forge/chain'
 import { MAX_RULE_SLOTS, RULE_KIND, RULE_SLOT_BYTES } from '@forge/policy/model'
 import {
   type AttestationEvent,
+  type ComplianceEvent,
   type HolderStatus,
   type HolderStatusEvent,
   type IndexedEvent,
@@ -214,6 +215,8 @@ const ACCOUNT = {
   setTokenMetadata: { mint: 2 },
   setPolicy: { tokenConfig: 1 },
   thawHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, authority: 7 },
+  freezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
+  unfreezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
   setHolderStatus: { tokenConfig: 1, authority: 3 },
   attestReserve: { tokenConfig: 0, attestation: 1, attestor: 2 },
 } as const
@@ -243,7 +246,7 @@ function bytes(value: unknown): Uint8Array {
   throw new TypeError(`expected bytes, got ${typeof value}`)
 }
 
-/** Zero-padded upper-case ASCII, as the program stores the currency and the jurisdiction. */
+/** Zero-padded ASCII, as the program stores the currency, the jurisdiction and a case reference. */
 function ascii(value: unknown): string {
   return new TextDecoder().decode(bytes(value)).replaceAll('\0', '')
 }
@@ -540,6 +543,41 @@ async function decodeSetHolderStatus(
   ctx.events.push({ issuerId: token.issuerId, event })
 }
 
+type ReasonInput = { code: unknown; caseRef: unknown }
+
+/**
+ * An officer's freeze or its lifting (FR-014, FR-017) — the first compliance
+ * events the journal carries.
+ *
+ * The reason code is written as the number the program stored. The chain
+ * knows no catalogue of names; a name the console shows is a reading of this
+ * number, and the journal a verifier replays keeps what the chain holds.
+ */
+function decodeFreeze(action: 'freeze' | 'unfreeze'): InstructionDecoder {
+  const accounts = action === 'freeze' ? ACCOUNT.freezeHolder : ACCOUNT.unfreezeHolder
+  return async (ctx, instruction, args) => {
+    const issuerConfig = at(instruction, accounts.issuerConfig, 'issuerConfig')
+    const issuerId = await ctx.lookups.issuerIdOfConfig(issuerConfig)
+    if (issuerId === undefined) throw new LookupFailed('issuer config', issuerConfig)
+
+    const reason = args.reason as ReasonInput
+    const event: ComplianceEvent = {
+      kind: 'compliance',
+      ...envelopeOf(ctx.tx),
+      eventIndex: ctx.events.length,
+      mint: at(instruction, accounts.mint, 'mint'),
+      action,
+      target: at(instruction, accounts.tokenAccount, 'tokenAccount'),
+      amount: null,
+      reasonCode: integer(reason.code).toString(),
+      caseRef: ascii(reason.caseRef),
+      // One signature, the officer's: a freeze takes no quorum (FR-014).
+      signers: [at(instruction, accounts.officer, 'officer')],
+    }
+    ctx.events.push({ issuerId, event })
+  }
+}
+
 async function decodeAttestReserve(
   ctx: Context,
   instruction: InstructionView,
@@ -584,6 +622,8 @@ const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   setPolicy: decodeSetPolicy,
   thawHolder: decodeThawHolder,
   setHolderStatus: decodeSetHolderStatus,
+  freezeHolder: decodeFreeze('freeze'),
+  unfreezeHolder: decodeFreeze('unfreeze'),
   attestReserve: decodeAttestReserve,
 }
 

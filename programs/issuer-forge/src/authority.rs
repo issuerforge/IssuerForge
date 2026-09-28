@@ -43,6 +43,23 @@ pub fn require_routine(issuer: &IssuerConfig, signer: &Pubkey, power: u8) -> Res
     Ok(())
 }
 
+/// Whether this address may freeze or unfreeze an account (FR-014).
+///
+/// **The officer alone, and nobody else.** Not the operational key: FR-035
+/// names what it may sign, and a freeze is not on the list — a compromised
+/// platform key must not be able to freeze an issuer's holders either. Not an
+/// admin: FR-033 separates the roles, and a freeze is the one compliance
+/// action a single officer takes without the quorum, which is exactly why it
+/// stays with the role that answers for it. An issuer without an officer adds
+/// one through the quorum; that is a membership change, not a gap here.
+pub fn require_officer(issuer: &IssuerConfig, signer: &Pubkey) -> Result<()> {
+    require!(
+        issuer.member_has(signer, role::COMPLIANCE),
+        ForgeError::NotAnOfficer
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +157,32 @@ mod tests {
             err(require_routine(&standard(), &wallet(77), delegation::THAW_HOLDER)),
             code(ForgeError::NotAnOperatorOrOfficer)
         );
+    }
+
+    #[test]
+    fn only_an_officer_freezes() {
+        let full = issuer(
+            &[
+                (1, role::ADMIN),
+                (2, role::COMPLIANCE),
+                (3, role::OBSERVER),
+                (4, role::ATTESTOR),
+                (5, role::ADMIN | role::COMPLIANCE),
+            ],
+            wallet(10),
+            delegation::ALL,
+        );
+        assert!(require_officer(&full, &wallet(2)).is_ok());
+        assert!(require_officer(&full, &wallet(5)).is_ok());
+        // An admin, an observer, an attestor, the operational key with every
+        // power delegated, a stranger.
+        for seed in [1u8, 3, 4, 10, 77] {
+            assert_eq!(
+                err(require_officer(&full, &wallet(seed))),
+                code(ForgeError::NotAnOfficer),
+                "wallet {seed}"
+            );
+        }
     }
 
     #[test]

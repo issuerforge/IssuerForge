@@ -9,7 +9,13 @@
 import { BN } from '@coral-xyz/anchor'
 import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import type { PublicKey } from '@solana/web3.js'
-import { holderStatusPda, issuerConfigPda, tokenConfigPda, velocityCounterPda } from '../pda.ts'
+import {
+  freezeRecordPda,
+  holderStatusPda,
+  issuerConfigPda,
+  tokenConfigPda,
+  velocityCounterPda,
+} from '../pda.ts'
 import type { ForgeProgram } from '../program.ts'
 import type { HolderStatusInput } from './issue.ts'
 import { type TxPlan, toPlan } from './plan.ts'
@@ -40,7 +46,9 @@ export type ThawHolderArgs = {
    * The status — only for the **first** thaw.
    *
    * `null` means "the record already exists, I am not touching it": that is
-   * what a repeat thaw after an officer's freeze looks like. A mismatch
+   * what thawing a second account of an onboarded holder looks like. An
+   * account an officer froze is not thawed here at all — the program refuses
+   * while its `FreezeRecord` exists, and `buildUnfreezeHolder` lifts it. A mismatch
    * between the intent and the account state is rejected by the program, not
    * interpreted.
    */
@@ -51,6 +59,12 @@ export async function buildThawHolder(
   program: ForgeProgram,
   args: ThawHolderArgs,
 ): Promise<TxPlan> {
+  const tokenAccount = getAssociatedTokenAddressSync(
+    args.mint,
+    args.wallet,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+  )
   const instruction = await program.methods
     .thawHolder({
       wallet: args.wallet,
@@ -60,17 +74,13 @@ export async function buildThawHolder(
       issuerConfig: issuerConfigPda(args.issuerId),
       tokenConfig: tokenConfigPda(args.mint),
       mint: args.mint,
-      tokenAccount: getAssociatedTokenAddressSync(
-        args.mint,
-        args.wallet,
-        false,
-        TOKEN_2022_PROGRAM_ID,
-      ),
+      tokenAccount,
       holderStatus: holderStatusPda(args.mint, args.wallet),
       velocityCounter: velocityCounterPda(args.mint, args.wallet),
       payer: args.payer,
       authority: args.authority,
       tokenProgram: TOKEN_2022_PROGRAM_ID,
+      freezeRecord: freezeRecordPda(tokenAccount),
     })
     .instruction()
 

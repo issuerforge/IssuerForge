@@ -426,6 +426,8 @@ describe('thaw_holder and set_holder_status', () => {
     OPERATIONAL,
     TOKEN_2022,
     key(),
+    // `freeze_record`, appended by T026 — last, so no position above moved.
+    key(),
   ]
 
   it('lets an account in with its status', async () => {
@@ -465,6 +467,47 @@ describe('thaw_holder and set_holder_status', () => {
       { kind: 'holder_status', mint: MINT, issuerId: ISSUER_ID, wallet: ALICE, status },
     ])
     expect(events[0]?.event).toMatchObject({ kind: 'holder_status', authority: OFFICER, status })
+  })
+})
+
+describe('freeze_holder and unfreeze_holder', () => {
+  const reason = { code: 4, caseRef: ascii('FIU-NG/2026/004117', 32) }
+  const accounts = [ISSUER_CONFIG, TOKEN_CONFIG, MINT, ALICE_ATA, key(), key(), OFFICER, TOKEN_2022]
+
+  it('records a freeze as a compliance action with its reason and its one signer', async () => {
+    const data = encoded('freezeHolder', { reason })
+    const { events, changes } = await decode(tx([ours(data, [...accounts, key()])]))
+
+    // A freeze changes no mirror row: whether an account is frozen is the
+    // token account's own state, and the journal is where the action lives.
+    expect(changes).toEqual([])
+    expect(events).toHaveLength(1)
+    expect(events[0]?.issuerId).toBe(ISSUER_ID)
+    expect(events[0]?.event).toMatchObject({
+      kind: 'compliance',
+      action: 'freeze',
+      mint: MINT,
+      target: ALICE_ATA,
+      amount: null,
+      reasonCode: '4',
+      caseRef: 'FIU-NG/2026/004117',
+      signers: [OFFICER],
+    })
+  })
+
+  it('records the lifting with a reason of its own', async () => {
+    const data = encoded('unfreezeHolder', {
+      reason: { code: 9, caseRef: ascii('FIU-NG/2026/004117/closed', 32) },
+    })
+    const { events } = await decode(tx([ours(data, accounts)]))
+    expect(events[0]?.event).toMatchObject({
+      kind: 'compliance',
+      action: 'unfreeze',
+      target: ALICE_ATA,
+      reasonCode: '9',
+      caseRef: 'FIU-NG/2026/004117/closed',
+      signers: [OFFICER],
+    })
   })
 })
 

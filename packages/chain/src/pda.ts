@@ -28,6 +28,7 @@ export const SEED = {
   proposal: utf8.encode('proposal'),
   reserve: utf8.encode('reserve'),
   redemption: utf8.encode('redemption'),
+  freeze: utf8.encode('freeze'),
 } as const
 
 /**
@@ -132,6 +133,16 @@ export function velocityCounterPda(
   programId = PROGRAM_ID,
 ): PublicKey {
   return derive([SEED.velocity, mint.toBytes(), wallet.toBytes()], programId)
+}
+
+/**
+ * `FreezeRecord` — `["freeze", token_account]`.
+ *
+ * The token account, not the owner: a freeze belongs to one account, and an
+ * owner may hold several.
+ */
+export function freezeRecordPda(tokenAccount: PublicKey, programId = PROGRAM_ID): PublicKey {
+  return derive([SEED.freeze, tokenAccount.toBytes()], programId)
 }
 
 /** `ActionProposal` — `["proposal", mint, nonce]`, nonce `u64`. */

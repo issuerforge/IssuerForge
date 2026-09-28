@@ -34,6 +34,12 @@ pub const HOLDER_SEED: &[u8] = b"holder";
 /// `["velocity", mint, wallet]` — the per-period limit counter.
 pub const VELOCITY_SEED: &[u8] = b"velocity";
 
+/// `["freeze", token_account]` — an officer's freeze of one token account.
+///
+/// Keyed by the token account rather than `[mint, wallet]`: a freeze belongs
+/// to an account, and one owner may hold several.
+pub const FREEZE_SEED: &[u8] = b"freeze";
+
 /// `["reserve", mint, index]` — an append-only reserve attestation, the index a `u64` LE.
 pub const RESERVE_SEED: &[u8] = b"reserve";
 

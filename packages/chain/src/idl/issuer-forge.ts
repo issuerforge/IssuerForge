@@ -702,6 +702,142 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "freezeHolder",
+      "docs": [
+        "An officer freezes one token account (FR-014). A frozen account can",
+        "neither send nor receive.",
+        "",
+        "One signature, the officer's, and a stated reason and case (FR-017).",
+        "The freeze leaves a `FreezeRecord` behind, and while it exists the",
+        "routine `thaw_holder` refuses the account: otherwise the platform's",
+        "operational key could undo a compliance action with a routine one."
+      ],
+      "discriminator": [
+        42,
+        135,
+        144,
+        146,
+        54,
+        1,
+        196,
+        117
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "tokenAccount",
+          "docs": [
+            "Any account of this mint, whoever owns it. The owner is not an",
+            "argument here, unlike in `thaw_holder`: nothing is derived from it, it",
+            "is only written down."
+          ],
+          "writable": true
+        },
+        {
+          "name": "freezeRecord",
+          "docs": [
+            "`init`, not `init_if_needed`: an account frozen once is not frozen",
+            "again on top. A second case against the same account is a matter for",
+            "the case system; here the freeze either exists or it does not, and one",
+            "record says by whom and why."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "officer",
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "freezeHolderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "initializeExtraAccountMetaList",
       "docs": [
         "Creates the `ExtraAccountMetaList` — the list of accounts the token",
@@ -1469,10 +1605,10 @@ export type IssuerForge = {
         {
           "name": "holderStatus",
           "docs": [
-            "`init_if_needed`, because an account is legitimately thawed a second",
-            "time — after an officer's freeze. A repeat creation overwrites",
-            "nothing: what is written is decided by `updated_at`, not by the",
-            "account's existence."
+            "`init_if_needed`, because a holder is legitimately thawed a second",
+            "time — for another token account of the same wallet, which starts",
+            "frozen like any other. A repeat creation overwrites nothing: what is",
+            "written is decided by `updated_at`, not by the account's existence."
           ],
           "writable": true,
           "pda": {
@@ -1555,6 +1691,39 @@ export type IssuerForge = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "freezeRecord",
+          "docs": [
+            "Where an officer's freeze of this token account would be (T026). Only",
+            "its emptiness is read: while the record exists, the account is frozen",
+            "by a compliance action, and a routine thaw — which the operational key",
+            "may sign — must not lift it. `unfreeze_holder` does, with the",
+            "officer's signature.",
+            "",
+            "Last in the list, so that the accounts before it keep the positions",
+            "the indexer already reads them at.",
+            "its data is read, and only this program can put data at it."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -1563,6 +1732,126 @@ export type IssuerForge = {
           "type": {
             "defined": {
               "name": "thawHolderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unfreezeHolder",
+      "docs": [
+        "An officer lifts a freeze (FR-014), with a reason of its own.",
+        "",
+        "The account returns to the state it was frozen in: thawed if it was",
+        "thawed, still waiting for onboarding if it had not been."
+      ],
+      "discriminator": [
+        20,
+        170,
+        98,
+        114,
+        27,
+        133,
+        139,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "tokenAccount",
+          "writable": true
+        },
+        {
+          "name": "freezeRecord",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rentRecipient",
+          "docs": [
+            "Whoever paid for the record gets the rent back, not whoever lifts it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "officer",
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "unfreezeHolderArgs"
             }
           }
         }
@@ -1581,6 +1870,19 @@ export type IssuerForge = {
         173,
         240,
         41
+      ]
+    },
+    {
+      "name": "freezeRecord",
+      "discriminator": [
+        33,
+        176,
+        111,
+        25,
+        29,
+        174,
+        180,
+        197
       ]
     },
     {
@@ -1962,6 +2264,26 @@ export type IssuerForge = {
       "code": 6059,
       "name": "quorumSourceAmbiguous",
       "msg": "approvals come either from a proposal or from this transaction, not both"
+    },
+    {
+      "code": 6060,
+      "name": "reasonCodeMissing",
+      "msg": "a compliance action must state its reason code"
+    },
+    {
+      "code": 6061,
+      "name": "caseReferenceInvalid",
+      "msg": "case reference must be printable ASCII, then zeros, and not empty"
+    },
+    {
+      "code": 6062,
+      "name": "notAnOfficer",
+      "msg": "signer is not a compliance officer of this issuer"
+    },
+    {
+      "code": 6063,
+      "name": "holderFrozenByOfficer",
+      "msg": "an officer froze this account; only an officer can lift the freeze"
     }
   ],
   "types": [
@@ -2159,6 +2481,47 @@ export type IssuerForge = {
       }
     },
     {
+      "name": "complianceReason",
+      "docs": [
+        "Why a compliance action was taken (FR-017): a reason code and the case it",
+        "belongs to.",
+        "",
+        "**Introduced by the freeze (T026), meant for all four actions.** Seizure",
+        "and pause (T027, T028) take the same type, and T029 adds what is left of",
+        "FR-017 and FR-019c — the event with the named signers — on top of it",
+        "rather than beside it. One type is what keeps \"an action without a reason",
+        "is not executed\" one rule instead of four.",
+        "",
+        "The catalogue of codes is not here. The program cannot tell a real reason",
+        "from an invented one; what it can do is refuse an action whose reason was",
+        "left empty, which is the acceptance scenario the specification states."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "code",
+            "docs": [
+              "The issuer's reason code. Zero is \"not stated\"."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "caseRef",
+            "docs": [
+              "Printable ASCII, then zeros."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "createTokenArgs",
       "type": {
         "kind": "struct",
@@ -2254,6 +2617,115 @@ export type IssuerForge = {
                 "name": "holderStatusInput"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "freezeHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "freezeRecord",
+      "docs": [
+        "An officer's freeze of one token account. PDA: `[\"freeze\", token_account]`.",
+        "",
+        "**Why an account at all, when the token account already says `Frozen`.**",
+        "Because it says the same thing in two situations the program must tell",
+        "apart: an account that was never thawed (`DefaultAccountState = Frozen`,",
+        "the onboarding queue) and an account an officer froze. The first is",
+        "lifted by a routine `thaw_holder`, which the operational key may sign; the",
+        "second must not be, or a key that FR-035 keeps away from compliance",
+        "actions would undo one with a routine call. The existence of this account",
+        "is the difference, and `thaw_holder` refuses while it exists.",
+        "",
+        "**Keyed by the token account, not by the wallet.** A freeze in Token-2022",
+        "is a property of one account, and FR-014 speaks of an individual account.",
+        "A wallet with a second account keeps it; stopping the person as a whole is",
+        "what `denied` in the status registry is for (FR-008a1), and the hook reads",
+        "that on every transfer from any of their accounts.",
+        "",
+        "Closed by `unfreeze_holder`. The named record of who froze it and why does",
+        "not need this account to survive: it is in the `freeze_holder` instruction",
+        "itself, which is where the indexer reads every action from."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The next three duplicate what the seeds and the token account already",
+              "say, for the same reason `HolderStatus` does: the console lists an",
+              "issuer's frozen accounts with `getProgramAccounts` and a filter by",
+              "mint, and a filter cannot be made on seeds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenAccount",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "docs": [
+              "The token account's owner at the time of the freeze."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "officer",
+            "docs": [
+              "The officer who froze it."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent, and so who gets it back."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          },
+          {
+            "name": "frozenAt",
+            "type": "i64"
+          },
+          {
+            "name": "wasThawed",
+            "docs": [
+              "Whether the account was thawed when the officer froze it.",
+              "",
+              "Lifting the freeze returns the account to where it was, not to",
+              "\"thawed\": an account frozen before it was ever onboarded goes back to",
+              "the onboarding queue, and a thaw here would skip the step that creates",
+              "its status — the one a transfer is refused without."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -2934,7 +3406,8 @@ export type IssuerForge = {
               "The initial status — only for the **first** thaw.",
               "",
               "`None` means \"the record already exists, I am not touching it\": that",
-              "is what a repeat thaw after an officer's freeze looks like (T026). A",
+              "is what thawing a second token account of an onboarded holder looks",
+              "like. A",
               "mismatch between the intent and the account state is rejected, not",
               "interpreted, so no call changes the status silently."
             ],
@@ -3082,6 +3555,22 @@ export type IssuerForge = {
                 "u8",
                 8
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unfreezeHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
             }
           }
         ]
@@ -3826,6 +4315,142 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "freezeHolder",
+      "docs": [
+        "An officer freezes one token account (FR-014). A frozen account can",
+        "neither send nor receive.",
+        "",
+        "One signature, the officer's, and a stated reason and case (FR-017).",
+        "The freeze leaves a `FreezeRecord` behind, and while it exists the",
+        "routine `thaw_holder` refuses the account: otherwise the platform's",
+        "operational key could undo a compliance action with a routine one."
+      ],
+      "discriminator": [
+        42,
+        135,
+        144,
+        146,
+        54,
+        1,
+        196,
+        117
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "tokenAccount",
+          "docs": [
+            "Any account of this mint, whoever owns it. The owner is not an",
+            "argument here, unlike in `thaw_holder`: nothing is derived from it, it",
+            "is only written down."
+          ],
+          "writable": true
+        },
+        {
+          "name": "freezeRecord",
+          "docs": [
+            "`init`, not `init_if_needed`: an account frozen once is not frozen",
+            "again on top. A second case against the same account is a matter for",
+            "the case system; here the freeze either exists or it does not, and one",
+            "record says by whom and why."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "officer",
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "freezeHolderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "initializeExtraAccountMetaList",
       "docs": [
         "Creates the `ExtraAccountMetaList` — the list of accounts the token",
@@ -4593,10 +5218,10 @@ export const IDL: IssuerForge = {
         {
           "name": "holderStatus",
           "docs": [
-            "`init_if_needed`, because an account is legitimately thawed a second",
-            "time — after an officer's freeze. A repeat creation overwrites",
-            "nothing: what is written is decided by `updated_at`, not by the",
-            "account's existence."
+            "`init_if_needed`, because a holder is legitimately thawed a second",
+            "time — for another token account of the same wallet, which starts",
+            "frozen like any other. A repeat creation overwrites nothing: what is",
+            "written is decided by `updated_at`, not by the account's existence."
           ],
           "writable": true,
           "pda": {
@@ -4679,6 +5304,39 @@ export const IDL: IssuerForge = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "freezeRecord",
+          "docs": [
+            "Where an officer's freeze of this token account would be (T026). Only",
+            "its emptiness is read: while the record exists, the account is frozen",
+            "by a compliance action, and a routine thaw — which the operational key",
+            "may sign — must not lift it. `unfreeze_holder` does, with the",
+            "officer's signature.",
+            "",
+            "Last in the list, so that the accounts before it keep the positions",
+            "the indexer already reads them at.",
+            "its data is read, and only this program can put data at it."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
         }
       ],
       "args": [
@@ -4687,6 +5345,126 @@ export const IDL: IssuerForge = {
           "type": {
             "defined": {
               "name": "thawHolderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unfreezeHolder",
+      "docs": [
+        "An officer lifts a freeze (FR-014), with a reason of its own.",
+        "",
+        "The account returns to the state it was frozen in: thawed if it was",
+        "thawed, still waiting for onboarding if it had not been."
+      ],
+      "discriminator": [
+        20,
+        170,
+        98,
+        114,
+        27,
+        133,
+        139,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "tokenAccount",
+          "writable": true
+        },
+        {
+          "name": "freezeRecord",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rentRecipient",
+          "docs": [
+            "Whoever paid for the record gets the rent back, not whoever lifts it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "officer",
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "unfreezeHolderArgs"
             }
           }
         }
@@ -4705,6 +5483,19 @@ export const IDL: IssuerForge = {
         173,
         240,
         41
+      ]
+    },
+    {
+      "name": "freezeRecord",
+      "discriminator": [
+        33,
+        176,
+        111,
+        25,
+        29,
+        174,
+        180,
+        197
       ]
     },
     {
@@ -5086,6 +5877,26 @@ export const IDL: IssuerForge = {
       "code": 6059,
       "name": "quorumSourceAmbiguous",
       "msg": "approvals come either from a proposal or from this transaction, not both"
+    },
+    {
+      "code": 6060,
+      "name": "reasonCodeMissing",
+      "msg": "a compliance action must state its reason code"
+    },
+    {
+      "code": 6061,
+      "name": "caseReferenceInvalid",
+      "msg": "case reference must be printable ASCII, then zeros, and not empty"
+    },
+    {
+      "code": 6062,
+      "name": "notAnOfficer",
+      "msg": "signer is not a compliance officer of this issuer"
+    },
+    {
+      "code": 6063,
+      "name": "holderFrozenByOfficer",
+      "msg": "an officer froze this account; only an officer can lift the freeze"
     }
   ],
   "types": [
@@ -5283,6 +6094,47 @@ export const IDL: IssuerForge = {
       }
     },
     {
+      "name": "complianceReason",
+      "docs": [
+        "Why a compliance action was taken (FR-017): a reason code and the case it",
+        "belongs to.",
+        "",
+        "**Introduced by the freeze (T026), meant for all four actions.** Seizure",
+        "and pause (T027, T028) take the same type, and T029 adds what is left of",
+        "FR-017 and FR-019c — the event with the named signers — on top of it",
+        "rather than beside it. One type is what keeps \"an action without a reason",
+        "is not executed\" one rule instead of four.",
+        "",
+        "The catalogue of codes is not here. The program cannot tell a real reason",
+        "from an invented one; what it can do is refuse an action whose reason was",
+        "left empty, which is the acceptance scenario the specification states."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "code",
+            "docs": [
+              "The issuer's reason code. Zero is \"not stated\"."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "caseRef",
+            "docs": [
+              "Printable ASCII, then zeros."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "createTokenArgs",
       "type": {
         "kind": "struct",
@@ -5378,6 +6230,115 @@ export const IDL: IssuerForge = {
                 "name": "holderStatusInput"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "freezeHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "freezeRecord",
+      "docs": [
+        "An officer's freeze of one token account. PDA: `[\"freeze\", token_account]`.",
+        "",
+        "**Why an account at all, when the token account already says `Frozen`.**",
+        "Because it says the same thing in two situations the program must tell",
+        "apart: an account that was never thawed (`DefaultAccountState = Frozen`,",
+        "the onboarding queue) and an account an officer froze. The first is",
+        "lifted by a routine `thaw_holder`, which the operational key may sign; the",
+        "second must not be, or a key that FR-035 keeps away from compliance",
+        "actions would undo one with a routine call. The existence of this account",
+        "is the difference, and `thaw_holder` refuses while it exists.",
+        "",
+        "**Keyed by the token account, not by the wallet.** A freeze in Token-2022",
+        "is a property of one account, and FR-014 speaks of an individual account.",
+        "A wallet with a second account keeps it; stopping the person as a whole is",
+        "what `denied` in the status registry is for (FR-008a1), and the hook reads",
+        "that on every transfer from any of their accounts.",
+        "",
+        "Closed by `unfreeze_holder`. The named record of who froze it and why does",
+        "not need this account to survive: it is in the `freeze_holder` instruction",
+        "itself, which is where the indexer reads every action from."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "The next three duplicate what the seeds and the token account already",
+              "say, for the same reason `HolderStatus` does: the console lists an",
+              "issuer's frozen accounts with `getProgramAccounts` and a filter by",
+              "mint, and a filter cannot be made on seeds."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "tokenAccount",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "docs": [
+              "The token account's owner at the time of the freeze."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "officer",
+            "docs": [
+              "The officer who froze it."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "docs": [
+              "Who paid the rent, and so who gets it back."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          },
+          {
+            "name": "frozenAt",
+            "type": "i64"
+          },
+          {
+            "name": "wasThawed",
+            "docs": [
+              "Whether the account was thawed when the officer froze it.",
+              "",
+              "Lifting the freeze returns the account to where it was, not to",
+              "\"thawed\": an account frozen before it was ever onboarded goes back to",
+              "the onboarding queue, and a thaw here would skip the step that creates",
+              "its status — the one a transfer is refused without."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -6058,7 +7019,8 @@ export const IDL: IssuerForge = {
               "The initial status — only for the **first** thaw.",
               "",
               "`None` means \"the record already exists, I am not touching it\": that",
-              "is what a repeat thaw after an officer's freeze looks like (T026). A",
+              "is what thawing a second token account of an onboarded holder looks",
+              "like. A",
               "mismatch between the intent and the account state is rejected, not",
               "interpreted, so no call changes the status silently."
             ],
@@ -6206,6 +7168,22 @@ export const IDL: IssuerForge = {
                 "u8",
                 8
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unfreezeHolderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
             }
           }
         ]

@@ -146,6 +146,28 @@ pub mod issuer_forge {
         instructions::thaw_holder::set_status_handler(ctx, args)
     }
 
+    /// An officer freezes one token account (FR-014). A frozen account can
+    /// neither send nor receive.
+    ///
+    /// One signature, the officer's, and a stated reason and case (FR-017).
+    /// The freeze leaves a `FreezeRecord` behind, and while it exists the
+    /// routine `thaw_holder` refuses the account: otherwise the platform's
+    /// operational key could undo a compliance action with a routine one.
+    pub fn freeze_holder(ctx: Context<FreezeHolder>, args: FreezeHolderArgs) -> Result<()> {
+        instructions::freeze::freeze_handler(ctx, args)
+    }
+
+    /// An officer lifts a freeze (FR-014), with a reason of its own.
+    ///
+    /// The account returns to the state it was frozen in: thawed if it was
+    /// thawed, still waiting for onboarding if it had not been.
+    pub fn unfreeze_holder(
+        ctx: Context<UnfreezeHolder>,
+        args: UnfreezeHolderArgs,
+    ) -> Result<()> {
+        instructions::freeze::unfreeze_handler(ctx, args)
+    }
+
     /// Publishes a reserve attestation (FR-021, FR-024, FR-026).
     ///
     /// Signed by exactly the current attestor of this token: an attestation

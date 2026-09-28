@@ -1,5 +1,6 @@
 pub mod attest_reserve;
 pub mod create_token;
+pub mod freeze;
 pub mod initialize_issuer;
 pub mod proposal;
 pub mod set_policy;
@@ -12,6 +13,7 @@ pub mod thaw_holder;
 // by full path inside the crate.
 pub use attest_reserve::*;
 pub use create_token::*;
+pub use freeze::*;
 pub use initialize_issuer::*;
 pub use proposal::*;
 pub use set_policy::*;

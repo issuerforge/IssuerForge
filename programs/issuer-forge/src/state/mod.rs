@@ -1,3 +1,5 @@
+pub mod action;
+pub mod freeze;
 pub mod holder;
 pub mod issuer;
 pub mod policy;
@@ -5,6 +7,8 @@ pub mod proposal;
 pub mod reserve;
 pub mod token;
 
+pub use action::*;
+pub use freeze::*;
 pub use holder::*;
 pub use issuer::*;
 pub use policy::*;
