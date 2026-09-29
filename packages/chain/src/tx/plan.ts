@@ -38,6 +38,7 @@ export const TX_STEPS = [
   'set-policy',
   'freeze-holder',
   'unfreeze-holder',
+  'seize',
 ] as const
 
 export type TxStep = (typeof TX_STEPS)[number]

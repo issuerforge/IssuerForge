@@ -50,8 +50,8 @@ use crate::state::{
 ///   the rule, not the token.
 /// - `DefaultAccountState = Frozen` — an account the issuer did not onboard
 ///   receives no funds. This is what makes `thaw_holder` meaningful.
-/// - `PermanentDelegate` — seizure under an order (FR-017), by quorum and
-///   from T027.
+/// - `PermanentDelegate` — seizure under an order (FR-015), by quorum
+///   (`seize.rs`): the delegate burns from the holder's account.
 /// - `Pausable` — the authoritative pause of circulation (FR-016);
 ///   `TokenConfig.paused_at` remains a mirror for the screens, not a source
 ///   of truth.

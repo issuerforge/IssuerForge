@@ -97,6 +97,9 @@ function app(fakes: Fakes = {}) {
           ? proposal()
           : undefined,
     body: async (view) => {
+      if (view.action.kind === 'seize') {
+        return { ...view.action, tokenAccount: new PublicKey(view.action.tokenAccount) }
+      }
       const policy = 'body' in fakes ? fakes.body : STRICT
       return policy === undefined
         ? undefined
@@ -166,6 +169,29 @@ function instructionOf(transaction: TxJson) {
 
 const proposeBody = { action: { kind: 'set-policy', policy: STRICT }, termSeconds: 3 * 86_400 }
 
+/** The account the order names; any address the tests do not otherwise use. */
+const SUSPECT_ACCOUNT = 'SysvarRecentB1ockHashes11111111111111111111'
+const REASON = { code: 4, caseRef: 'FIU-NG/2026/004117' }
+/** Past 2^53: a `number` anywhere between the body and the chain would round it. */
+const SEIZED = 2n ** 60n + 7n
+
+const seizeBody = (over: Record<string, unknown> = {}) => ({
+  action: {
+    kind: 'seize',
+    tokenAccount: SUSPECT_ACCOUNT,
+    amount: SEIZED.toString(),
+    reason: REASON,
+    ...over,
+  },
+  termSeconds: 3 * 86_400,
+})
+
+const seizure = (over: Partial<ProposalView> = {}) =>
+  proposal({
+    action: { kind: 'seize', tokenAccount: SUSPECT_ACCOUNT, amount: SEIZED, reason: REASON },
+    ...over,
+  })
+
 describe('raising a proposal', () => {
   it('proposes the next version at the nonce the server chose, signed by the proposer alone', async () => {
     const response = await post({}, `/api/tokens/${MINT}/actions`, proposeBody)
@@ -183,8 +209,9 @@ describe('raising a proposal', () => {
 
     const decoded = decodeProposedAction(instructionOf(transaction).data)
     expect(decoded?.nonce).toBe(NONCE)
-    expect(decoded?.action.version).toBe(2)
-    expect(toHex(rulesHash(decoded?.action.policy ?? OPEN_POLICY))).toBe(toHex(rulesHash(STRICT)))
+    if (decoded?.action.kind !== 'set-policy') throw new Error('expected a policy body')
+    expect(decoded.action.version).toBe(2)
+    expect(toHex(rulesHash(decoded.action.policy))).toBe(toHex(rulesHash(STRICT)))
   })
 
   it('an observer cannot raise one', async () => {
@@ -231,6 +258,37 @@ describe('raising a proposal', () => {
   })
 })
 
+describe('raising a seizure', () => {
+  it('proposes the account, the exact amount and the reason, with no policy version', async () => {
+    const response = await post({}, `/api/tokens/${MINT}/actions`, seizeBody())
+    expect(response.status).toBe(200)
+
+    const body = await jsonOf(response)
+    expect(body.proposal).toBe(PROPOSAL)
+    expect(body).not.toHaveProperty('version')
+
+    const decoded = decodeProposedAction(instructionOf(body.transaction as unknown as TxJson).data)
+    if (decoded?.action.kind !== 'seize') throw new Error('expected a seizure body')
+    expect(decoded.action.tokenAccount.toBase58()).toBe(SUSPECT_ACCOUNT)
+    expect(decoded.action.amount).toBe(SEIZED)
+    expect(decoded.action.reason).toEqual(REASON)
+  })
+
+  it('refuses a seizure of nothing, without a reason code, or with a case the program would refuse', async () => {
+    for (const over of [
+      { amount: '0' },
+      { amount: '1.5' },
+      { reason: { ...REASON, code: 0 } },
+      { reason: { ...REASON, caseRef: '' } },
+      { reason: { ...REASON, caseRef: 'кейс-1' } },
+      { reason: { ...REASON, caseRef: 'A'.repeat(33) } },
+    ]) {
+      const response = await post({}, `/api/tokens/${MINT}/actions`, seizeBody(over))
+      expect(response.status, JSON.stringify(over)).toBe(400)
+    }
+  })
+})
+
 describe('reading proposals', () => {
   it('lists them with the approvers named and the standing computed', async () => {
     const response = await get({ proposal: proposal() }, `/api/tokens/${MINT}/actions`)
@@ -252,6 +310,21 @@ describe('reading proposals', () => {
     const policy = (body.body as unknown as { policy: PolicyRules }).policy
 
     expect(Buffer.from(encodeRules(policy))).toEqual(Buffer.from(encodeRules(STRICT)))
+  })
+
+  it('a seizure is listed and read with its amount as a u64 string', async () => {
+    const listed = await jsonOf(await get({ proposal: seizure() }, `/api/tokens/${MINT}/actions`))
+    const [first] = listed.proposals as unknown as { action: unknown }[]
+    const action = {
+      kind: 'seize',
+      tokenAccount: SUSPECT_ACCOUNT,
+      amount: SEIZED.toString(),
+      reason: REASON,
+    }
+    expect(first?.action).toEqual(action)
+
+    const one = await jsonOf(await get({ proposal: seizure() }, `/api/actions/${PROPOSAL}`))
+    expect(one.body).toEqual(action)
   })
 
   it('a body the node no longer has is an internal failure, not an empty policy', async () => {
@@ -336,6 +409,32 @@ describe('executing', () => {
       required: 2,
       counted: 1,
     })
+  })
+
+  it('assembles seize with the approvers named after the accounts, only the payer signing', async () => {
+    const response = await post(
+      { proposal: seizure({ approvals: [OFFICER, ADMIN] }) },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    const { accounts } = instructionOf(transaction)
+
+    expect(transaction.step).toBe('seize')
+    expect(transaction.signers).toEqual([ADMIN])
+    expect(accounts[3]).toBe(SUSPECT_ACCOUNT)
+    expect(accounts[5]).toBe(PROPOSAL)
+    // FR-019c: the order is the proposal's, so the journal names them as the
+    // program counted them. The payer is also the second approver here, and
+    // still sits in its place.
+    expect(accounts.slice(10)).toEqual([OFFICER, ADMIN])
+  })
+
+  it('a seizure one approval short is not executed', async () => {
+    const response = await post({ proposal: seizure() }, `/api/actions/${PROPOSAL}/execute`)
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toMatchObject({ state: 'open' })
   })
 
   it('a proposal for a version that is no longer next can only lapse', async () => {

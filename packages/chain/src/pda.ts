@@ -1,5 +1,9 @@
 import { U64_MAX } from '@forge/shared/primitives'
-import { getExtraAccountMetaAddress } from '@solana/spl-token'
+import {
+  getAssociatedTokenAddressSync,
+  getExtraAccountMetaAddress,
+  TOKEN_2022_PROGRAM_ID,
+} from '@solana/spl-token'
 import { PublicKey } from '@solana/web3.js'
 import { IDL } from './idl/issuer-forge.ts'
 
@@ -143,6 +147,20 @@ export function velocityCounterPda(
  */
 export function freezeRecordPda(tokenAccount: PublicKey, programId = PROGRAM_ID): PublicKey {
   return derive([SEED.freeze, tokenAccount.toBytes()], programId)
+}
+
+/**
+ * The seized-funds vault (FR-020): the `TokenConfig` PDA's associated account
+ * under Token-2022. Not a seed of ours — `seize` pins the account to exactly
+ * this ATA, and its balance is the seized total.
+ */
+export function seizureVaultAddress(mint: PublicKey, programId = PROGRAM_ID): PublicKey {
+  return getAssociatedTokenAddressSync(
+    mint,
+    tokenConfigPda(mint, programId),
+    true,
+    TOKEN_2022_PROGRAM_ID,
+  )
 }
 
 /** `ActionProposal` — `["proposal", mint, nonce]`, nonce `u64`. */

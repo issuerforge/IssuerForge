@@ -168,6 +168,17 @@ pub mod issuer_forge {
         instructions::freeze::unfreeze_handler(ctx, args)
     }
 
+    /// Seizes funds from a named account under an order (FR-015), without
+    /// its owner's signature.
+    ///
+    /// Only by a matured proposal (FR-019): the amount is burned from the
+    /// account by the permanent delegate and minted into the issuer's vault,
+    /// whose balance is the seized total kept apart from circulation
+    /// (FR-020). A frozen account is seized and stays frozen.
+    pub fn seize(ctx: Context<Seize>, args: SeizeArgs) -> Result<()> {
+        instructions::seize::handler(ctx, args)
+    }
+
     /// Publishes a reserve attestation (FR-021, FR-024, FR-026).
     ///
     /// Signed by exactly the current attestor of this token: an attestation

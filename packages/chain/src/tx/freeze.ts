@@ -13,47 +13,7 @@ import type { PublicKey } from '@solana/web3.js'
 import { freezeRecordPda, issuerConfigPda, tokenConfigPda } from '../pda.ts'
 import type { ForgeProgram } from '../program.ts'
 import { type TxPlan, toPlan } from './plan.ts'
-
-/** The width of `ComplianceReason.case_ref` in `state/action.rs`. */
-export const CASE_REF_BYTES = 32
-
-/** A reason code is a `u16`, and zero is "not stated" — the program refuses it. */
-export const REASON_CODE_MAX = 0xffff
-
-/** Why a compliance action was taken (FR-017). */
-export type ComplianceReasonInput = {
-  readonly code: number
-  /** Printable ASCII, 1…32 characters. */
-  readonly caseRef: string
-}
-
-/**
- * The case reference as the program stores it: the bytes, then zeros.
- *
- * Checked here with the same rule the program applies, so a reference the
- * program would refuse fails at assembly rather than after a signature.
- */
-export function caseRefBytes(caseRef: string): number[] {
-  if (caseRef.length === 0 || caseRef.length > CASE_REF_BYTES) {
-    throw new RangeError(`case reference must be 1…${CASE_REF_BYTES} characters`)
-  }
-  const bytes: number[] = []
-  for (const char of caseRef) {
-    const byte = char.charCodeAt(0)
-    if (byte < 0x20 || byte > 0x7e) {
-      throw new RangeError(`case reference must be printable ASCII: ${JSON.stringify(caseRef)}`)
-    }
-    bytes.push(byte)
-  }
-  return [...bytes, ...new Array<number>(CASE_REF_BYTES - bytes.length).fill(0)]
-}
-
-function toReason(reason: ComplianceReasonInput) {
-  if (!Number.isInteger(reason.code) || reason.code < 1 || reason.code > REASON_CODE_MAX) {
-    throw new RangeError(`reason code must be 1…${REASON_CODE_MAX}: ${reason.code}`)
-  }
-  return { code: reason.code, caseRef: caseRefBytes(reason.caseRef) }
-}
+import { type ComplianceReasonInput, toReason } from './reason.ts'
 
 export type FreezeHolderArgs = {
   readonly issuerId: PublicKey

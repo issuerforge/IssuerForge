@@ -176,6 +176,14 @@ pub enum ForgeError {
     NotAnOfficer,
     #[msg("an officer froze this account; only an officer can lift the freeze")]
     HolderFrozenByOfficer,
+    #[msg("a seizure must take a non-zero amount")]
+    SeizureAmountZero,
+    #[msg("the seized-funds vault cannot be seized from")]
+    SeizureFromTheVault,
+    #[msg("vault is not this token's seized-funds account")]
+    SeizureVaultMismatch,
+    #[msg("the approvers of the proposal must be listed, in order, after the accounts")]
+    SeizureApproversNotListed,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -282,6 +290,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::HolderFrozenByOfficer),
             VALIDATION_ERROR_BASE + 50
+        );
+        // The first and the last of those added by T027.
+        assert_eq!(
+            u32::from(ForgeError::SeizureAmountZero),
+            VALIDATION_ERROR_BASE + 51
+        );
+        assert_eq!(
+            u32::from(ForgeError::SeizureApproversNotListed),
+            VALIDATION_ERROR_BASE + 54
         );
     }
 }

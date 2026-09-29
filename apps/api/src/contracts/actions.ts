@@ -22,12 +22,35 @@ export const MAX_PROPOSAL_TERM_SECONDS = 30 * 24 * 60 * 60
 // ─── Bodies ──────────────────────────────────────────────────────────────────
 
 /**
- * What is proposed. The version is **not** in the body: it is the next after
- * the token's current one, and the api reads that from the chain. A version
- * typed by a person would only be a second way to be wrong about it.
+ * `ComplianceReason` from `state/action.rs`: a code that is not zero, and a
+ * case reference of printable ASCII the program stores in 32 bytes.
+ */
+export const complianceReasonSchema = z.strictObject({
+  code: z.number().int().min(1, 'a reason code must be stated').max(0xffff),
+  caseRef: z
+    .string()
+    .regex(/^[\x20-\x7e]{1,32}$/, 'a case reference is 1…32 printable ASCII characters'),
+})
+
+/**
+ * What is proposed.
+ *
+ * For a policy change the version is **not** in the body: it is the next
+ * after the token's current one, and the api reads that from the chain. A
+ * version typed by a person would only be a second way to be wrong about it.
+ *
+ * For a seizure the amount is exact and in the smallest unit (FR-015): the
+ * approvers authorise a number, and the execution fails rather than take
+ * less.
  */
 export const proposedActionBodySchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
+  z.strictObject({
+    kind: z.literal('seize'),
+    tokenAccount: addressSchema,
+    amount: u64Schema.refine((value) => value !== '0', 'a seizure must take a non-zero amount'),
+    reason: complianceReasonSchema,
+  }),
 ])
 
 export const proposeActionBodySchema = z.strictObject({
@@ -52,16 +75,26 @@ export const signerQuerySchema = z.object({ signer: addressSchema.optional() })
 
 export const PROPOSAL_STATES = ['open', 'ready', 'blocked', 'executed', 'expired'] as const
 
+export const proposalActionSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('set-policy'),
+    version: z.number().int().positive(),
+    rulesHash: z.string().regex(/^[0-9a-f]{64}$/),
+  }),
+  z.object({
+    kind: z.literal('seize'),
+    tokenAccount: addressSchema,
+    amount: u64Schema,
+    reason: complianceReasonSchema,
+  }),
+])
+
 export const proposalSchema = z.object({
   address: addressSchema,
   mint: addressSchema,
   nonce: u64Schema,
   payer: addressSchema,
-  action: z.object({
-    kind: z.literal('set-policy'),
-    version: z.number().int().positive(),
-    rulesHash: z.string().regex(/^[0-9a-f]{64}$/),
-  }),
+  action: proposalActionSchema,
   /**
    * Named, in signing order (FR-019c): "two of three" is not an answer to
    * "who authorised this".
@@ -84,7 +117,7 @@ export const proposalListResponseSchema = z.object({ proposals: z.array(proposal
 /** One proposal with its body — what an approver reads before signing. */
 export const proposalDetailResponseSchema = z.object({
   proposal: proposalSchema,
-  body: z.object({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
+  body: proposedActionBodySchema,
 })
 
 /** Every handler that assembles a transaction answers in this shape. */
@@ -99,7 +132,8 @@ export type ActionTransactionResponse = z.infer<typeof actionTransactionResponse
 
 export const proposeActionResponseSchema = actionTransactionResponseSchema.extend({
   nonce: u64Schema,
-  version: z.number().int().positive(),
+  /** The policy version a policy change is bound to; absent for a seizure. */
+  version: z.number().int().positive().optional(),
 })
 
 export type ProposeActionResponse = z.infer<typeof proposeActionResponseSchema>

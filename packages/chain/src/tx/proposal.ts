@@ -1,5 +1,6 @@
 // The issuer's quorum actions: raising a proposal, approving it, closing it,
-// and the action itself — today only a policy change (FR-009, FR-019b).
+// and the policy change it executes (FR-009, FR-019b). The seizure executes
+// through `seize.ts`.
 //
 // **Two paths to one action, never both at once** (T025). `set_policy` takes
 // its quorum either from the signers of the same transaction or from a matured
@@ -7,38 +8,65 @@
 // and the builder makes the union unrepresentable instead of leaving it to
 // the network — `PolicyQuorum` is one or the other.
 //
-// **The body travels in `propose`, the account keeps its digest.** So the
-// rules an approver is asked to sign are read back from the instruction data
-// of the proposing transaction (`decodeProposedAction`), and the execution
-// must carry exactly those bytes again: the program recomputes the digest and
-// refuses anything else (`ProposalBodyMismatch`).
+// **The body of a policy change travels in `propose`, the account keeps its
+// digest.** So the rules an approver is asked to sign are read back from the
+// instruction data of the proposing transaction (`decodeProposedAction`), and
+// the execution must carry exactly those bytes again: the program recomputes
+// the digest and refuses anything else (`ProposalBodyMismatch`). A seizure is
+// small enough that the account keeps it whole.
 import { BN, BorshInstructionCoder } from '@coral-xyz/anchor'
 import { decodeRules, encodeRules } from '@forge/policy/layout'
 import type { PolicyRules } from '@forge/policy/model'
 import { U64_MAX } from '@forge/shared/primitives'
-import type { PublicKey } from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
 import { IDL } from '../idl/issuer-forge.ts'
 import { actionProposalPda, issuerConfigPda, policyConfigPda, tokenConfigPda } from '../pda.ts'
 import type { ForgeProgram } from '../program.ts'
 import { type TxPlan, toPlan } from './plan.ts'
+import { type ComplianceReasonInput, fromReason, toReason } from './reason.ts'
 
 /**
  * What is proposed, with its body in full — the TS side of `ProposedAction`.
  *
- * A union with one member rather than a bare policy: seizure and pause
- * (`T027`, `T028`) each append their kind — the freeze takes no quorum — and a caller that switches over `kind` then fails to compile
- * instead of silently treating a seizure as a policy change.
+ * A union, so that a caller switching over `kind` fails to compile when a
+ * kind is appended (the pause, `T028`) instead of silently treating it as
+ * one it knows. The freeze takes no quorum and is not here.
  */
-export type ProposedActionInput = {
-  readonly kind: 'set-policy'
-  /** The next policy version — exactly `TokenConfig.policy_version + 1`. */
-  readonly version: number
-  readonly policy: PolicyRules
-}
+export type ProposedActionInput =
+  | {
+      readonly kind: 'set-policy'
+      /** The next policy version — exactly `TokenConfig.policy_version + 1`. */
+      readonly version: number
+      readonly policy: PolicyRules
+    }
+  | {
+      readonly kind: 'seize'
+      /** The account the order names — a token account, not its owner. */
+      readonly tokenAccount: PublicKey
+      /** Exact, in the smallest unit: the execution fails rather than take less. */
+      readonly amount: bigint
+      readonly reason: ComplianceReasonInput
+    }
 
 /** The Anchor shape of `ProposedAction`. The rules as canonical bytes, as the program hashes them. */
 function toProposedAction(action: ProposedActionInput) {
-  return { setPolicy: { version: action.version, rules: Buffer.from(encodeRules(action.policy)) } }
+  switch (action.kind) {
+    case 'set-policy':
+      return {
+        setPolicy: { version: action.version, rules: Buffer.from(encodeRules(action.policy)) },
+      }
+    case 'seize':
+      if (action.amount <= 0n || action.amount > U64_MAX) {
+        throw new RangeError(`amount must be 1…u64 max: ${action.amount}`)
+      }
+      return {
+        seize: {
+          tokenAccount: action.tokenAccount,
+          amount: new BN(action.amount.toString()),
+          reason: toReason(action.reason),
+        },
+      }
+  }
 }
 
 export type ProposeActionArgs = {
@@ -203,22 +231,44 @@ export function decodeProposedAction(
   if (decoded === null || decoded.name !== 'proposeAction') return undefined
 
   const args = (decoded.data as { args: DecodedProposeArgs }).args
-  const setPolicy = args.action.setPolicy
-  if (setPolicy === undefined) return undefined
+  const nonce = BigInt(args.nonce.toString())
+  const { setPolicy, seize } = args.action
 
-  return {
-    nonce: BigInt(args.nonce.toString()),
-    action: {
-      kind: 'set-policy',
-      version: setPolicy.version,
-      // Through the same decoder the program's layout mirrors: bytes that do
-      // not decode could not have passed `propose_action`'s own validation.
-      policy: decodeRules(Uint8Array.from(setPolicy.rules)),
-    },
+  if (setPolicy !== undefined) {
+    return {
+      nonce,
+      action: {
+        kind: 'set-policy',
+        version: setPolicy.version,
+        // Through the same decoder the program's layout mirrors: bytes that
+        // do not decode could not have passed `propose_action`'s own
+        // validation.
+        policy: decodeRules(Uint8Array.from(setPolicy.rules)),
+      },
+    }
   }
+  if (seize !== undefined) {
+    return {
+      nonce,
+      action: {
+        kind: 'seize',
+        tokenAccount: new PublicKey(seize.tokenAccount.toBase58()),
+        amount: BigInt(seize.amount.toString()),
+        reason: fromReason(seize.reason),
+      },
+    }
+  }
+  return undefined
 }
 
 type DecodedProposeArgs = {
   readonly nonce: { toString(): string }
-  readonly action: { readonly setPolicy?: { readonly version: number; readonly rules: Uint8Array } }
+  readonly action: {
+    readonly setPolicy?: { readonly version: number; readonly rules: Uint8Array }
+    readonly seize?: {
+      readonly tokenAccount: { toBase58(): string }
+      readonly amount: { toString(): string }
+      readonly reason: { readonly code: number; readonly caseRef: number[] }
+    }
+  }
 }

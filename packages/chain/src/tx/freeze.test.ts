@@ -7,12 +7,11 @@ import { createForgeProgram } from '../program.ts'
 import {
   buildFreezeHolder,
   buildUnfreezeHolder,
-  CASE_REF_BYTES,
-  caseRefBytes,
   type FreezeHolderArgs,
   type UnfreezeHolderArgs,
 } from './freeze.ts'
 import { compileTransaction, MAX_TRANSACTION_BYTES, type TxPlan, transactionBytes } from './plan.ts'
+import { CASE_REF_BYTES, caseRefBytes } from './reason.ts'
 
 const program = createForgeProgram(new Connection('http://127.0.0.1:8899'))
 

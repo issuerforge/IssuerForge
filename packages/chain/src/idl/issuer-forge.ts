@@ -1148,6 +1148,159 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "seize",
+      "docs": [
+        "Seizes funds from a named account under an order (FR-015), without",
+        "its owner's signature.",
+        "",
+        "Only by a matured proposal (FR-019): the amount is burned from the",
+        "account by the permanent delegate and minted into the issuer's vault,",
+        "whose balance is the seized total kept apart from circulation",
+        "(FR-020). A frozen account is seized and stays frozen."
+      ],
+      "discriminator": [
+        129,
+        159,
+        143,
+        31,
+        161,
+        224,
+        241,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Writable: the burn lowers its supply and the mint raises it back."
+          ],
+          "writable": true
+        },
+        {
+          "name": "source",
+          "docs": [
+            "The account the order names, whoever owns it. Which account it is,",
+            "is part of what the quorum approved."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "ATA program can create an account at that address, and it creates it",
+            "as a token account of this mint owned by that PDA."
+          ],
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for the vault on the first seizure. Grants nothing — the quorum",
+            "is in `proposal`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "seizeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setHolderStatus",
       "docs": [
         "Updates an address's status in the issuer's own registry (FR-008a,",
@@ -2284,6 +2437,26 @@ export type IssuerForge = {
       "code": 6063,
       "name": "holderFrozenByOfficer",
       "msg": "an officer froze this account; only an officer can lift the freeze"
+    },
+    {
+      "code": 6064,
+      "name": "seizureAmountZero",
+      "msg": "a seizure must take a non-zero amount"
+    },
+    {
+      "code": 6065,
+      "name": "seizureFromTheVault",
+      "msg": "the seized-funds vault cannot be seized from"
+    },
+    {
+      "code": 6066,
+      "name": "seizureVaultMismatch",
+      "msg": "vault is not this token's seized-funds account"
+    },
+    {
+      "code": 6067,
+      "name": "seizureApproversNotListed",
+      "msg": "the approvers of the proposal must be listed, in order, after the accounts"
     }
   ],
   "types": [
@@ -2300,7 +2473,14 @@ export type IssuerForge = {
         "",
         "The account is sized by the largest variant (`InitSpace` on an enum is",
         "`1 + max`), so a variant that carries a lot makes every proposal pay for",
-        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules."
+        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules —",
+        "and why `Seize` holds its 74 bytes in the clear: a digest would save 42",
+        "bytes of rent and cost every approver the ability to read, from the",
+        "account itself, whose funds and how much they are authorising.",
+        "",
+        "The size grew with `Seize` and that breaks nothing already on chain:",
+        "Borsh writes a variant at its own length, so an older proposal reads the",
+        "same, and nothing looks proposals up by `dataSize`."
       ],
       "type": {
         "kind": "enum",
@@ -2319,6 +2499,27 @@ export type IssuerForge = {
                     "u8",
                     32
                   ]
+                }
+              }
+            ]
+          },
+          {
+            "name": "seize",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
                 }
               }
             ]
@@ -3209,6 +3410,27 @@ export type IssuerForge = {
                 "type": "bytes"
               }
             ]
+          },
+          {
+            "name": "seize",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
           }
         ]
       }
@@ -3315,6 +3537,32 @@ export type IssuerForge = {
                 "u8",
                 22
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "seizeArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Repeated from the proposal on purpose. The program compares the two;",
+              "the indexer and the journal verifier then read the whole seizure from",
+              "this one instruction instead of joining it with the `propose` days",
+              "earlier."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
             }
           }
         ]
@@ -4761,6 +5009,159 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "seize",
+      "docs": [
+        "Seizes funds from a named account under an order (FR-015), without",
+        "its owner's signature.",
+        "",
+        "Only by a matured proposal (FR-019): the amount is burned from the",
+        "account by the permanent delegate and minted into the issuer's vault,",
+        "whose balance is the seized total kept apart from circulation",
+        "(FR-020). A frozen account is seized and stays frozen."
+      ],
+      "discriminator": [
+        129,
+        159,
+        143,
+        31,
+        161,
+        224,
+        241,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Writable: the burn lowers its supply and the mint raises it back."
+          ],
+          "writable": true
+        },
+        {
+          "name": "source",
+          "docs": [
+            "The account the order names, whoever owns it. Which account it is,",
+            "is part of what the quorum approved."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "ATA program can create an account at that address, and it creates it",
+            "as a token account of this mint owned by that PDA."
+          ],
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for the vault on the first seizure. Grants nothing — the quorum",
+            "is in `proposal`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "seizeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setHolderStatus",
       "docs": [
         "Updates an address's status in the issuer's own registry (FR-008a,",
@@ -5897,6 +6298,26 @@ export const IDL: IssuerForge = {
       "code": 6063,
       "name": "holderFrozenByOfficer",
       "msg": "an officer froze this account; only an officer can lift the freeze"
+    },
+    {
+      "code": 6064,
+      "name": "seizureAmountZero",
+      "msg": "a seizure must take a non-zero amount"
+    },
+    {
+      "code": 6065,
+      "name": "seizureFromTheVault",
+      "msg": "the seized-funds vault cannot be seized from"
+    },
+    {
+      "code": 6066,
+      "name": "seizureVaultMismatch",
+      "msg": "vault is not this token's seized-funds account"
+    },
+    {
+      "code": 6067,
+      "name": "seizureApproversNotListed",
+      "msg": "the approvers of the proposal must be listed, in order, after the accounts"
     }
   ],
   "types": [
@@ -5913,7 +6334,14 @@ export const IDL: IssuerForge = {
         "",
         "The account is sized by the largest variant (`InitSpace` on an enum is",
         "`1 + max`), so a variant that carries a lot makes every proposal pay for",
-        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules."
+        "it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules —",
+        "and why `Seize` holds its 74 bytes in the clear: a digest would save 42",
+        "bytes of rent and cost every approver the ability to read, from the",
+        "account itself, whose funds and how much they are authorising.",
+        "",
+        "The size grew with `Seize` and that breaks nothing already on chain:",
+        "Borsh writes a variant at its own length, so an older proposal reads the",
+        "same, and nothing looks proposals up by `dataSize`."
       ],
       "type": {
         "kind": "enum",
@@ -5932,6 +6360,27 @@ export const IDL: IssuerForge = {
                     "u8",
                     32
                   ]
+                }
+              }
+            ]
+          },
+          {
+            "name": "seize",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
                 }
               }
             ]
@@ -6822,6 +7271,27 @@ export const IDL: IssuerForge = {
                 "type": "bytes"
               }
             ]
+          },
+          {
+            "name": "seize",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
           }
         ]
       }
@@ -6928,6 +7398,32 @@ export const IDL: IssuerForge = {
                 "u8",
                 22
               ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "seizeArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Repeated from the proposal on purpose. The program compares the two;",
+              "the indexer and the journal verifier then read the whole seizure from",
+              "this one instruction instead of joining it with the `propose` days",
+              "earlier."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
             }
           }
         ]

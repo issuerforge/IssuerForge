@@ -41,6 +41,13 @@ const quorum = (quorumN = 2): QuorumView => ({
   ],
 })
 
+const SEIZURE = {
+  kind: 'seize',
+  tokenAccount: WATCHER,
+  amount: 2n ** 60n + 7n,
+  reason: { code: 4, caseRef: 'FIU-NG/2026/004117' },
+} as const
+
 const view = (over: Partial<ProposalView> = {}): ProposalView => ({
   address: actionProposalPda(MINT, NONCE).toBase58(),
   mint: MINT.toBase58(),
@@ -97,6 +104,22 @@ describe('the body a proposal committed to', () => {
     expect(bodyMatches(view(), { kind: 'set-policy', version: 3, policy: STRICT })).toBe(false)
     expect(bodyMatches(view(), { kind: 'set-policy', version: 2, policy: OPEN_POLICY })).toBe(false)
   })
+
+  it('a seizure matches only its own account, amount and case — and never a policy', () => {
+    const seizure = view({ action: SEIZURE })
+    const body = {
+      kind: 'seize' as const,
+      tokenAccount: new PublicKey(SEIZURE.tokenAccount),
+      amount: SEIZURE.amount,
+      reason: SEIZURE.reason,
+    }
+    expect(bodyMatches(seizure, body)).toBe(true)
+    expect(bodyMatches(seizure, { ...body, amount: SEIZURE.amount + 1n })).toBe(false)
+    expect(bodyMatches(seizure, { ...body, tokenAccount: new PublicKey(ADMIN) })).toBe(false)
+    expect(bodyMatches(seizure, { ...body, reason: { code: 4, caseRef: 'OTHER' } })).toBe(false)
+    expect(bodyMatches(seizure, { kind: 'set-policy', version: 2, policy: STRICT })).toBe(false)
+    expect(bodyMatches(view(), body)).toBe(false)
+  })
 })
 
 describe('reading the body back from the node', () => {
@@ -139,8 +162,25 @@ describe('reading the body back from the node', () => {
     )
     const body = await reader.body(view())
 
-    expect(body?.version).toBe(2)
-    expect(toHex(rulesHash(body?.policy ?? OPEN_POLICY))).toBe(toHex(rulesHash(STRICT)))
+    if (body?.kind !== 'set-policy') throw new Error('expected a policy body')
+    expect(body.version).toBe(2)
+    expect(toHex(rulesHash(body.policy))).toBe(toHex(rulesHash(STRICT)))
+  })
+
+  it('reads a seizure from the account and asks the node for nothing', async () => {
+    const silent = new Proxy({} as Connection, {
+      get: () => () => {
+        throw new Error('a seizure body must not be read from the node')
+      },
+    })
+    const body = await createActionReader(silent, program).body(view({ action: SEIZURE }))
+
+    expect(body).toEqual({
+      kind: 'seize',
+      tokenAccount: new PublicKey(SEIZURE.tokenAccount),
+      amount: SEIZURE.amount,
+      reason: SEIZURE.reason,
+    })
   })
 
   it('skips approvals, failed transactions and bodies the account did not commit to', async () => {

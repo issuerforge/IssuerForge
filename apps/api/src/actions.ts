@@ -7,18 +7,21 @@
 // a person to pay for a transaction the program then refuses. So every read
 // here goes to the network, and the database has no `proposals` table.
 //
-// **The body is not in the account.** `ActionProposal` keeps a digest of the
-// rules; the rules themselves are in the data of the `propose_action` that
-// created it. `body()` reads that transaction back and **checks the digest
-// against the account** before returning anything — the rules an approver is
-// shown must be exactly the ones the program will compare against, not
-// whatever instruction happened to touch the address.
+// **A policy's body is not in the account.** `ActionProposal` keeps a digest
+// of the rules; the rules themselves are in the data of the `propose_action`
+// that created it. `body()` reads that transaction back and **checks the
+// digest against the account** before returning anything — the rules an
+// approver is shown must be exactly the ones the program will compare
+// against, not whatever instruction happened to touch the address. A
+// seizure's body is in the account whole, and `body()` reads it from there.
 //
 // The same shape as `chain.ts`: an interface plus a factory from a ready
 // connection, so the routes are tested with no node.
 import {
+  type ComplianceReasonInput,
   decodeProposedAction,
   type ForgeProgram,
+  fromReason,
   issuerConfigPda,
   PROGRAM_ID,
   type ProposedActionInput,
@@ -41,12 +44,19 @@ export interface QuorumView {
   readonly members: readonly { readonly wallet: string; readonly roles: number }[]
 }
 
-export type ProposalActionView = {
-  readonly kind: 'set-policy'
-  readonly version: number
-  /** Hex of the sha256 the program keeps in place of the rules. */
-  readonly rulesHash: string
-}
+export type ProposalActionView =
+  | {
+      readonly kind: 'set-policy'
+      readonly version: number
+      /** Hex of the sha256 the program keeps in place of the rules. */
+      readonly rulesHash: string
+    }
+  | {
+      readonly kind: 'seize'
+      readonly tokenAccount: string
+      readonly amount: bigint
+      readonly reason: ComplianceReasonInput
+    }
 
 export interface ProposalView {
   readonly address: string
@@ -91,8 +101,36 @@ export interface ActionReader {
  */
 export const PROPOSAL_HISTORY_LIMIT = 50
 
-/** Anchor's shape of the stored `ActionKind`. One variant today. */
-type StoredAction = { setPolicy?: { version: number; rulesHash: number[] } }
+/** Anchor's shape of the stored `ActionKind`: exactly one key is present. */
+type StoredAction = {
+  setPolicy?: { version: number; rulesHash: number[] }
+  seize?: {
+    tokenAccount: PublicKey
+    amount: { toString(): string }
+    reason: { code: number; caseRef: number[] }
+  }
+}
+
+function toActionView(address: PublicKey, action: StoredAction): ProposalActionView {
+  if (action.setPolicy !== undefined) {
+    return {
+      kind: 'set-policy',
+      version: action.setPolicy.version,
+      rulesHash: toHex(Uint8Array.from(action.setPolicy.rulesHash)),
+    }
+  }
+  if (action.seize !== undefined) {
+    return {
+      kind: 'seize',
+      tokenAccount: action.seize.tokenAccount.toBase58(),
+      amount: BigInt(action.seize.amount.toString()),
+      reason: fromReason(action.seize.reason),
+    }
+  }
+  // A kind appended to the program before this line was written: refused
+  // rather than shown as one of the kinds above.
+  throw new TypeError(`unknown action kind at ${address.toBase58()}`)
+}
 
 type RawProposal = {
   mint: PublicKey
@@ -108,22 +146,13 @@ type RawProposal = {
 }
 
 function toView(address: PublicKey, raw: RawProposal): ProposalView {
-  const setPolicy = raw.action.setPolicy
-  // Unreachable while `ActionKind` has one variant; the first appended one
-  // turns it into a line to write rather than a proposal shown as a policy.
-  if (setPolicy === undefined) throw new TypeError(`unknown action kind at ${address.toBase58()}`)
-
   return {
     address: address.toBase58(),
     mint: raw.mint.toBase58(),
     issuerConfig: raw.issuer.toBase58(),
     payer: raw.payer.toBase58(),
     nonce: BigInt(raw.nonce.toString()),
-    action: {
-      kind: 'set-policy',
-      version: setPolicy.version,
-      rulesHash: toHex(Uint8Array.from(setPolicy.rulesHash)),
-    },
+    action: toActionView(address, raw.action),
     approvals: raw.approvals.slice(0, raw.approvalCount).map((wallet) => wallet.toBase58()),
     createdAt: raw.createdAt.toNumber(),
     expiresAt: raw.expiresAt.toNumber(),
@@ -133,11 +162,23 @@ function toView(address: PublicKey, raw: RawProposal): ProposalView {
 
 /** Whether a decoded body is the one the account committed to. */
 export function bodyMatches(view: ProposalView, body: ProposedActionInput): boolean {
-  return (
-    body.kind === view.action.kind &&
-    body.version === view.action.version &&
-    toHex(rulesHash(body.policy)) === view.action.rulesHash
-  )
+  const stored = view.action
+  switch (body.kind) {
+    case 'set-policy':
+      return (
+        stored.kind === 'set-policy' &&
+        body.version === stored.version &&
+        toHex(rulesHash(body.policy)) === stored.rulesHash
+      )
+    case 'seize':
+      return (
+        stored.kind === 'seize' &&
+        body.tokenAccount.toBase58() === stored.tokenAccount &&
+        body.amount === stored.amount &&
+        body.reason.code === stored.reason.code &&
+        body.reason.caseRef === stored.reason.caseRef
+      )
+  }
 }
 
 export function createActionReader(connection: Connection, program: ForgeProgram): ActionReader {
@@ -176,6 +217,16 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     },
 
     async body(view) {
+      // The account holds a seizure whole; there is no transaction to read.
+      if (view.action.kind === 'seize') {
+        return {
+          kind: 'seize',
+          tokenAccount: new PublicKey(view.action.tokenAccount),
+          amount: view.action.amount,
+          reason: view.action.reason,
+        }
+      }
+
       const history = await connection.getSignaturesForAddress(new PublicKey(view.address), {
         limit: PROPOSAL_HISTORY_LIMIT,
       })

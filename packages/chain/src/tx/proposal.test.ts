@@ -33,6 +33,7 @@ const OFFICER = new PublicKey('SysvarS1otHashes111111111111111111111111111')
 const PAYER = new PublicKey('SysvarRent111111111111111111111111111111111')
 const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
 const NONCE = 0x0123_4567_89ab_cdefn
+const REASON = { code: 4, caseRef: 'FIU-NG/2026/004117' }
 
 /** A policy that differs from the open one, so a body swapped for the default would show. */
 const STRICT: PolicyRules = {
@@ -108,11 +109,40 @@ describe('raising a proposal', () => {
 
     const body = decodeProposedAction(data)
     expect(body?.nonce).toBe(NONCE)
-    expect(body?.action.kind).toBe('set-policy')
-    expect(body?.action.version).toBe(2)
-    expect(Buffer.from(encodeRules(body?.action.policy ?? OPEN_POLICY))).toEqual(
-      Buffer.from(encodeRules(STRICT)),
-    )
+    if (body?.action.kind !== 'set-policy') throw new Error('expected a policy body')
+    expect(body.action.version).toBe(2)
+    expect(Buffer.from(encodeRules(body.action.policy))).toEqual(Buffer.from(encodeRules(STRICT)))
+  })
+
+  it('a seizure survives the round trip whole — account, amount and reason', async () => {
+    // The amount is past 2^53 on purpose: a `number` anywhere on the way
+    // would round it.
+    const amount = 2n ** 60n + 7n
+    const data = only(
+      await buildProposeAction(
+        program,
+        proposeArgs({
+          action: { kind: 'seize', tokenAccount: ADMIN, amount, reason: REASON },
+        }),
+      ),
+    ).data
+
+    const body = decodeProposedAction(data)
+    expect(body?.nonce).toBe(NONCE)
+    if (body?.action.kind !== 'seize') throw new Error('expected a seizure body')
+    expect(body.action.tokenAccount.toBase58()).toBe(ADMIN.toBase58())
+    expect(body.action.amount).toBe(amount)
+    expect(body.action.reason).toEqual(REASON)
+  })
+
+  it('a seizure of nothing, or past u64, or without a reason is refused at assembly', async () => {
+    for (const action of [
+      { kind: 'seize' as const, tokenAccount: ADMIN, amount: 0n, reason: REASON },
+      { kind: 'seize' as const, tokenAccount: ADMIN, amount: U64_MAX + 1n, reason: REASON },
+      { kind: 'seize' as const, tokenAccount: ADMIN, amount: 1n, reason: { ...REASON, code: 0 } },
+    ]) {
+      await expect(buildProposeAction(program, proposeArgs({ action }))).rejects.toThrow(RangeError)
+    }
   })
 
   it('the widest nonce fits, one past it is refused at assembly', async () => {

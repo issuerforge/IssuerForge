@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::MAX_MEMBERS;
 use crate::error::ForgeError;
 use crate::rules::layout::{self, RuleSlot, RULES_BYTES};
+use crate::state::ComplianceReason;
 
 /// What is proposed, as the proposer states it — **with the bodies**.
 ///
@@ -21,6 +22,14 @@ use crate::rules::layout::{self, RuleSlot, RULES_BYTES};
 pub enum ProposedAction {
     /// The next policy version and its full rule layout (FR-009, FR-010).
     SetPolicy { version: u32, rules: Vec<u8> },
+    /// Taking `amount` out of `token_account` under an order (FR-015). The
+    /// body is small enough to store whole, so this one is its own stored
+    /// form.
+    Seize {
+        token_account: Pubkey,
+        amount: u64,
+        reason: ComplianceReason,
+    },
 }
 
 impl ProposedAction {
@@ -35,6 +44,11 @@ impl ProposedAction {
             ProposedAction::SetPolicy { version, rules } => {
                 ActionKind::set_policy(*version, rules)
             }
+            ProposedAction::Seize {
+                token_account,
+                amount,
+                reason,
+            } => ActionKind::seize(*token_account, *amount, *reason),
         }
     }
 }
@@ -49,7 +63,14 @@ impl ProposedAction {
 ///
 /// The account is sized by the largest variant (`InitSpace` on an enum is
 /// `1 + max`), so a variant that carries a lot makes every proposal pay for
-/// it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules.
+/// it. That is why `SetPolicy` holds a hash and not its 384 bytes of rules —
+/// and why `Seize` holds its 74 bytes in the clear: a digest would save 42
+/// bytes of rent and cost every approver the ability to read, from the
+/// account itself, whose funds and how much they are authorising.
+///
+/// The size grew with `Seize` and that breaks nothing already on chain:
+/// Borsh writes a variant at its own length, so an older proposal reads the
+/// same, and nothing looks proposals up by `dataSize`.
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ActionKind {
     /// Writing the next policy version (FR-009, FR-010).
@@ -59,6 +80,18 @@ pub enum ActionKind {
     /// account and the handler writing it, and it is why a variant that must
     /// never be reached by accident does not belong in position zero.
     SetPolicy { version: u32, rules_hash: [u8; 32] },
+    /// A seizure (FR-015): whose account, how much, and why.
+    ///
+    /// An exact amount rather than "whatever the balance is at execution":
+    /// the approvers authorise a number, and the journal can show it before
+    /// the action runs. A balance that has shrunk by then makes the
+    /// execution fail rather than take less — which is why an officer freezes
+    /// the account first, alone and at once, and the quorum follows.
+    Seize {
+        token_account: Pubkey,
+        amount: u64,
+        reason: ComplianceReason,
+    },
 }
 
 impl ActionKind {
@@ -80,6 +113,20 @@ impl ActionKind {
         Ok(ActionKind::SetPolicy {
             version,
             rules_hash: layout::rules_hash(slots),
+        })
+    }
+
+    /// The stored form of a seizure, checked at proposal time for the same
+    /// reason as the rules above: approvers are not asked for days to sign
+    /// something the execution would refuse. The execution builds this again
+    /// from its own arguments and compares.
+    pub fn seize(token_account: Pubkey, amount: u64, reason: ComplianceReason) -> Result<Self> {
+        require!(amount > 0, ForgeError::SeizureAmountZero);
+        reason.validate()?;
+        Ok(ActionKind::Seize {
+            token_account,
+            amount,
+            reason,
         })
     }
 }
@@ -398,6 +445,88 @@ mod tests {
             ActionKind::set_policy(4, &minimal_rules()).expect("canonical"),
             ActionKind::set_policy(4, &other).expect("canonical")
         );
+    }
+
+    fn a_reason() -> ComplianceReason {
+        ComplianceReason {
+            code: 4,
+            case_ref: crate::state::case_ref_bytes(b"FIU-NG/2026/004117"),
+        }
+    }
+
+    #[test]
+    fn a_seizure_is_stored_as_proposed() {
+        let stored = ProposedAction::Seize {
+            token_account: wallet(7),
+            amount: 500,
+            reason: a_reason(),
+        }
+        .stored()
+        .expect("a valid seizure");
+        assert_eq!(
+            stored,
+            ActionKind::Seize {
+                token_account: wallet(7),
+                amount: 500,
+                reason: a_reason(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_seizure_of_nothing_or_without_a_reason_never_becomes_a_proposal() {
+        assert_eq!(
+            err(ActionKind::seize(wallet(7), 0, a_reason()).map(|_| ())),
+            code(ForgeError::SeizureAmountZero)
+        );
+        let unstated = ComplianceReason {
+            code: 0,
+            ..a_reason()
+        };
+        assert_eq!(
+            err(ActionKind::seize(wallet(7), 500, unstated).map(|_| ())),
+            code(ForgeError::ReasonCodeMissing)
+        );
+    }
+
+    #[test]
+    fn every_field_of_a_seizure_is_part_of_what_was_approved() {
+        // The execution compares the whole stored form: another account,
+        // another amount or another case is another action.
+        let approved = ActionKind::seize(wallet(7), 500, a_reason()).expect("valid");
+        let other_case = ComplianceReason {
+            case_ref: crate::state::case_ref_bytes(b"FIU-NG/2026/004118"),
+            ..a_reason()
+        };
+        for different in [
+            ActionKind::seize(wallet(8), 500, a_reason()),
+            ActionKind::seize(wallet(7), 499, a_reason()),
+            ActionKind::seize(wallet(7), 500, other_case),
+        ] {
+            assert_ne!(different.expect("valid"), approved);
+        }
+    }
+
+    #[test]
+    fn the_stored_variants_keep_their_positions() {
+        // Borsh encodes a variant by its position. `SetPolicy` must stay at
+        // zero and `Seize` at one, or proposals already on chain re-read as
+        // a different action.
+        let mut policy = Vec::new();
+        ActionKind::SetPolicy {
+            version: 1,
+            rules_hash: [0u8; 32],
+        }
+        .serialize(&mut policy)
+        .expect("serialises");
+        let mut seizure = Vec::new();
+        ActionKind::seize(wallet(7), 500, a_reason())
+            .expect("valid")
+            .serialize(&mut seizure)
+            .expect("serialises");
+        assert_eq!((policy[0], seizure[0]), (0, 1));
+        assert_eq!(seizure.len(), 1 + 32 + 8 + 2 + 32);
+        assert_eq!(ActionKind::INIT_SPACE, seizure.len());
     }
 
     #[test]

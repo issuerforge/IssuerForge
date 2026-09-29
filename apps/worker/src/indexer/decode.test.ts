@@ -511,6 +511,65 @@ describe('freeze_holder and unfreeze_holder', () => {
   })
 })
 
+describe('seize', () => {
+  const ADMIN = key()
+  const PAYER = key()
+  const VAULT = key()
+  const PROPOSAL = key()
+  const reason = { code: 4, caseRef: ascii('FIU-NG/2026/004117', 32) }
+  const accounts = [
+    ISSUER_CONFIG,
+    TOKEN_CONFIG,
+    MINT,
+    ALICE_ATA,
+    VAULT,
+    PROPOSAL,
+    PAYER,
+    TOKEN_2022,
+    key(),
+    key(),
+    OFFICER,
+    ADMIN,
+  ]
+
+  /** A token-program instruction with only its tag: enough to show it is not a transfer. */
+  const token = (tag: number): InstructionView => ({
+    programId: TOKEN_2022,
+    accounts: [ALICE_ATA, MINT, TOKEN_CONFIG],
+    data: Uint8Array.from([tag, 1, 0, 0, 0, 0, 0, 0, 0]),
+    outerIndex: 0,
+  })
+
+  it('records a seizure with its amount and the approvers by name, not the payer', async () => {
+    // Past 2^53: a `number` on the way would round it.
+    const amount = 2n ** 60n + 7n
+    const data = encoded('seize', { amount: new BN(amount.toString()), reason })
+    // The token program's burn (8) and mint (7) under it must not become transfers.
+    const { events, changes } = await decode(tx([ours(data, accounts), token(8), token(7)]))
+
+    expect(changes).toEqual([])
+    expect(events).toHaveLength(1)
+    expect(events[0]?.issuerId).toBe(ISSUER_ID)
+    expect(events[0]?.event).toMatchObject({
+      kind: 'compliance',
+      action: 'seize',
+      mint: MINT,
+      target: ALICE_ATA,
+      amount: amount.toString(),
+      reasonCode: '4',
+      caseRef: 'FIU-NG/2026/004117',
+      signers: [OFFICER, ADMIN],
+    })
+  })
+
+  it('a seizure with no approvers after the accounts is not a valid event', async () => {
+    // The program refuses such an instruction, so one in the ledger means the
+    // decoder is reading something else — it must fail, not name nobody.
+    const data = encoded('seize', { amount: new BN(1), reason })
+    await expect(decode(tx([ours(data, accounts.slice(0, 10))]))).rejects.toThrow()
+  })
+})
+
 describe('attest_reserve', () => {
   it('records the attestation with its index and expiry', async () => {
     const data = encoded('attestReserve', {

@@ -21,15 +21,17 @@ import {
   buildApproveAction,
   buildCloseActionProposal,
   buildProposeAction,
+  buildSeize,
   buildSetPolicy,
   issuerConfigPda,
   MAX_TRANSACTION_BYTES,
+  type ProposedActionInput,
   type TxPlan,
   toUnsigned,
   transactionBytes,
 } from '@forge/chain'
 import { hasRole, ROLE_AUTHORISING, type Session } from '@forge/shared/api'
-import { addressSchema, fromU64 } from '@forge/shared/primitives'
+import { addressSchema, fromU64, toU64 } from '@forge/shared/primitives'
 import { zValidator } from '@hono/zod-validator'
 import { PublicKey } from '@solana/web3.js'
 import { Hono } from 'hono'
@@ -217,7 +219,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
 
     return c.json({
       proposal: present(view, standing(view, quorum, unixNow())),
-      body: { kind: found.kind, policy: found.policy },
+      body: presentBody(found),
     })
   })
 
@@ -234,28 +236,36 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       const token = await requireToken(session, mint)
       const quorum = await requireQuorum(session)
       const proposer = await sessionSigner(session, quorum, c.req.valid('query').signer)
-      const input = c.req.valid('json')
+      const input = c.req.valid('json').action
 
-      // Read here, not typed by the person: `set_policy` accepts exactly the
-      // next version, and the proposal is bound to it by its digest.
-      const version = token.policyVersion + 1
+      const action: ProposedActionInput =
+        input.kind === 'set-policy'
+          ? // Read here, not typed by the person: `set_policy` accepts exactly
+            // the next version, and the proposal is bound to it by its digest.
+            { kind: 'set-policy', version: token.policyVersion + 1, policy: input.policy }
+          : {
+              kind: 'seize',
+              tokenAccount: new PublicKey(input.tokenAccount),
+              amount: toU64(input.amount),
+              reason: input.reason,
+            }
       const nonce = nextNonce()
       const plan = await buildProposeAction(deps.chain.program, {
         issuerId: new PublicKey(session.issuerId),
         mint: new PublicKey(mint),
         nonce,
-        termSeconds: input.termSeconds,
-        action: { kind: 'set-policy', version, policy: input.action.policy },
+        termSeconds: c.req.valid('json').termSeconds,
+        action,
         payer: new PublicKey(proposer),
         proposer: new PublicKey(proposer),
       })
       const proposal = actionProposalPda(new PublicKey(mint), nonce).toBase58()
 
-      c.get('log').info({ mint, proposal, version, proposer }, 'proposal assembled')
+      c.get('log').info({ mint, proposal, kind: action.kind, proposer }, 'proposal assembled')
       return c.json({
         ...(await respond(plan, proposal, proposer)),
         nonce: fromU64(nonce),
-        version,
+        ...(action.kind === 'set-policy' ? { version: action.version } : {}),
       } satisfies ProposeActionResponse)
     },
   )
@@ -292,11 +302,12 @@ export function createActionRoutes(deps: ActionRouteDeps) {
   })
 
   /**
-   * Execution: `set_policy` on the deferred path.
+   * Execution: `set_policy` on the deferred path, or `seize`.
    *
-   * Anyone of the session's authorising wallets may send it and pay the new
-   * version's rent — the authority is the proposal's quorum, and this
-   * signature adds nothing to it.
+   * Anyone of the session's authorising wallets may send it and pay the rent
+   * — of the new policy version, or of the vault on a token's first seizure.
+   * The authority is the proposal's quorum, and this signature adds nothing
+   * to it.
    */
   app.post('/actions/:id/execute', query(signerQuerySchema), async (c) => {
     const session = c.get('session')
@@ -315,19 +326,42 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       })
     }
 
+    const action = view.action
+    if (action.kind === 'seize') {
+      // Everything the seizure needs is in the account, approvers included:
+      // they ride in the instruction so the journal can name them (FR-019c).
+      const plan = await buildSeize(deps.chain.program, {
+        issuerId: new PublicKey(session.issuerId),
+        mint: new PublicKey(view.mint),
+        proposal: new PublicKey(id),
+        tokenAccount: new PublicKey(action.tokenAccount),
+        amount: action.amount,
+        reason: action.reason,
+        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+        payer: new PublicKey(payer),
+      })
+      c.get('log').info(
+        { proposal: id, tokenAccount: action.tokenAccount, amount: fromU64(action.amount), payer },
+        'seizure assembled',
+      )
+      return c.json(await respond(plan, id, payer))
+    }
+
     const token = await requireToken(session, view.mint)
-    if (token.policyVersion + 1 !== view.action.version) {
+    if (token.policyVersion + 1 !== action.version) {
       // Another change landed first — by the immediate path, or by another
       // proposal for the same number. The digest binds this one to a version
       // that is no longer next, so it can only lapse.
       throw invalidInput('the policy has moved on since this proposal was raised', {
-        proposed: view.action.version,
+        proposed: action.version,
         current: token.policyVersion,
       })
     }
 
     const found = await deps.actions.body(view)
-    if (found === undefined) throw bodyMissing(view)
+    // `body()` returns only a body that matches the account, so a policy
+    // proposal cannot come back as anything else.
+    if (found?.kind !== 'set-policy') throw bodyMissing(view)
 
     const plan = await buildSetPolicy(deps.chain.program, {
       issuerId: new PublicKey(session.issuerId),
@@ -379,7 +413,10 @@ function present(view: ProposalView, current: Standing): ProposalResponse {
     mint: view.mint,
     nonce: fromU64(view.nonce),
     payer: view.payer,
-    action: view.action,
+    action:
+      view.action.kind === 'seize'
+        ? { ...view.action, amount: fromU64(view.action.amount) }
+        : view.action,
     approvals: [...view.approvals],
     state: current.state,
     required: current.required,
@@ -388,6 +425,21 @@ function present(view: ProposalView, current: Standing): ProposalResponse {
     createdAt: view.createdAt,
     expiresAt: view.expiresAt,
     executedAt: view.executedAt,
+  }
+}
+
+/** A body as the response carries it: addresses in base58, amounts as u64 strings. */
+function presentBody(body: ProposedActionInput) {
+  switch (body.kind) {
+    case 'set-policy':
+      return { kind: body.kind, policy: body.policy }
+    case 'seize':
+      return {
+        kind: body.kind,
+        tokenAccount: body.tokenAccount.toBase58(),
+        amount: fromU64(body.amount),
+        reason: body.reason,
+      }
   }
 }
 

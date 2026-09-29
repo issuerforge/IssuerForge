@@ -3,6 +3,7 @@ pub mod create_token;
 pub mod freeze;
 pub mod initialize_issuer;
 pub mod proposal;
+pub mod seize;
 pub mod set_policy;
 pub mod thaw_holder;
 
@@ -16,5 +17,6 @@ pub use create_token::*;
 pub use freeze::*;
 pub use initialize_issuer::*;
 pub use proposal::*;
+pub use seize::*;
 pub use set_policy::*;
 pub use thaw_holder::*;

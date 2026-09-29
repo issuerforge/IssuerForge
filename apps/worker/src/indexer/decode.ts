@@ -217,6 +217,7 @@ const ACCOUNT = {
   thawHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, authority: 7 },
   freezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
   unfreezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
+  seize: { issuerConfig: 0, mint: 2, source: 3, firstApprover: 10 },
   setHolderStatus: { tokenConfig: 1, authority: 3 },
   attestReserve: { tokenConfig: 0, attestation: 1, attestor: 2 },
 } as const
@@ -578,6 +579,38 @@ function decodeFreeze(action: 'freeze' | 'unfreeze'): InstructionDecoder {
   }
 }
 
+/**
+ * A seizure (FR-015, FR-019c).
+ *
+ * The signers are the proposal's approvers, which the program requires to
+ * follow the accounts in the proposal's order — any other list is refused, so
+ * the one that landed is the one it counted. The payer, the transaction's
+ * only signature, authorised nothing and is not named.
+ *
+ * The token program's `Burn` and `MintTo` under this instruction are not
+ * transfers and are not indexed as any: the seizure is this one event.
+ */
+async function decodeSeize(ctx: Context, instruction: InstructionView, args: Args): Promise<void> {
+  const issuerConfig = at(instruction, ACCOUNT.seize.issuerConfig, 'issuerConfig')
+  const issuerId = await ctx.lookups.issuerIdOfConfig(issuerConfig)
+  if (issuerId === undefined) throw new LookupFailed('issuer config', issuerConfig)
+
+  const reason = args.reason as ReasonInput
+  const event: ComplianceEvent = {
+    kind: 'compliance',
+    ...envelopeOf(ctx.tx),
+    eventIndex: ctx.events.length,
+    mint: at(instruction, ACCOUNT.seize.mint, 'mint'),
+    action: 'seize',
+    target: at(instruction, ACCOUNT.seize.source, 'source'),
+    amount: integer(args.amount).toString(),
+    reasonCode: integer(reason.code).toString(),
+    caseRef: ascii(reason.caseRef),
+    signers: instruction.accounts.slice(ACCOUNT.seize.firstApprover),
+  }
+  ctx.events.push({ issuerId, event })
+}
+
 async function decodeAttestReserve(
   ctx: Context,
   instruction: InstructionView,
@@ -624,6 +657,7 @@ const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   setHolderStatus: decodeSetHolderStatus,
   freezeHolder: decodeFreeze('freeze'),
   unfreezeHolder: decodeFreeze('unfreeze'),
+  seize: decodeSeize,
   attestReserve: decodeAttestReserve,
 }
 
