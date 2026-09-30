@@ -1017,6 +1017,125 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "pauseCirculation",
+      "docs": [
+        "Pauses circulation of the token (FR-016): every transfer, issuance",
+        "and redemption stops at the token program.",
+        "",
+        "Only by a matured proposal (FR-019) with a stated reason (FR-017). A",
+        "seizure still goes through while paused."
+      ],
+      "discriminator": [
+        64,
+        81,
+        3,
+        106,
+        42,
+        159,
+        88,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Writable for the mirror; also the pause authority the program signs as."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "circulationArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "proposeAction",
       "docs": [
         "Raises a deferred action of the issuer's quorum (FR-019b).",
@@ -1142,6 +1261,124 @@ export type IssuerForge = {
           "type": {
             "defined": {
               "name": "proposeActionArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resumeCirculation",
+      "docs": [
+        "Lifts the pause (FR-016). Holders need do nothing for their",
+        "transfers to pass again.",
+        "",
+        "Only by a matured proposal (FR-019) with a stated reason (FR-017)."
+      ],
+      "discriminator": [
+        244,
+        127,
+        79,
+        92,
+        56,
+        114,
+        158,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Writable for the mirror; also the pause authority the program signs as."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "circulationArgs"
             }
           }
         }
@@ -2455,8 +2692,18 @@ export type IssuerForge = {
     },
     {
       "code": 6067,
-      "name": "seizureApproversNotListed",
+      "name": "approversNotListed",
       "msg": "the approvers of the proposal must be listed, in order, after the accounts"
+    },
+    {
+      "code": 6068,
+      "name": "mintAlreadyPaused",
+      "msg": "circulation of this token is already paused"
+    },
+    {
+      "code": 6069,
+      "name": "mintNotPaused",
+      "msg": "circulation of this token is not paused"
     }
   ],
   "types": [
@@ -2514,6 +2761,32 @@ export type IssuerForge = {
                 "name": "amount",
                 "type": "u64"
               },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "pause",
+            "fields": [
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "resume",
+            "fields": [
               {
                 "name": "reason",
                 "type": {
@@ -2677,6 +2950,26 @@ export type IssuerForge = {
               "counted from exactly that (FR-023)."
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "circulationArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "docs": [
+              "Repeated from the proposal, as in `seize`: the program compares the",
+              "two, and the journal reads the reason from this instruction."
+            ],
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
           }
         ]
       }
@@ -3422,6 +3715,32 @@ export type IssuerForge = {
                 "name": "amount",
                 "type": "u64"
               },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "pause",
+            "fields": [
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "resume",
+            "fields": [
               {
                 "name": "reason",
                 "type": {
@@ -4878,6 +5197,125 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "pauseCirculation",
+      "docs": [
+        "Pauses circulation of the token (FR-016): every transfer, issuance",
+        "and redemption stops at the token program.",
+        "",
+        "Only by a matured proposal (FR-019) with a stated reason (FR-017). A",
+        "seizure still goes through while paused."
+      ],
+      "discriminator": [
+        64,
+        81,
+        3,
+        106,
+        42,
+        159,
+        88,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Writable for the mirror; also the pause authority the program signs as."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "circulationArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "proposeAction",
       "docs": [
         "Raises a deferred action of the issuer's quorum (FR-019b).",
@@ -5003,6 +5441,124 @@ export const IDL: IssuerForge = {
           "type": {
             "defined": {
               "name": "proposeActionArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resumeCirculation",
+      "docs": [
+        "Lifts the pause (FR-016). Holders need do nothing for their",
+        "transfers to pass again.",
+        "",
+        "Only by a matured proposal (FR-019) with a stated reason (FR-017)."
+      ],
+      "discriminator": [
+        244,
+        127,
+        79,
+        92,
+        56,
+        114,
+        158,
+        251
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "Writable for the mirror; also the pause authority the program signs as."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.mint",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "circulationArgs"
             }
           }
         }
@@ -6316,8 +6872,18 @@ export const IDL: IssuerForge = {
     },
     {
       "code": 6067,
-      "name": "seizureApproversNotListed",
+      "name": "approversNotListed",
       "msg": "the approvers of the proposal must be listed, in order, after the accounts"
+    },
+    {
+      "code": 6068,
+      "name": "mintAlreadyPaused",
+      "msg": "circulation of this token is already paused"
+    },
+    {
+      "code": 6069,
+      "name": "mintNotPaused",
+      "msg": "circulation of this token is not paused"
     }
   ],
   "types": [
@@ -6375,6 +6941,32 @@ export const IDL: IssuerForge = {
                 "name": "amount",
                 "type": "u64"
               },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "pause",
+            "fields": [
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "resume",
+            "fields": [
               {
                 "name": "reason",
                 "type": {
@@ -6538,6 +7130,26 @@ export const IDL: IssuerForge = {
               "counted from exactly that (FR-023)."
             ],
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "circulationArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "reason",
+            "docs": [
+              "Repeated from the proposal, as in `seize`: the program compares the",
+              "two, and the journal reads the reason from this instruction."
+            ],
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
           }
         ]
       }
@@ -7283,6 +7895,32 @@ export const IDL: IssuerForge = {
                 "name": "amount",
                 "type": "u64"
               },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "pause",
+            "fields": [
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "resume",
+            "fields": [
               {
                 "name": "reason",
                 "type": {

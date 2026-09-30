@@ -61,6 +61,27 @@ pub fn check(issuer: &IssuerConfig, approvals: &[Pubkey]) -> Result<()> {
     Ok(())
 }
 
+/// Whether the accounts after an instruction's own list name exactly the
+/// approvers a proposal holds, in its order (FR-019c).
+///
+/// For the actions executed from a proposal whose only signer is whoever
+/// pays: the indexer reads instructions, not accounts, and the proposal is
+/// closed afterwards, so without this list the journal would have nobody to
+/// name as having authorised the action. Exact, not "contains": a journal
+/// that names one wallet too many states something false as surely as one
+/// that names too few.
+pub fn require_listed(listed: &[AccountInfo], approvals: &[Pubkey]) -> Result<()> {
+    require!(
+        listed.len() == approvals.len()
+            && listed
+                .iter()
+                .zip(approvals)
+                .all(|(account, approver)| account.key == approver),
+        ForgeError::ApproversNotListed
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -100,6 +100,9 @@ function app(fakes: Fakes = {}) {
       if (view.action.kind === 'seize') {
         return { ...view.action, tokenAccount: new PublicKey(view.action.tokenAccount) }
       }
+      if (view.action.kind === 'pause' || view.action.kind === 'resume') {
+        return { kind: view.action.kind, reason: view.action.reason }
+      }
       const policy = 'body' in fakes ? fakes.body : STRICT
       return policy === undefined
         ? undefined
@@ -191,6 +194,9 @@ const seizure = (over: Partial<ProposalView> = {}) =>
     action: { kind: 'seize', tokenAccount: SUSPECT_ACCOUNT, amount: SEIZED, reason: REASON },
     ...over,
   })
+
+const circulation = (kind: 'pause' | 'resume', over: Partial<ProposalView> = {}) =>
+  proposal({ action: { kind, reason: REASON }, ...over })
 
 describe('raising a proposal', () => {
   it('proposes the next version at the nonce the server chose, signed by the proposer alone', async () => {
@@ -286,6 +292,52 @@ describe('raising a seizure', () => {
       const response = await post({}, `/api/tokens/${MINT}/actions`, seizeBody(over))
       expect(response.status, JSON.stringify(over)).toBe(400)
     }
+  })
+})
+
+describe('raising a pause or its lifting', () => {
+  it('proposes the direction and the reason, nothing else', async () => {
+    for (const kind of ['pause', 'resume'] as const) {
+      const response = await post({}, `/api/tokens/${MINT}/actions`, {
+        action: { kind, reason: REASON },
+        termSeconds: 86_400,
+      })
+      expect(response.status).toBe(200)
+      const body = await jsonOf(response)
+      expect(body).not.toHaveProperty('version')
+      const decoded = decodeProposedAction(
+        instructionOf(body.transaction as unknown as TxJson).data,
+      )
+      expect(decoded?.action).toEqual({ kind, reason: REASON })
+    }
+  })
+
+  it('refuses one without a reason, or with a stray field', async () => {
+    for (const action of [
+      { kind: 'pause' },
+      { kind: 'pause', reason: { ...REASON, code: 0 } },
+      { kind: 'resume', reason: { ...REASON, caseRef: '' } },
+      { kind: 'pause', reason: REASON, tokenAccount: SUSPECT_ACCOUNT },
+    ]) {
+      const response = await post({}, `/api/tokens/${MINT}/actions`, {
+        action,
+        termSeconds: 86_400,
+      })
+      expect(response.status, JSON.stringify(action)).toBe(400)
+    }
+  })
+
+  it('is listed and read with its reason', async () => {
+    const listed = await jsonOf(
+      await get({ proposal: circulation('pause') }, `/api/tokens/${MINT}/actions`),
+    )
+    const [first] = listed.proposals as unknown as { action: unknown }[]
+    expect(first?.action).toEqual({ kind: 'pause', reason: REASON })
+
+    const one = await jsonOf(
+      await get({ proposal: circulation('resume') }, `/api/actions/${PROPOSAL}`),
+    )
+    expect(one.body).toEqual({ kind: 'resume', reason: REASON })
   })
 })
 
@@ -429,6 +481,36 @@ describe('executing', () => {
     // program counted them. The payer is also the second approver here, and
     // still sits in its place.
     expect(accounts.slice(10)).toEqual([OFFICER, ADMIN])
+  })
+
+  it('assembles the pause or its lifting with the approvers named, only the payer signing', async () => {
+    for (const [kind, step] of [
+      ['pause', 'pause-circulation'],
+      ['resume', 'resume-circulation'],
+    ] as const) {
+      const response = await post(
+        { proposal: circulation(kind, { approvals: [OFFICER, ADMIN] }) },
+        `/api/actions/${PROPOSAL}/execute`,
+      )
+      expect(response.status).toBe(200)
+
+      const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+      const { accounts } = instructionOf(transaction)
+      expect(transaction.step).toBe(step)
+      expect(transaction.signers).toEqual([ADMIN])
+      expect(accounts[2]).toBe(MINT)
+      expect(accounts[3]).toBe(PROPOSAL)
+      expect(accounts.slice(5)).toEqual([OFFICER, ADMIN])
+    }
+  })
+
+  it('a pause one approval short is not executed', async () => {
+    const response = await post(
+      { proposal: circulation('pause') },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toMatchObject({ state: 'open' })
   })
 
   it('a seizure one approval short is not executed', async () => {

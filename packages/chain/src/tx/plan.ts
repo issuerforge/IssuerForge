@@ -39,6 +39,8 @@ export const TX_STEPS = [
   'freeze-holder',
   'unfreeze-holder',
   'seize',
+  'pause-circulation',
+  'resume-circulation',
 ] as const
 
 export type TxStep = (typeof TX_STEPS)[number]

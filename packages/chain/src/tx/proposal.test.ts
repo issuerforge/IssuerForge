@@ -135,6 +135,17 @@ describe('raising a proposal', () => {
     expect(body.action.reason).toEqual(REASON)
   })
 
+  it('a pause and its lifting survive the round trip, each as itself', async () => {
+    for (const kind of ['pause', 'resume'] as const) {
+      const data = only(
+        await buildProposeAction(program, proposeArgs({ action: { kind, reason: REASON } })),
+      ).data
+      const body = decodeProposedAction(data)
+      expect(body?.nonce).toBe(NONCE)
+      expect(body?.action).toEqual({ kind, reason: REASON })
+    }
+  })
+
   it('a seizure of nothing, or past u64, or without a reason is refused at assembly', async () => {
     for (const action of [
       { kind: 'seize' as const, tokenAccount: ADMIN, amount: 0n, reason: REASON },

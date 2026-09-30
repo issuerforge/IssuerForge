@@ -120,6 +120,18 @@ describe('the body a proposal committed to', () => {
     expect(bodyMatches(seizure, { kind: 'set-policy', version: 2, policy: STRICT })).toBe(false)
     expect(bodyMatches(view(), body)).toBe(false)
   })
+
+  it('a pause matches only a pause with its case, never its lifting', () => {
+    const reason = { code: 9, caseRef: 'INC-2026-0412' }
+    const pause = view({ action: { kind: 'pause', reason } })
+    expect(bodyMatches(pause, { kind: 'pause', reason })).toBe(true)
+    expect(bodyMatches(pause, { kind: 'resume', reason })).toBe(false)
+    expect(bodyMatches(pause, { kind: 'pause', reason: { ...reason, code: 10 } })).toBe(false)
+    expect(bodyMatches(pause, { kind: 'pause', reason: { ...reason, caseRef: 'OTHER' } })).toBe(
+      false,
+    )
+    expect(bodyMatches(view(), { kind: 'pause', reason })).toBe(false)
+  })
 })
 
 describe('reading the body back from the node', () => {
@@ -181,6 +193,19 @@ describe('reading the body back from the node', () => {
       amount: SEIZURE.amount,
       reason: SEIZURE.reason,
     })
+  })
+
+  it('reads a pause from the account too', async () => {
+    const silent = new Proxy({} as Connection, {
+      get: () => () => {
+        throw new Error('a pause body must not be read from the node')
+      },
+    })
+    const reason = { code: 9, caseRef: 'INC-2026-0412' }
+    const body = await createActionReader(silent, program).body(
+      view({ action: { kind: 'resume', reason } }),
+    )
+    expect(body).toEqual({ kind: 'resume', reason })
   })
 
   it('skips approvals, failed transactions and bodies the account did not commit to', async () => {

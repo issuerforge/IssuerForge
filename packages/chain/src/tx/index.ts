@@ -6,6 +6,7 @@
 export * from './freeze.ts'
 export * from './holders.ts'
 export * from './issue.ts'
+export * from './pause.ts'
 export * from './plan.ts'
 export * from './proposal.ts'
 export * from './reason.ts'

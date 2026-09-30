@@ -42,6 +42,9 @@ export const complianceReasonSchema = z.strictObject({
  * For a seizure the amount is exact and in the smallest unit (FR-015): the
  * approvers authorise a number, and the execution fails rather than take
  * less.
+ *
+ * A pause and its lifting carry only the reason (FR-016, FR-017): there is
+ * one pause per mint, and the mint is in the path.
  */
 export const proposedActionBodySchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
@@ -51,6 +54,8 @@ export const proposedActionBodySchema = z.discriminatedUnion('kind', [
     amount: u64Schema.refine((value) => value !== '0', 'a seizure must take a non-zero amount'),
     reason: complianceReasonSchema,
   }),
+  z.strictObject({ kind: z.literal('pause'), reason: complianceReasonSchema }),
+  z.strictObject({ kind: z.literal('resume'), reason: complianceReasonSchema }),
 ])
 
 export const proposeActionBodySchema = z.strictObject({
@@ -87,6 +92,8 @@ export const proposalActionSchema = z.discriminatedUnion('kind', [
     amount: u64Schema,
     reason: complianceReasonSchema,
   }),
+  z.object({ kind: z.literal('pause'), reason: complianceReasonSchema }),
+  z.object({ kind: z.literal('resume'), reason: complianceReasonSchema }),
 ])
 
 export const proposalSchema = z.object({
@@ -132,7 +139,7 @@ export type ActionTransactionResponse = z.infer<typeof actionTransactionResponse
 
 export const proposeActionResponseSchema = actionTransactionResponseSchema.extend({
   nonce: u64Schema,
-  /** The policy version a policy change is bound to; absent for a seizure. */
+  /** The policy version a policy change is bound to; absent for every other kind. */
   version: z.number().int().positive().optional(),
 })
 

@@ -1,6 +1,6 @@
 // The issuer's quorum actions: raising a proposal, approving it, closing it,
 // and the policy change it executes (FR-009, FR-019b). The seizure executes
-// through `seize.ts`.
+// through `seize.ts`, the pause and its lifting through `pause.ts`.
 //
 // **Two paths to one action, never both at once** (T025). `set_policy` takes
 // its quorum either from the signers of the same transaction or from a matured
@@ -12,8 +12,8 @@
 // digest.** So the rules an approver is asked to sign are read back from the
 // instruction data of the proposing transaction (`decodeProposedAction`), and
 // the execution must carry exactly those bytes again: the program recomputes
-// the digest and refuses anything else (`ProposalBodyMismatch`). A seizure is
-// small enough that the account keeps it whole.
+// the digest and refuses anything else (`ProposalBodyMismatch`). A seizure, a
+// pause and its lifting are small enough that the account keeps them whole.
 import { BN, BorshInstructionCoder } from '@coral-xyz/anchor'
 import { decodeRules, encodeRules } from '@forge/policy/layout'
 import type { PolicyRules } from '@forge/policy/model'
@@ -29,8 +29,8 @@ import { type ComplianceReasonInput, fromReason, toReason } from './reason.ts'
  * What is proposed, with its body in full — the TS side of `ProposedAction`.
  *
  * A union, so that a caller switching over `kind` fails to compile when a
- * kind is appended (the pause, `T028`) instead of silently treating it as
- * one it knows. The freeze takes no quorum and is not here.
+ * kind is appended instead of silently treating it as one it knows. The
+ * freeze takes no quorum and is not here.
  */
 export type ProposedActionInput =
   | {
@@ -47,6 +47,9 @@ export type ProposedActionInput =
       readonly amount: bigint
       readonly reason: ComplianceReasonInput
     }
+  /** Stopping circulation (FR-016) and lifting it. Only the reason: one pause per mint. */
+  | { readonly kind: 'pause'; readonly reason: ComplianceReasonInput }
+  | { readonly kind: 'resume'; readonly reason: ComplianceReasonInput }
 
 /** The Anchor shape of `ProposedAction`. The rules as canonical bytes, as the program hashes them. */
 function toProposedAction(action: ProposedActionInput) {
@@ -66,6 +69,10 @@ function toProposedAction(action: ProposedActionInput) {
           reason: toReason(action.reason),
         },
       }
+    case 'pause':
+      return { pause: { reason: toReason(action.reason) } }
+    case 'resume':
+      return { resume: { reason: toReason(action.reason) } }
   }
 }
 
@@ -232,7 +239,7 @@ export function decodeProposedAction(
 
   const args = (decoded.data as { args: DecodedProposeArgs }).args
   const nonce = BigInt(args.nonce.toString())
-  const { setPolicy, seize } = args.action
+  const { setPolicy, seize, pause, resume } = args.action
 
   if (setPolicy !== undefined) {
     return {
@@ -258,6 +265,12 @@ export function decodeProposedAction(
       },
     }
   }
+  if (pause !== undefined) {
+    return { nonce, action: { kind: 'pause', reason: fromReason(pause.reason) } }
+  }
+  if (resume !== undefined) {
+    return { nonce, action: { kind: 'resume', reason: fromReason(resume.reason) } }
+  }
   return undefined
 }
 
@@ -268,7 +281,11 @@ type DecodedProposeArgs = {
     readonly seize?: {
       readonly tokenAccount: { toBase58(): string }
       readonly amount: { toString(): string }
-      readonly reason: { readonly code: number; readonly caseRef: number[] }
+      readonly reason: DecodedReason
     }
+    readonly pause?: { readonly reason: DecodedReason }
+    readonly resume?: { readonly reason: DecodedReason }
   }
 }
+
+type DecodedReason = { readonly code: number; readonly caseRef: number[] }

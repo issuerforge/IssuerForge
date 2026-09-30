@@ -81,8 +81,6 @@ const NONCES: [u64; 3] = [1, 2, 3];
 
 /// Token-2022's `TokenError::InsufficientFunds`.
 const INSUFFICIENT_FUNDS: u32 = 1;
-/// Token-2022's `TokenError::MintPaused`.
-const MINT_PAUSED: u32 = 67;
 
 fn wallet(seed: u8) -> AnchorPubkey {
     AnchorPubkey::new_from_array([seed; 32])
@@ -429,13 +427,24 @@ impl Fixture {
         ActionProposal::try_deserialize(&mut &data[..]).expect("a proposal the program wrote")
     }
 
+    fn mint_paused(&self) -> bool {
+        let data = &self.account(&self.mint).data;
+        let mint = StateWithExtensions::<MintState>::unpack(data).expect("a mint");
+        bool::from(
+            mint.get_extension::<pausable::PausableConfig>()
+                .expect("the pausable extension")
+                .paused,
+        )
+    }
+
     fn pause(&mut self) {
         let instruction = bridged(
             pausable::instruction::pause(&spl_token_2022::ID, &self.mint, &self.token_config, &[])
                 .expect("a pause instruction"),
         );
-        // The PDA "signs" here because mollusk does not verify signatures;
-        // in production `pause.rs` (T028) will sign for it.
+        // Straight through the token program: the PDA "signs" because
+        // mollusk does not verify signatures. `pause_circulation` itself is
+        // tested in `tests/pause.rs`; here only the paused state matters.
         let result = self.run(NOW, instruction);
         assert_eq!(
             result.program_result,
@@ -793,7 +802,7 @@ fn the_instruction_names_exactly_the_approvers_the_proposal_holds() {
                 NOW + DAY,
                 f.seize_listing(1, source, f.vault, BALANCE, a_reason(), &wrong),
             )),
-            code(ForgeError::SeizureApproversNotListed)
+            code(ForgeError::ApproversNotListed)
         );
     }
     assert_eq!(f.balance(SUSPECT), BALANCE);
@@ -897,18 +906,41 @@ fn an_amount_above_the_balance_seizes_nothing() {
 }
 
 #[test]
-fn a_paused_mint_refuses_the_seizure() {
-    // Pinned for T028, not chosen here: Token-2022 refuses burn and mint on a
-    // paused mint to every authority, the permanent delegate included. A pause
-    // stops seizures too until it is lifted.
+fn a_paused_mint_is_still_seized_and_stays_paused() {
+    // FR-016 exempts the issuer's own action, and an order is exactly that.
+    // Token-2022 refuses burn and mint on a paused mint to every authority,
+    // so `seize` lifts the pause for its own instruction and sets it again.
+    // Both targets: the vault is created under the pause on the first, and
+    // the frozen account is thawed and frozen back under it on the second.
     let mut f = Fixture::new();
     f.matured(1, SUSPECT, BALANCE);
+    f.matured(2, FROZEN_SUSPECT, BALANCE);
     f.pause();
+
+    succeeded(&f.run(NOW + DAY, f.seize(1, SUSPECT, BALANCE)));
+    assert!(f.mint_paused());
+    succeeded(&f.run(NOW + DAY, f.seize(2, FROZEN_SUSPECT, BALANCE)));
+    assert!(f.mint_paused());
+
+    assert_eq!(f.balance(SUSPECT), 0);
+    assert_eq!(f.balance(FROZEN_SUSPECT), 0);
     assert_eq!(
-        refusal(&f.run(NOW + DAY, f.seize(1, SUSPECT, BALANCE))),
-        MINT_PAUSED
+        f.token_state_at(&token_account_of(FROZEN_SUSPECT)).state,
+        AccountState::Frozen
     );
-    assert_eq!(f.balance(SUSPECT), BALANCE);
+    assert_eq!(f.vault_state().amount, 2 * BALANCE);
+    assert_eq!(f.supply(), SUPPLY);
+}
+
+#[test]
+fn a_seizure_leaves_a_running_mint_running() {
+    // The other half of the above: the pause is put back only when it was
+    // there. A seizure that paused a running token would stop circulation
+    // without the quorum having asked for it.
+    let mut f = Fixture::new();
+    f.matured(1, SUSPECT, BALANCE);
+    succeeded(&f.run(NOW + DAY, f.seize(1, SUSPECT, BALANCE)));
+    assert!(!f.mint_paused());
 }
 
 #[test]

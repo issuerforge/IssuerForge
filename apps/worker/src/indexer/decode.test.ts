@@ -570,6 +570,39 @@ describe('seize', () => {
   })
 })
 
+describe('pause and resume', () => {
+  const ADMIN = key()
+  const PROPOSAL = key()
+  const reason = { code: 9, caseRef: ascii('INC-2026-0412', 32) }
+  const accounts = [ISSUER_CONFIG, TOKEN_CONFIG, MINT, PROPOSAL, TOKEN_2022, OFFICER, ADMIN]
+
+  for (const [instruction, action] of [
+    ['pauseCirculation', 'pause'],
+    ['resumeCirculation', 'unpause'],
+  ] as const) {
+    it(`records ${instruction} as ${action}, of the whole mint, with the approvers by name`, async () => {
+      const data = encoded(instruction, { reason })
+      const { events } = await decode(tx([ours(data, accounts)]))
+      expect(events).toHaveLength(1)
+      expect(events[0]?.event).toMatchObject({
+        kind: 'compliance',
+        action,
+        mint: MINT,
+        target: null,
+        amount: null,
+        reasonCode: '9',
+        caseRef: 'INC-2026-0412',
+        signers: [OFFICER, ADMIN],
+      })
+    })
+  }
+
+  it('a pause with no approvers after the accounts is not a valid event', async () => {
+    const data = encoded('pauseCirculation', { reason })
+    await expect(decode(tx([ours(data, accounts.slice(0, 5))]))).rejects.toThrow()
+  })
+})
+
 describe('attest_reserve', () => {
   it('records the attestation with its index and expiry', async () => {
     const data = encoded('attestReserve', {

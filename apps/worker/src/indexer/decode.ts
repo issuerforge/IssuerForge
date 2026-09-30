@@ -218,6 +218,7 @@ const ACCOUNT = {
   freezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
   unfreezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
   seize: { issuerConfig: 0, mint: 2, source: 3, firstApprover: 10 },
+  changeCirculation: { issuerConfig: 0, mint: 2, firstApprover: 5 },
   setHolderStatus: { tokenConfig: 1, authority: 3 },
   attestReserve: { tokenConfig: 0, attestation: 1, attestor: 2 },
 } as const
@@ -611,6 +612,38 @@ async function decodeSeize(ctx: Context, instruction: InstructionView, args: Arg
   ctx.events.push({ issuerId, event })
 }
 
+/**
+ * A pause or its lifting (FR-016, FR-019c).
+ *
+ * Named as a seizure is: the approvers follow the accounts in the proposal's
+ * order, and the payer is not among them. No target and no amount — a pause
+ * is of the whole mint, and a zero or an empty string there would read as a
+ * value.
+ */
+function decodeChangeCirculation(action: 'pause' | 'unpause'): InstructionDecoder {
+  return async (ctx, instruction, args) => {
+    const accounts = ACCOUNT.changeCirculation
+    const issuerConfig = at(instruction, accounts.issuerConfig, 'issuerConfig')
+    const issuerId = await ctx.lookups.issuerIdOfConfig(issuerConfig)
+    if (issuerId === undefined) throw new LookupFailed('issuer config', issuerConfig)
+
+    const reason = args.reason as ReasonInput
+    const event: ComplianceEvent = {
+      kind: 'compliance',
+      ...envelopeOf(ctx.tx),
+      eventIndex: ctx.events.length,
+      mint: at(instruction, accounts.mint, 'mint'),
+      action,
+      target: null,
+      amount: null,
+      reasonCode: integer(reason.code).toString(),
+      caseRef: ascii(reason.caseRef),
+      signers: instruction.accounts.slice(accounts.firstApprover),
+    }
+    ctx.events.push({ issuerId, event })
+  }
+}
+
 async function decodeAttestReserve(
   ctx: Context,
   instruction: InstructionView,
@@ -658,6 +691,8 @@ const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   freezeHolder: decodeFreeze('freeze'),
   unfreezeHolder: decodeFreeze('unfreeze'),
   seize: decodeSeize,
+  pauseCirculation: decodeChangeCirculation('pause'),
+  resumeCirculation: decodeChangeCirculation('unpause'),
   attestReserve: decodeAttestReserve,
 }
 

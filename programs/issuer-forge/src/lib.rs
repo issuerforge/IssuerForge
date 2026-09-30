@@ -179,6 +179,29 @@ pub mod issuer_forge {
         instructions::seize::handler(ctx, args)
     }
 
+    /// Pauses circulation of the token (FR-016): every transfer, issuance
+    /// and redemption stops at the token program.
+    ///
+    /// Only by a matured proposal (FR-019) with a stated reason (FR-017). A
+    /// seizure still goes through while paused.
+    pub fn pause_circulation(
+        ctx: Context<ChangeCirculation>,
+        args: CirculationArgs,
+    ) -> Result<()> {
+        instructions::pause::pause_handler(ctx, args)
+    }
+
+    /// Lifts the pause (FR-016). Holders need do nothing for their
+    /// transfers to pass again.
+    ///
+    /// Only by a matured proposal (FR-019) with a stated reason (FR-017).
+    pub fn resume_circulation(
+        ctx: Context<ChangeCirculation>,
+        args: CirculationArgs,
+    ) -> Result<()> {
+        instructions::pause::resume_handler(ctx, args)
+    }
+
     /// Publishes a reserve attestation (FR-021, FR-024, FR-026).
     ///
     /// Signed by exactly the current attestor of this token: an attestation

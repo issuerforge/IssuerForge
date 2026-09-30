@@ -30,6 +30,10 @@ pub enum ProposedAction {
         amount: u64,
         reason: ComplianceReason,
     },
+    /// Stopping circulation of the token (FR-016).
+    Pause { reason: ComplianceReason },
+    /// Letting it move again.
+    Resume { reason: ComplianceReason },
 }
 
 impl ProposedAction {
@@ -49,6 +53,8 @@ impl ProposedAction {
                 amount,
                 reason,
             } => ActionKind::seize(*token_account, *amount, *reason),
+            ProposedAction::Pause { reason } => ActionKind::pause(*reason),
+            ProposedAction::Resume { reason } => ActionKind::resume(*reason),
         }
     }
 }
@@ -92,6 +98,14 @@ pub enum ActionKind {
         amount: u64,
         reason: ComplianceReason,
     },
+    /// Stopping circulation (FR-016). Only the reason: there is one mint per
+    /// proposal and one pause per mint, so nothing else names the action.
+    Pause { reason: ComplianceReason },
+    /// Lifting the pause. A variant of its own rather than a flag on `Pause`:
+    /// an approver reads which of the two they sign from the variant, and a
+    /// `bool` beside a reason is one byte a console could render the wrong
+    /// way round.
+    Resume { reason: ComplianceReason },
 }
 
 impl ActionKind {
@@ -128,6 +142,19 @@ impl ActionKind {
             amount,
             reason,
         })
+    }
+
+    /// The stored form of a pause. Whether the mint is already paused is not
+    /// checked here: by the time the quorum gathers it may well have changed,
+    /// and the execution reads the mint itself.
+    pub fn pause(reason: ComplianceReason) -> Result<Self> {
+        reason.validate()?;
+        Ok(ActionKind::Pause { reason })
+    }
+
+    pub fn resume(reason: ComplianceReason) -> Result<Self> {
+        reason.validate()?;
+        Ok(ActionKind::Resume { reason })
     }
 }
 
@@ -527,6 +554,53 @@ mod tests {
         assert_eq!((policy[0], seizure[0]), (0, 1));
         assert_eq!(seizure.len(), 1 + 32 + 8 + 2 + 32);
         assert_eq!(ActionKind::INIT_SPACE, seizure.len());
+
+        // T028 appended two more. The largest variant is still the seizure,
+        // so no proposal account changed size.
+        let mut pause = Vec::new();
+        ActionKind::pause(a_reason())
+            .expect("valid")
+            .serialize(&mut pause)
+            .expect("serialises");
+        let mut resume = Vec::new();
+        ActionKind::resume(a_reason())
+            .expect("valid")
+            .serialize(&mut resume)
+            .expect("serialises");
+        assert_eq!((pause[0], resume[0]), (2, 3));
+        assert_eq!(pause.len(), 1 + 2 + 32);
+    }
+
+    #[test]
+    fn a_pause_or_a_resumption_without_a_reason_never_becomes_a_proposal() {
+        let unstated = ComplianceReason {
+            code: 0,
+            ..a_reason()
+        };
+        assert_eq!(
+            err(ActionKind::pause(unstated).map(|_| ())),
+            code(ForgeError::ReasonCodeMissing)
+        );
+        assert_eq!(
+            err(ActionKind::resume(unstated).map(|_| ())),
+            code(ForgeError::ReasonCodeMissing)
+        );
+    }
+
+    #[test]
+    fn a_pause_is_not_a_resumption() {
+        // The two carry the same body; only the variant tells them apart, and
+        // a proposal to pause must never execute as the opposite.
+        assert_ne!(
+            ActionKind::pause(a_reason()).expect("valid"),
+            ActionKind::resume(a_reason()).expect("valid")
+        );
+        assert_eq!(
+            ProposedAction::Resume { reason: a_reason() }
+                .stored()
+                .expect("valid"),
+            ActionKind::Resume { reason: a_reason() }
+        );
     }
 
     #[test]

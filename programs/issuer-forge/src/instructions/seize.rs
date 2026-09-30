@@ -28,6 +28,10 @@
 //! name as having authorised the seizure, and a journal that names the payer
 //! instead would state something false.
 //!
+//! **A pause does not stop it (FR-016, T028).** Circulation paused is
+//! exactly when an order may have to be carried out; the pause is lifted for
+//! the burn and the mint and set again before the instruction returns.
+//!
 //! **Only through a proposal (FR-019), with no second path beside it.**
 //! `set_policy` also takes co-signers in `remaining_accounts`; here that path
 //! would add nothing, because `propose_action`, `approve_action` and `seize`
@@ -47,6 +51,7 @@ use anchor_spl::token_interface::{
 
 use crate::constants::{ISSUER_SEED, PROPOSAL_SEED, TOKEN_SEED};
 use crate::error::ForgeError;
+use crate::instructions::pause;
 use crate::quorum;
 use crate::state::{ActionKind, ActionProposal, ComplianceReason, IssuerConfig, TokenConfig};
 
@@ -150,15 +155,7 @@ pub(crate) fn handler(ctx: Context<Seize>, args: SeizeArgs) -> Result<()> {
     );
     let approvals = accounts.proposal.approvals();
     quorum::check(&accounts.issuer_config, approvals)?;
-    require!(
-        ctx.remaining_accounts.len() == approvals.len()
-            && ctx
-                .remaining_accounts
-                .iter()
-                .zip(approvals)
-                .all(|(listed, approver)| listed.key == approver),
-        ForgeError::SeizureApproversNotListed
-    );
+    quorum::require_listed(ctx.remaining_accounts, approvals)?;
 
     // Burning from the vault and minting back into it would record a
     // seizure that took nothing from anyone.
@@ -221,6 +218,15 @@ pub(crate) fn handler(ctx: Context<Seize>, args: SeizeArgs) -> Result<()> {
         ))?;
     }
 
+    // A pause refuses burn and mint to every authority, the permanent
+    // delegate included, and FR-016 exempts exactly this: the issuer's own
+    // action under an order. Lifted here and set again below, inside one
+    // instruction, so no transfer of anyone else's can see it lifted.
+    let mint_was_paused = pause::is_paused(&mint)?;
+    if mint_was_paused {
+        pause::resume_for(&token_program, &mint, &accounts.token_config)?;
+    }
+
     // Burn first: supply never rises above what it was, not even between
     // two CPIs, so the reserve invariant holds at every step and not only
     // at the end.
@@ -251,9 +257,9 @@ pub(crate) fn handler(ctx: Context<Seize>, args: SeizeArgs) -> Result<()> {
 
     mint_to(
         CpiContext::new_with_signer(
-            token_program,
+            token_program.clone(),
             MintTo {
-                mint,
+                mint: mint.clone(),
                 to: vault,
                 authority,
             },
@@ -261,6 +267,10 @@ pub(crate) fn handler(ctx: Context<Seize>, args: SeizeArgs) -> Result<()> {
         ),
         args.amount,
     )?;
+
+    if mint_was_paused {
+        pause::pause_for(&token_program, &mint, &accounts.token_config)?;
+    }
 
     // The last action, as in `set_policy`: a refusal anywhere above leaves
     // the proposal unexecuted.

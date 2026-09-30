@@ -182,8 +182,14 @@ pub enum ForgeError {
     SeizureFromTheVault,
     #[msg("vault is not this token's seized-funds account")]
     SeizureVaultMismatch,
+    /// Named after the seizure it came with (T027); the pause (T028) is held
+    /// to the same list, and the code did not move.
     #[msg("the approvers of the proposal must be listed, in order, after the accounts")]
-    SeizureApproversNotListed,
+    ApproversNotListed,
+    #[msg("circulation of this token is already paused")]
+    MintAlreadyPaused,
+    #[msg("circulation of this token is not paused")]
+    MintNotPaused,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -297,8 +303,17 @@ mod tests {
             VALIDATION_ERROR_BASE + 51
         );
         assert_eq!(
-            u32::from(ForgeError::SeizureApproversNotListed),
+            u32::from(ForgeError::ApproversNotListed),
             VALIDATION_ERROR_BASE + 54
+        );
+        // The first and the last of those added by T028.
+        assert_eq!(
+            u32::from(ForgeError::MintAlreadyPaused),
+            VALIDATION_ERROR_BASE + 55
+        );
+        assert_eq!(
+            u32::from(ForgeError::MintNotPaused),
+            VALIDATION_ERROR_BASE + 56
         );
     }
 }

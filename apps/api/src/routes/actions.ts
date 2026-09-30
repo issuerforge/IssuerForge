@@ -19,6 +19,7 @@
 import {
   actionProposalPda,
   buildApproveAction,
+  buildChangeCirculation,
   buildCloseActionProposal,
   buildProposeAction,
   buildSeize,
@@ -49,6 +50,7 @@ import type { ChainReader } from '../chain.ts'
 import {
   type ActionTransactionResponse,
   type ProposalResponse,
+  type ProposeActionBody,
   type ProposeActionResponse,
   proposeActionBodySchema,
   signerQuerySchema,
@@ -238,17 +240,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       const proposer = await sessionSigner(session, quorum, c.req.valid('query').signer)
       const input = c.req.valid('json').action
 
-      const action: ProposedActionInput =
-        input.kind === 'set-policy'
-          ? // Read here, not typed by the person: `set_policy` accepts exactly
-            // the next version, and the proposal is bound to it by its digest.
-            { kind: 'set-policy', version: token.policyVersion + 1, policy: input.policy }
-          : {
-              kind: 'seize',
-              tokenAccount: new PublicKey(input.tokenAccount),
-              amount: toU64(input.amount),
-              reason: input.reason,
-            }
+      const action = toProposedAction(input, token.policyVersion)
       const nonce = nextNonce()
       const plan = await buildProposeAction(deps.chain.program, {
         issuerId: new PublicKey(session.issuerId),
@@ -302,7 +294,8 @@ export function createActionRoutes(deps: ActionRouteDeps) {
   })
 
   /**
-   * Execution: `set_policy` on the deferred path, or `seize`.
+   * Execution: `set_policy` on the deferred path, `seize`, or the pause and
+   * its lifting.
    *
    * Anyone of the session's authorising wallets may send it and pay the rent
    * — of the new policy version, or of the vault on a token's first seizure.
@@ -344,6 +337,23 @@ export function createActionRoutes(deps: ActionRouteDeps) {
         { proposal: id, tokenAccount: action.tokenAccount, amount: fromU64(action.amount), payer },
         'seizure assembled',
       )
+      return c.json(await respond(plan, id, payer))
+    }
+
+    if (action.kind === 'pause' || action.kind === 'resume') {
+      // Whether the mint is paused now is not checked here: the program reads
+      // the mint's own flag and refuses a pause of a paused token, and the
+      // mirror this api could read is not what decides.
+      const plan = await buildChangeCirculation(deps.chain.program, {
+        direction: action.kind,
+        issuerId: new PublicKey(session.issuerId),
+        mint: new PublicKey(view.mint),
+        proposal: new PublicKey(id),
+        reason: action.reason,
+        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+        payer: new PublicKey(payer),
+      })
+      c.get('log').info({ proposal: id, direction: action.kind, payer }, 'circulation assembled')
       return c.json(await respond(plan, id, payer))
     }
 
@@ -440,6 +450,33 @@ function presentBody(body: ProposedActionInput) {
         amount: fromU64(body.amount),
         reason: body.reason,
       }
+    case 'pause':
+    case 'resume':
+      return { kind: body.kind, reason: body.reason }
+  }
+}
+
+/** The request's body as the builder takes it. */
+function toProposedAction(
+  input: ProposeActionBody['action'],
+  policyVersion: number,
+): ProposedActionInput {
+  switch (input.kind) {
+    case 'set-policy':
+      // Read from the chain, not typed by the person: `set_policy` accepts
+      // exactly the next version, and the proposal is bound to it by its
+      // digest.
+      return { kind: 'set-policy', version: policyVersion + 1, policy: input.policy }
+    case 'seize':
+      return {
+        kind: 'seize',
+        tokenAccount: new PublicKey(input.tokenAccount),
+        amount: toU64(input.amount),
+        reason: input.reason,
+      }
+    case 'pause':
+    case 'resume':
+      return { kind: input.kind, reason: input.reason }
   }
 }
 

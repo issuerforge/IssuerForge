@@ -57,6 +57,11 @@ export type ProposalActionView =
       readonly amount: bigint
       readonly reason: ComplianceReasonInput
     }
+  // Two members, not one with `kind: 'pause' | 'resume'`: TypeScript does
+  // not narrow such a member out of the union, and every caller past a
+  // pause branch would lose `version` and `amount`.
+  | { readonly kind: 'pause'; readonly reason: ComplianceReasonInput }
+  | { readonly kind: 'resume'; readonly reason: ComplianceReasonInput }
 
 export interface ProposalView {
   readonly address: string
@@ -107,9 +112,13 @@ type StoredAction = {
   seize?: {
     tokenAccount: PublicKey
     amount: { toString(): string }
-    reason: { code: number; caseRef: number[] }
+    reason: StoredReason
   }
+  pause?: { reason: StoredReason }
+  resume?: { reason: StoredReason }
 }
+
+type StoredReason = { code: number; caseRef: number[] }
 
 function toActionView(address: PublicKey, action: StoredAction): ProposalActionView {
   if (action.setPolicy !== undefined) {
@@ -126,6 +135,12 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
       amount: BigInt(action.seize.amount.toString()),
       reason: fromReason(action.seize.reason),
     }
+  }
+  if (action.pause !== undefined) {
+    return { kind: 'pause', reason: fromReason(action.pause.reason) }
+  }
+  if (action.resume !== undefined) {
+    return { kind: 'resume', reason: fromReason(action.resume.reason) }
   }
   // A kind appended to the program before this line was written: refused
   // rather than shown as one of the kinds above.
@@ -178,6 +193,13 @@ export function bodyMatches(view: ProposalView, body: ProposedActionInput): bool
         body.reason.code === stored.reason.code &&
         body.reason.caseRef === stored.reason.caseRef
       )
+    case 'pause':
+    case 'resume':
+      return (
+        stored.kind === body.kind &&
+        body.reason.code === stored.reason.code &&
+        body.reason.caseRef === stored.reason.caseRef
+      )
   }
 }
 
@@ -217,7 +239,8 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     },
 
     async body(view) {
-      // The account holds a seizure whole; there is no transaction to read.
+      // The account holds a seizure and a pause whole; there is no
+      // transaction to read.
       if (view.action.kind === 'seize') {
         return {
           kind: 'seize',
@@ -225,6 +248,9 @@ export function createActionReader(connection: Connection, program: ForgeProgram
           amount: view.action.amount,
           reason: view.action.reason,
         }
+      }
+      if (view.action.kind === 'pause' || view.action.kind === 'resume') {
+        return { kind: view.action.kind, reason: view.action.reason }
       }
 
       const history = await connection.getSignaturesForAddress(new PublicKey(view.address), {
