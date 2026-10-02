@@ -5,7 +5,8 @@ use crate::error::ForgeError;
 use crate::quorum;
 use crate::rules::layout::RULES_BYTES;
 use crate::state::{
-    ActionKind, ActionProposal, IssuerConfig, PolicyConfig, TokenConfig, POLICY_CONFIG_LEN,
+    ActionKind, ActionProposal, ComplianceReason, IssuerConfig, PolicyConfig, TokenConfig,
+    POLICY_CONFIG_LEN,
 };
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -19,6 +20,12 @@ pub struct SetPolicyArgs {
     /// A `Vec<u8>`, not an array: Borsh describes it as `bytes`, and the IDL
     /// stays readable for the client. The program checks the length.
     pub rules: Vec<u8>,
+    /// Why the policy changes (FR-017). A policy change is a compliance
+    /// action like a freeze: it decides who may hold the token, and a journal
+    /// entry that says "the rules changed" without a case is the screenshot a
+    /// regulator does not accept. On the deferred path it must be the reason
+    /// the proposal holds — it is part of what the approvers signed.
+    pub reason: ComplianceReason,
 }
 
 /// Changing a token's policy (FR-009, FR-010).
@@ -33,6 +40,14 @@ pub struct SetPolicyArgs {
 /// `remaining_accounts`, or they signed an `ActionProposal` on different days
 /// and it arrives in `proposal`. The threshold rule is the same one in both
 /// cases — `quorum::check` does not know which path it is serving.
+///
+/// **Either way `remaining_accounts` name the quorum (FR-019c, T029).** On
+/// the immediate path they are its signatures; on the deferred path they are
+/// the proposal's approvers, unsigned and in its order, and any other list is
+/// refused (`quorum::require_listed`, as in `seize` and `pause`). The indexer
+/// reads instructions, not accounts, and the proposal is closed afterwards:
+/// without the list the journal would name only the payer, who authorised
+/// nothing.
 #[derive(Accounts)]
 #[instruction(args: SetPolicyArgs)]
 pub struct SetPolicy<'info> {
@@ -86,8 +101,8 @@ pub struct SetPolicy<'info> {
     // `remaining_accounts` are the wallets authorising the change on the
     // immediate path. Each must sign the transaction and be in the issuer's
     // membership with a role that grants the right to authorise; there must
-    // be at least `quorum_n` of them. On the deferred path there must be
-    // none.
+    // be at least `quorum_n` of them. On the deferred path they are exactly
+    // the proposal's approvers, and their signatures are not asked for.
 }
 
 pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
@@ -109,22 +124,16 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
         ForgeError::PolicyVersionNotNext
     );
 
+    // Before the quorum: an action without a reason is not executed
+    // whoever authorised it (FR-017).
+    args.reason.validate()?;
+
     let now = Clock::get()?.unix_timestamp;
 
     // FR-035: a policy change is an action of the issuer's wallets by quorum,
     // and the program checks it, not the console.
     let approvals = match &ctx.accounts.proposal {
         Some(proposal) => {
-            // One source of authorisation, never two. A union of the two
-            // would let a proposal one signature short be finished by a
-            // co-signer in this transaction — defensible on its own, but it
-            // would also make "who authorised this" two lists that the
-            // journal has to join, and the wallet that appears in both would
-            // read as a duplicate.
-            require!(
-                ctx.remaining_accounts.is_empty(),
-                ForgeError::QuorumSourceAmbiguous
-            );
             require!(
                 proposal.issuer == ctx.accounts.issuer_config.key(),
                 ForgeError::ProposalNotForThisIssuer
@@ -138,11 +147,18 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
             // carries, by the same function that computed it at proposal
             // time. That is what binds the execution to exactly the rules the
             // approvers were shown, and it is why the proposal needs to store
-            // only 32 bytes of them.
+            // only 32 bytes of them. The reason is compared the same way.
             require!(
-                ActionKind::set_policy(args.version, &args.rules)? == proposal.action,
+                ActionKind::set_policy(args.version, &args.rules, args.reason)? == proposal.action,
                 ForgeError::ProposalBodyMismatch
             );
+            // One source of authorisation, never two: the accounts here only
+            // name the approvals the proposal already holds. A co-signer
+            // appended to finish a proposal one signature short is a list the
+            // proposal does not hold, and is refused as one. That replaced
+            // `QuorumSourceAmbiguous` (T029) — the same refusal, now given by
+            // the check every quorum action shares.
+            quorum::require_listed(ctx.remaining_accounts, proposal.approvals())?;
             proposal.approvals().to_vec()
         }
         None => quorum::approvals_from(ctx.remaining_accounts)?,

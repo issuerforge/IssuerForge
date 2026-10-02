@@ -56,7 +56,7 @@ const proposeArgs = (over: Partial<ProposeActionArgs> = {}): ProposeActionArgs =
   mint: MINT,
   nonce: NONCE,
   termSeconds: 3 * 24 * 60 * 60,
-  action: { kind: 'set-policy', version: 2, policy: STRICT },
+  action: { kind: 'set-policy', version: 2, policy: STRICT, reason: REASON },
   payer: ADMIN,
   proposer: ADMIN,
   ...over,
@@ -67,6 +67,7 @@ const setPolicyArgs = (over: Partial<SetPolicyArgs> = {}): SetPolicyArgs => ({
   mint: MINT,
   version: 2,
   policy: STRICT,
+  reason: REASON,
   payer: ADMIN,
   quorum: { kind: 'immediate', signers: [ADMIN, OFFICER] },
   ...over,
@@ -112,6 +113,7 @@ describe('raising a proposal', () => {
     if (body?.action.kind !== 'set-policy') throw new Error('expected a policy body')
     expect(body.action.version).toBe(2)
     expect(Buffer.from(encodeRules(body.action.policy))).toEqual(Buffer.from(encodeRules(STRICT)))
+    expect(body.action.reason).toEqual(REASON)
   })
 
   it('a seizure survives the round trip whole — account, amount and reason', async () => {
@@ -229,18 +231,50 @@ describe('a policy change', () => {
     ])
   })
 
-  it('on the deferred path only the payer signs, and nothing rides in remaining accounts', async () => {
+  it('on the deferred path only the payer signs, and the approvers ride unsigned', async () => {
+    // FR-019c: the journal names who authorised the change from these
+    // accounts, and the program refuses any list but the proposal's own.
     const proposal = actionProposalPda(MINT, NONCE)
     const plan = await buildSetPolicy(
       program,
-      setPolicyArgs({ payer: PAYER, quorum: { kind: 'proposal', proposal } }),
+      setPolicyArgs({
+        payer: PAYER,
+        quorum: { kind: 'proposal', proposal, approvers: [OFFICER, ADMIN] },
+      }),
     )
     const keys = only(plan).keys
 
-    expect(keys).toHaveLength(6)
     expect(keys[5]?.pubkey.equals(proposal)).toBe(true)
     expect(keys[5]?.isWritable).toBe(true)
+    expect(keys.slice(6).map((key) => [key.pubkey.toBase58(), key.isSigner])).toEqual([
+      [OFFICER.toBase58(), false],
+      [ADMIN.toBase58(), false],
+    ])
     expect(plan.signers.map(String)).toEqual([PAYER.toBase58()])
+  })
+
+  it('a deferred path that lists nobody is refused at assembly', async () => {
+    const proposal = actionProposalPda(MINT, NONCE)
+    await expect(
+      buildSetPolicy(
+        program,
+        setPolicyArgs({ quorum: { kind: 'proposal', proposal, approvers: [] } }),
+      ),
+    ).rejects.toThrow(RangeError)
+  })
+
+  it('carries its reason through the program coder', async () => {
+    // A misspelt field would be written as zeros, which the program refuses
+    // only after a signature; decoding the bytes back is what catches it.
+    const data = only(await buildSetPolicy(program, setPolicyArgs())).data
+    const decoded = new BorshInstructionCoder(IDL).decode(data)
+    if (decoded === null) throw new Error('the set_policy data did not decode')
+    const reason = (decoded.data as { args: { reason: { code: number; caseRef: number[] } } }).args
+      .reason
+
+    expect(decoded.name).toBe('setPolicy')
+    expect(reason.code).toBe(REASON.code)
+    expect(Buffer.from(reason.caseRef).toString('latin1').replaceAll('\0', '')).toBe(REASON.caseRef)
   })
 
   it('carries the same rule bytes the proposal was raised with', async () => {

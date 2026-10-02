@@ -50,6 +50,7 @@ export type ProposalActionView =
       readonly version: number
       /** Hex of the sha256 the program keeps in place of the rules. */
       readonly rulesHash: string
+      readonly reason: ComplianceReasonInput
     }
   | {
       readonly kind: 'seize'
@@ -108,7 +109,7 @@ export const PROPOSAL_HISTORY_LIMIT = 50
 
 /** Anchor's shape of the stored `ActionKind`: exactly one key is present. */
 type StoredAction = {
-  setPolicy?: { version: number; rulesHash: number[] }
+  setPolicy?: { version: number; rulesHash: number[]; reason: StoredReason }
   seize?: {
     tokenAccount: PublicKey
     amount: { toString(): string }
@@ -126,6 +127,7 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
       kind: 'set-policy',
       version: action.setPolicy.version,
       rulesHash: toHex(Uint8Array.from(action.setPolicy.rulesHash)),
+      reason: fromReason(action.setPolicy.reason),
     }
   }
   if (action.seize !== undefined) {
@@ -183,7 +185,9 @@ export function bodyMatches(view: ProposalView, body: ProposedActionInput): bool
       return (
         stored.kind === 'set-policy' &&
         body.version === stored.version &&
-        toHex(rulesHash(body.policy)) === stored.rulesHash
+        toHex(rulesHash(body.policy)) === stored.rulesHash &&
+        body.reason.code === stored.reason.code &&
+        body.reason.caseRef === stored.reason.caseRef
       )
     case 'seize':
       return (

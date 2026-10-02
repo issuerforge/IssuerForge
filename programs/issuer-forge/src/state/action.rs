@@ -14,11 +14,17 @@ pub const CASE_REF_BYTES: usize = 32;
 /// Why a compliance action was taken (FR-017): a reason code and the case it
 /// belongs to.
 ///
-/// **Introduced by the freeze (T026), meant for all four actions.** Seizure
-/// and pause (T027, T028) take the same type, and T029 adds what is left of
-/// FR-017 and FR-019c — the event with the named signers — on top of it
-/// rather than beside it. One type is what keeps "an action without a reason
-/// is not executed" one rule instead of four.
+/// **Introduced by the freeze (T026), carried by every compliance action.**
+/// Seizure and pause (T027, T028) took the same type, and T029 gave it to the
+/// policy change — in its arguments and in the proposal's stored form — and
+/// made `set_policy` name its quorum in the instruction on both paths, so the
+/// journal's event lists the signers of every action by name (FR-019c). One
+/// type is what keeps "an action without a reason is not executed" one rule
+/// instead of five.
+///
+/// There is no `emit!` beside it: the indexer rebuilds each event from the
+/// instruction that caused it, and a log line would be a second source of the
+/// same fact — one that the runtime truncates.
 ///
 /// The catalogue of codes is not here. The program cannot tell a real reason
 /// from an invented one; what it can do is refuse an action whose reason was

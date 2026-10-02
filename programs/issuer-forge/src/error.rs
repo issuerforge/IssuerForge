@@ -166,6 +166,9 @@ pub enum ForgeError {
     ProposalBodyMismatch,
     #[msg("proposal is still within its term and has not been executed")]
     ProposalStillLive,
+    /// No longer returned since T029: on the deferred path `set_policy` lists
+    /// the proposal's approvers and refuses any other list with
+    /// `ApproversNotListed`. Kept so that the codes after it do not move.
     #[msg("approvals come either from a proposal or from this transaction, not both")]
     QuorumSourceAmbiguous,
     #[msg("a compliance action must state its reason code")]

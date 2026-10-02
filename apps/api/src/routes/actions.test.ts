@@ -44,13 +44,20 @@ const unused = <T extends object>(name: string) =>
     },
   })
 
+const POLICY_REASON = { code: 12, caseRef: 'POLICY/2026/0007' }
+
 const proposal = (over: Partial<ProposalView> = {}): ProposalView => ({
   address: PROPOSAL,
   mint: MINT,
   issuerConfig: OWN_CONFIG,
   payer: ADMIN,
   nonce: NONCE,
-  action: { kind: 'set-policy', version: 2, rulesHash: toHex(rulesHash(STRICT)) },
+  action: {
+    kind: 'set-policy',
+    version: 2,
+    rulesHash: toHex(rulesHash(STRICT)),
+    reason: POLICY_REASON,
+  },
   approvals: [ADMIN],
   createdAt: NOW_S - 3_600,
   expiresAt: NOW_S + 86_400,
@@ -106,7 +113,7 @@ function app(fakes: Fakes = {}) {
       const policy = 'body' in fakes ? fakes.body : STRICT
       return policy === undefined
         ? undefined
-        : { kind: 'set-policy', version: view.action.version, policy }
+        : { kind: 'set-policy', version: view.action.version, policy, reason: view.action.reason }
     },
   }
 
@@ -170,7 +177,10 @@ function instructionOf(transaction: TxJson) {
   }
 }
 
-const proposeBody = { action: { kind: 'set-policy', policy: STRICT }, termSeconds: 3 * 86_400 }
+const proposeBody = {
+  action: { kind: 'set-policy', policy: STRICT, reason: POLICY_REASON },
+  termSeconds: 3 * 86_400,
+}
 
 /** The account the order names; any address the tests do not otherwise use. */
 const SUSPECT_ACCOUNT = 'SysvarRecentB1ockHashes11111111111111111111'
@@ -218,6 +228,17 @@ describe('raising a proposal', () => {
     if (decoded?.action.kind !== 'set-policy') throw new Error('expected a policy body')
     expect(decoded.action.version).toBe(2)
     expect(toHex(rulesHash(decoded.action.policy))).toBe(toHex(rulesHash(STRICT)))
+    expect(decoded.action.reason).toEqual(POLICY_REASON)
+  })
+
+  it('a policy change without a reason is refused before anything is assembled', async () => {
+    // FR-017 at the api boundary: the program would refuse it too, but only
+    // after the proposer had signed and paid rent.
+    const response = await post({}, `/api/tokens/${MINT}/actions`, {
+      action: { kind: 'set-policy', policy: STRICT },
+      termSeconds: 3 * 86_400,
+    })
+    expect(response.status).toBe(400)
   })
 
   it('an observer cannot raise one', async () => {
@@ -447,8 +468,10 @@ describe('executing', () => {
 
     expect(transaction.step).toBe('set-policy')
     expect(transaction.signers).toEqual([ADMIN])
-    expect(accounts).toHaveLength(6)
     expect(accounts[5]).toBe(PROPOSAL)
+    // FR-019c: the approvers follow, in the proposal's order — the journal
+    // names them from here once the proposal is closed.
+    expect(accounts.slice(6)).toEqual([ADMIN, OFFICER])
     // The bytes the digest was computed over, and no other encoding of them.
     expect(Buffer.from(data).includes(Buffer.from(encodeRules(STRICT)))).toBe(true)
   })

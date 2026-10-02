@@ -400,17 +400,46 @@ describe('set_token_metadata and set_policy', () => {
     ])
   })
 
-  it('moves the token onto the new policy version, with no event yet', async () => {
-    // T029 brings the reason code and the case reference; the compliance
-    // event arrives with them.
-    const data = encoded('setPolicy', { version: 2, rules: Buffer.from(RULES) })
-    const { events, changes } = await decode(
-      tx([
-        ours(data, [ISSUER_CONFIG, TOKEN_CONFIG, POLICY_CONFIG, FOUNDER, key(), FOUNDER, OFFICER]),
-      ]),
-    )
-    expect(events).toEqual([])
-    expect(changes).toEqual([{ kind: 'token_policy', mint: MINT, policyVersion: 2 }])
+  const reason = { code: 12, caseRef: ascii('POLICY/2026/0007', 32) }
+  const PAYER = key()
+  const PROPOSAL = key()
+  const head = (proposal: string) => [
+    ISSUER_CONFIG,
+    TOKEN_CONFIG,
+    POLICY_CONFIG,
+    PAYER,
+    key(),
+    proposal,
+  ]
+
+  for (const [path, proposal] of [
+    ['immediate', PROGRAM],
+    ['deferred', PROPOSAL],
+  ] as const) {
+    it(`records a ${path} change with its reason and its quorum by name, not the payer`, async () => {
+      const data = encoded('setPolicy', { version: 2, rules: Buffer.from(RULES), reason })
+      const { events, changes } = await decode(
+        tx([ours(data, [...head(proposal), OFFICER, FOUNDER])]),
+      )
+      expect(events).toHaveLength(1)
+      expect(events[0]?.issuerId).toBe(ISSUER_ID)
+      expect(events[0]?.event).toMatchObject({
+        kind: 'compliance',
+        action: 'set_policy',
+        mint: MINT,
+        target: null,
+        amount: null,
+        reasonCode: '12',
+        caseRef: 'POLICY/2026/0007',
+        signers: [OFFICER, FOUNDER],
+      })
+      expect(changes).toEqual([{ kind: 'token_policy', mint: MINT, policyVersion: 2 }])
+    })
+  }
+
+  it('a change with nobody after the accounts is not a valid event', async () => {
+    const data = encoded('setPolicy', { version: 2, rules: Buffer.from(RULES), reason })
+    await expect(decode(tx([ours(data, head(PROPOSAL))]))).rejects.toThrow()
   })
 })
 

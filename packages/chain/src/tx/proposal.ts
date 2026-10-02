@@ -4,9 +4,11 @@
 //
 // **Two paths to one action, never both at once** (T025). `set_policy` takes
 // its quorum either from the signers of the same transaction or from a matured
-// `ActionProposal`; the program refuses the union (`QuorumSourceAmbiguous`),
-// and the builder makes the union unrepresentable instead of leaving it to
-// the network — `PolicyQuorum` is one or the other.
+// `ActionProposal`; the program refuses the union, and the builder makes the
+// union unrepresentable instead of leaving it to the network — `PolicyQuorum`
+// is one or the other. **Both name the quorum in `remaining_accounts`**
+// (FR-019c, T029): signing on the immediate path, the proposal's approvers
+// without signatures on the deferred one, as `seize.ts` and `pause.ts` do.
 //
 // **The body of a policy change travels in `propose`, the account keeps its
 // digest.** So the rules an approver is asked to sign are read back from the
@@ -38,6 +40,8 @@ export type ProposedActionInput =
       /** The next policy version — exactly `TokenConfig.policy_version + 1`. */
       readonly version: number
       readonly policy: PolicyRules
+      /** Part of what the approvers sign: the execution must carry the same one (T029). */
+      readonly reason: ComplianceReasonInput
     }
   | {
       readonly kind: 'seize'
@@ -56,7 +60,11 @@ function toProposedAction(action: ProposedActionInput) {
   switch (action.kind) {
     case 'set-policy':
       return {
-        setPolicy: { version: action.version, rules: Buffer.from(encodeRules(action.policy)) },
+        setPolicy: {
+          version: action.version,
+          rules: Buffer.from(encodeRules(action.policy)),
+          reason: toReason(action.reason),
+        },
       }
     case 'seize':
       if (action.amount <= 0n || action.amount > U64_MAX) {
@@ -174,17 +182,26 @@ export async function buildCloseActionProposal(
  *
  * `immediate`: the authorising wallets sign this very transaction and travel
  * in `remaining_accounts`. `proposal`: they signed an `ActionProposal` on
- * other days, and the transaction carries only the payer's signature.
+ * other days, and the transaction carries only the payer's signature — and
+ * the proposal's approvers, in its order, unsigned: the program refuses any
+ * other list, because the journal names them from here (FR-019c).
  */
 export type PolicyQuorum =
   | { readonly kind: 'immediate'; readonly signers: readonly PublicKey[] }
-  | { readonly kind: 'proposal'; readonly proposal: PublicKey }
+  | {
+      readonly kind: 'proposal'
+      readonly proposal: PublicKey
+      /** `ActionProposal.approvals`, in order. */
+      readonly approvers: readonly PublicKey[]
+    }
 
 export type SetPolicyArgs = {
   readonly issuerId: PublicKey
   readonly mint: PublicKey
   readonly version: number
   readonly policy: PolicyRules
+  /** Why (FR-017). On the deferred path, the one the proposal holds. */
+  readonly reason: ComplianceReasonInput
   /** Pays the rent for the new version. Grants nothing. */
   readonly payer: PublicKey
   readonly quorum: PolicyQuorum
@@ -196,9 +213,18 @@ export async function buildSetPolicy(program: ForgeProgram, args: SetPolicyArgs)
     // here is a caller that forgot the quorum, not a quorum of zero.
     throw new RangeError('the immediate path needs the signers of the quorum')
   }
+  if (args.quorum.kind === 'proposal' && args.quorum.approvers.length === 0) {
+    // Every proposal holds its proposer, so an empty list is a caller that
+    // forgot to read the proposal.
+    throw new RangeError('the deferred path lists the approvers of its proposal')
+  }
 
   const instruction = await program.methods
-    .setPolicy({ version: args.version, rules: Buffer.from(encodeRules(args.policy)) })
+    .setPolicy({
+      version: args.version,
+      rules: Buffer.from(encodeRules(args.policy)),
+      reason: toReason(args.reason),
+    })
     .accountsPartial({
       issuerConfig: issuerConfigPda(args.issuerId),
       tokenConfig: tokenConfigPda(args.mint),
@@ -211,7 +237,7 @@ export async function buildSetPolicy(program: ForgeProgram, args: SetPolicyArgs)
     .remainingAccounts(
       args.quorum.kind === 'immediate'
         ? args.quorum.signers.map((pubkey) => ({ pubkey, isSigner: true, isWritable: false }))
-        : [],
+        : args.quorum.approvers.map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })),
     )
     .instruction()
 
@@ -251,6 +277,7 @@ export function decodeProposedAction(
         // do not decode could not have passed `propose_action`'s own
         // validation.
         policy: decodeRules(Uint8Array.from(setPolicy.rules)),
+        reason: fromReason(setPolicy.reason),
       },
     }
   }
@@ -277,7 +304,11 @@ export function decodeProposedAction(
 type DecodedProposeArgs = {
   readonly nonce: { toString(): string }
   readonly action: {
-    readonly setPolicy?: { readonly version: number; readonly rules: Uint8Array }
+    readonly setPolicy?: {
+      readonly version: number
+      readonly rules: Uint8Array
+      readonly reason: DecodedReason
+    }
     readonly seize?: {
       readonly tokenAccount: { toBase58(): string }
       readonly amount: { toString(): string }

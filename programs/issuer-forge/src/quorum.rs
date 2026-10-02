@@ -189,7 +189,7 @@ mod tests {
     /// as it is **now**.
     mod deferred {
         use super::*;
-        use crate::state::{ActionKind, ActionProposal};
+        use crate::state::{case_ref_bytes, ActionKind, ActionProposal, ComplianceReason};
 
         fn proposal(approvers: &[u8]) -> ActionProposal {
             let mut p = ActionProposal {
@@ -200,6 +200,10 @@ mod tests {
                 action: ActionKind::SetPolicy {
                     version: 2,
                     rules_hash: [0u8; 32],
+                    reason: ComplianceReason {
+                        code: 1,
+                        case_ref: case_ref_bytes(b"CASE-1"),
+                    },
                 },
                 approvals: [Pubkey::default(); MAX_MEMBERS],
                 approval_count: 0,

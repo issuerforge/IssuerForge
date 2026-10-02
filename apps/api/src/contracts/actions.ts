@@ -44,10 +44,16 @@ export const complianceReasonSchema = z.strictObject({
  * less.
  *
  * A pause and its lifting carry only the reason (FR-016, FR-017): there is
- * one pause per mint, and the mint is in the path.
+ * one pause per mint, and the mint is in the path. A policy change carries
+ * one too (T029): it decides who may hold the token, and the approvers sign
+ * the case along with the rules.
  */
 export const proposedActionBodySchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('set-policy'), policy: policyRulesSchema }),
+  z.strictObject({
+    kind: z.literal('set-policy'),
+    policy: policyRulesSchema,
+    reason: complianceReasonSchema,
+  }),
   z.strictObject({
     kind: z.literal('seize'),
     tokenAccount: addressSchema,
@@ -85,6 +91,7 @@ export const proposalActionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('set-policy'),
     version: z.number().int().positive(),
     rulesHash: z.string().regex(/^[0-9a-f]{64}$/),
+    reason: complianceReasonSchema,
   }),
   z.object({
     kind: z.literal('seize'),

@@ -40,8 +40,8 @@ use issuer_forge::error::ForgeError;
 use issuer_forge::instructions::{ProposeActionArgs, SetPolicyArgs};
 use issuer_forge::rules::layout::{rule_kind, status_source, RULES_BYTES, RULE_SLOT_BYTES};
 use issuer_forge::state::{
-    role, ActionKind, ActionProposal, IssuerConfig, Member, PolicyConfig, ProposedAction,
-    TokenConfig,
+    case_ref_bytes, role, ActionKind, ActionProposal, ComplianceReason, IssuerConfig, Member,
+    PolicyConfig, ProposedAction, TokenConfig,
 };
 use mollusk_svm::result::{InstructionResult, ProgramResult};
 use mollusk_svm::Mollusk;
@@ -70,6 +70,15 @@ const CURRENT_VERSION: u32 = 1;
 const NEXT_VERSION: u32 = 2;
 
 const SOL: u64 = 1_000_000_000;
+
+/// Why the policy changes (FR-017, T029). One reason throughout: the tests
+/// that need another build it from this one.
+fn reason() -> ComplianceReason {
+    ComplianceReason {
+        code: 12,
+        case_ref: case_ref_bytes(b"POLICY/2026/0007"),
+    }
+}
 
 fn wallet(seed: u8) -> AnchorPubkey {
     AnchorPubkey::new_from_array([seed; 32])
@@ -324,10 +333,11 @@ impl Fixture {
                     action: ProposedAction::SetPolicy {
                         version,
                         rules: body,
+                        reason: reason(),
                     },
                 },
             },
-            &[],
+            Vec::new(),
         )
     }
 
@@ -339,13 +349,25 @@ impl Fixture {
                 approver: wallet(approver),
             },
             issuer_forge::instruction::ApproveAction {},
-            &[],
+            Vec::new(),
         )
     }
 
-    /// `set_policy` on the deferred path, optionally with live co-signers
-    /// appended — which the program must refuse (`QuorumSourceAmbiguous`).
-    fn execute(&self, body: Vec<u8>, extra_signers: &[u8]) -> Instruction {
+    /// `set_policy` on the deferred path, naming the proposal's approvers as
+    /// the program requires (FR-019c).
+    fn execute(&self, body: Vec<u8>) -> Instruction {
+        let approvers: Vec<AnchorPubkey> = self.proposal_state().approvals().to_vec();
+        self.execute_listing(body, reason(), listed(&approvers))
+    }
+
+    /// `set_policy` on the deferred path with whatever list and reason the
+    /// test chooses.
+    fn execute_listing(
+        &self,
+        body: Vec<u8>,
+        reason: ComplianceReason,
+        extra: Vec<AccountMeta>,
+    ) -> Instruction {
         build(
             issuer_forge::accounts::SetPolicy {
                 issuer_config: self.issuer_config,
@@ -359,15 +381,25 @@ impl Fixture {
                 args: SetPolicyArgs {
                     version: NEXT_VERSION,
                     rules: body,
+                    reason,
                 },
             },
-            extra_signers,
+            extra,
         )
     }
 
     /// `set_policy` on the immediate path, for the comparison that the two
     /// paths end in the same state.
     fn execute_now(&self, body: Vec<u8>, signers: &[u8]) -> Instruction {
+        self.execute_now_with(body, reason(), signers)
+    }
+
+    fn execute_now_with(
+        &self,
+        body: Vec<u8>,
+        reason: ComplianceReason,
+        signers: &[u8],
+    ) -> Instruction {
         build(
             issuer_forge::accounts::SetPolicy {
                 issuer_config: self.issuer_config,
@@ -381,9 +413,10 @@ impl Fixture {
                 args: SetPolicyArgs {
                     version: NEXT_VERSION,
                     rules: body,
+                    reason,
                 },
             },
-            signers,
+            signing(signers),
         )
     }
 
@@ -396,7 +429,7 @@ impl Fixture {
                 member: wallet(member),
             },
             issuer_forge::instruction::CloseActionProposal {},
-            &[],
+            Vec::new(),
         )
     }
 }
@@ -406,7 +439,7 @@ impl Fixture {
 fn build<A: ToAccountMetas, D: InstructionData>(
     accounts: A,
     data: D,
-    extra_signers: &[u8],
+    extra: Vec<AccountMeta>,
 ) -> Instruction {
     let mut metas: Vec<AccountMeta> = accounts
         .to_account_metas(None)
@@ -417,18 +450,35 @@ fn build<A: ToAccountMetas, D: InstructionData>(
             is_writable: meta.is_writable,
         })
         .collect();
-    for seed in extra_signers {
-        metas.push(AccountMeta {
-            pubkey: sol(&wallet(*seed)),
-            is_signer: true,
-            is_writable: false,
-        });
-    }
+    metas.extend(extra);
     Instruction {
         program_id: sol(&issuer_forge::ID),
         accounts: metas,
         data: data.data(),
     }
+}
+
+/// Live co-signers, as the immediate path takes them.
+fn signing(seeds: &[u8]) -> Vec<AccountMeta> {
+    seeds
+        .iter()
+        .map(|seed| AccountMeta {
+            pubkey: sol(&wallet(*seed)),
+            is_signer: true,
+            is_writable: false,
+        })
+        .collect()
+}
+
+/// Approvers named without their signatures, as the deferred path takes them.
+fn listed(keys: &[AnchorPubkey]) -> Vec<AccountMeta> {
+    keys.iter()
+        .map(|key| AccountMeta {
+            pubkey: sol(key),
+            is_signer: false,
+            is_writable: false,
+        })
+        .collect()
 }
 
 // ─── Reading a refusal ───────────────────────────────────────────────────────
@@ -473,7 +523,7 @@ fn a_quorum_collected_across_days_writes_the_policy_version() {
     assert_eq!(raised.mint, fixture.mint);
     assert_eq!(
         raised.action,
-        ActionKind::set_policy(NEXT_VERSION, &body).expect("a canonical body"),
+        ActionKind::set_policy(NEXT_VERSION, &body, reason()).expect("a canonical body"),
         "the account keeps the digest the program computed, not the bytes"
     );
     assert_eq!(
@@ -491,7 +541,7 @@ fn a_quorum_collected_across_days_writes_the_policy_version() {
     );
 
     let executed_at = NOW + 3 * DAY;
-    let result = fixture.run(executed_at, |f| f.execute(body.clone(), &[]));
+    let result = fixture.run(executed_at, |f| f.execute(body.clone()));
     succeeded(&result);
 
     assert_eq!(fixture.token_state().policy_version, NEXT_VERSION);
@@ -520,7 +570,7 @@ fn one_signature_out_of_two_has_no_on_chain_effect() {
 
     succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, body.clone())));
 
-    let result = fixture.run(NOW + DAY, |f| f.execute(body, &[]));
+    let result = fixture.run(NOW + DAY, |f| f.execute(body));
     assert_eq!(refusal(&result), code(ForgeError::QuorumNotReached));
     assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
     assert!(
@@ -540,13 +590,13 @@ fn a_proposal_past_its_term_no_longer_executes() {
     succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, body.clone())));
     succeeded(&fixture.run(NOW + DAY, |f| f.approve(ADMIN_B)));
 
-    let result = fixture.run(NOW + TERM + 1, |f| f.execute(body.clone(), &[]));
+    let result = fixture.run(NOW + TERM + 1, |f| f.execute(body.clone()));
     assert_eq!(refusal(&result), code(ForgeError::ProposalExpired));
     assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
 
     // And one second earlier it still runs, so the refusal above is the term
     // and not something else about the fixture.
-    let result = fixture.run(NOW + TERM, |f| f.execute(body, &[]));
+    let result = fixture.run(NOW + TERM, |f| f.execute(body));
     succeeded(&result);
     assert_eq!(fixture.token_state().policy_version, NEXT_VERSION);
 }
@@ -563,26 +613,146 @@ fn execution_is_bound_to_the_rules_that_were_approved() {
     succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, approved.clone())));
     succeeded(&fixture.run(NOW + DAY, |f| f.approve(ADMIN_B)));
 
-    let result = fixture.run(NOW + 2 * DAY, |f| f.execute(substituted, &[]));
+    let result = fixture.run(NOW + 2 * DAY, |f| f.execute(substituted));
     assert_eq!(refusal(&result), code(ForgeError::ProposalBodyMismatch));
     assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
 
-    succeeded(&fixture.run(NOW + 2 * DAY, |f| f.execute(approved, &[])));
+    succeeded(&fixture.run(NOW + 2 * DAY, |f| f.execute(approved)));
     assert_eq!(fixture.token_state().policy_version, NEXT_VERSION);
 }
 
 #[test]
 fn the_two_sources_of_a_quorum_are_never_combined() {
     // A proposal one signature short plus a live co-signer would be two lists
-    // of who authorised the action.
+    // of who authorised the action. Since T029 the deferred path lists the
+    // proposal's approvers, and the co-signer is a list it does not hold.
     let mut fixture = Fixture::new();
     let body = rules(2);
 
     succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, body.clone())));
 
-    let result = fixture.run(NOW + DAY, |f| f.execute(body, &[ADMIN_B]));
-    assert_eq!(refusal(&result), code(ForgeError::QuorumSourceAmbiguous));
+    let result = fixture.run(NOW + DAY, |f| {
+        let mut extra = listed(&[wallet(ADMIN_A)]);
+        extra.extend(signing(&[ADMIN_B]));
+        f.execute_listing(body, reason(), extra)
+    });
+    assert_eq!(refusal(&result), code(ForgeError::ApproversNotListed));
     assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
+}
+
+#[test]
+fn the_deferred_path_names_exactly_the_approvers_the_proposal_holds() {
+    // FR-019c: the journal reads who authorised the change from this
+    // instruction, because `set_policy(proposal)` is signed by the payer
+    // alone and the proposal is closed afterwards. A list that is missing,
+    // short, reordered or padded is refused, so the one that passes is the
+    // one the program counted.
+    let mut fixture = Fixture::new();
+    let body = rules(2);
+
+    succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, body.clone())));
+    succeeded(&fixture.run(NOW + DAY, |f| f.approve(ADMIN_B)));
+
+    let (a, b) = (wallet(ADMIN_A), wallet(ADMIN_B));
+    for wrong in [
+        vec![],
+        vec![a],
+        vec![b, a],
+        vec![a, b, wallet(OFFICER)],
+        vec![a, wallet(OFFICER)],
+    ] {
+        let result = fixture.run(NOW + 2 * DAY, |f| {
+            f.execute_listing(body.clone(), reason(), listed(&wrong))
+        });
+        assert_eq!(
+            refusal(&result),
+            code(ForgeError::ApproversNotListed),
+            "listed {wrong:?}"
+        );
+    }
+    assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
+
+    // The approvers' signatures are not needed to name them: the quorum is in
+    // the account, the list only says whose it is.
+    let result = fixture.run(NOW + 2 * DAY, |f| {
+        f.execute_listing(body.clone(), reason(), listed(&[a, b]))
+    });
+    succeeded(&result);
+    assert_eq!(fixture.token_state().policy_version, NEXT_VERSION);
+}
+
+#[test]
+fn a_policy_change_without_a_reason_is_not_executed() {
+    // The acceptance scenario of US2 on the path that skips proposals: two
+    // admins signing at once is still not enough without a case.
+    let mut fixture = Fixture::new();
+    let unstated = ComplianceReason {
+        code: 0,
+        ..reason()
+    };
+    let result = fixture.run(NOW, |f| {
+        f.execute_now_with(rules(2), unstated, &[ADMIN_A, ADMIN_B])
+    });
+    assert_eq!(refusal(&result), code(ForgeError::ReasonCodeMissing));
+
+    let mut padded = case_ref_bytes(b"POLICY/2026/0007");
+    padded[20] = b'X';
+    let smuggled = ComplianceReason {
+        case_ref: padded,
+        ..reason()
+    };
+    let result = fixture.run(NOW, |f| {
+        f.execute_now_with(rules(2), smuggled, &[ADMIN_A, ADMIN_B])
+    });
+    assert_eq!(refusal(&result), code(ForgeError::CaseReferenceInvalid));
+    assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
+}
+
+#[test]
+fn a_proposal_without_a_reason_is_never_raised() {
+    let mut fixture = Fixture::new();
+    let result = fixture.run(NOW, |f| {
+        let mut instruction = f.propose(ADMIN_A, NEXT_VERSION, rules(2));
+        // The reason is the tail of the instruction data: `code` (u16 LE)
+        // then 32 bytes of case. Zeroing the code is what a client that
+        // forgot the field sends.
+        let at = instruction.data.len() - 32 - 2;
+        instruction.data[at..at + 2].copy_from_slice(&0u16.to_le_bytes());
+        instruction
+    });
+    assert_eq!(refusal(&result), code(ForgeError::ReasonCodeMissing));
+    assert!(fixture.account(&fixture.proposal).data.is_empty());
+}
+
+#[test]
+fn execution_is_bound_to_the_case_that_was_approved() {
+    // The reason is part of the stored form: the approvers signed a case, and
+    // the executor cannot file the change under another one.
+    let mut fixture = Fixture::new();
+    let body = rules(2);
+
+    succeeded(&fixture.run(NOW, |f| f.propose(ADMIN_A, NEXT_VERSION, body.clone())));
+    succeeded(&fixture.run(NOW + DAY, |f| f.approve(ADMIN_B)));
+
+    let other_case = ComplianceReason {
+        case_ref: case_ref_bytes(b"POLICY/2026/0008"),
+        ..reason()
+    };
+    let other_code = ComplianceReason {
+        code: 13,
+        ..reason()
+    };
+    for substituted in [other_case, other_code] {
+        let result = fixture.run(NOW + 2 * DAY, |f| {
+            let approvers = f.proposal_state().approvals().to_vec();
+            f.execute_listing(body.clone(), substituted, listed(&approvers))
+        });
+        assert_eq!(refusal(&result), code(ForgeError::ProposalBodyMismatch));
+    }
+    assert_eq!(fixture.token_state().policy_version, CURRENT_VERSION);
+
+    succeeded(&fixture.run(NOW + 2 * DAY, |f| f.execute(body)));
+    assert_eq!(fixture.token_state().policy_version, NEXT_VERSION);
 }
 
 #[test]
@@ -646,7 +816,7 @@ fn the_rent_goes_back_to_whoever_paid_it_and_only_when_it_is_over() {
     assert_eq!(refusal(&result), code(ForgeError::ProposalStillLive));
 
     succeeded(&fixture.run(NOW + DAY, |f| f.approve(ADMIN_B)));
-    succeeded(&fixture.run(NOW + 2 * DAY, |f| f.execute(body, &[])));
+    succeeded(&fixture.run(NOW + 2 * DAY, |f| f.execute(body)));
 
     // Measured immediately before the close, not before the propose: the same
     // payer also funded the new `PolicyConfig` in between, and a balance
@@ -698,5 +868,5 @@ fn a_lapsed_proposal_can_be_closed_without_ever_having_run() {
 fn the_fixture_writes_into_the_slot_it_thinks_it_does() {
     assert_eq!(RULE_SLOT_BYTES, 24);
     assert_ne!(rules(2), rules(3));
-    assert!(ActionKind::set_policy(NEXT_VERSION, &rules(3)).is_ok());
+    assert!(ActionKind::set_policy(NEXT_VERSION, &rules(3), reason()).is_ok());
 }

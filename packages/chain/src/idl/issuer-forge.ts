@@ -1670,7 +1670,12 @@ export type IssuerForge = {
         "two places: `remaining_accounts`, when the wallets sign this very",
         "transaction, or a matured `ActionProposal` in the optional `proposal`",
         "account, when they signed on different days (FR-019b). Both paths run",
-        "the same threshold check."
+        "the same threshold check. On the deferred path `remaining_accounts`",
+        "carry the proposal's approvers, unsigned and in its order, so that",
+        "the instruction itself names who authorised the change (FR-019c).",
+        "",
+        "A change carries a reason code and a case reference (FR-017); without",
+        "them it is refused."
       ],
       "discriminator": [
         40,
@@ -2747,6 +2752,14 @@ export type IssuerForge = {
                     32
                   ]
                 }
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           },
@@ -2980,11 +2993,17 @@ export type IssuerForge = {
         "Why a compliance action was taken (FR-017): a reason code and the case it",
         "belongs to.",
         "",
-        "**Introduced by the freeze (T026), meant for all four actions.** Seizure",
-        "and pause (T027, T028) take the same type, and T029 adds what is left of",
-        "FR-017 and FR-019c — the event with the named signers — on top of it",
-        "rather than beside it. One type is what keeps \"an action without a reason",
-        "is not executed\" one rule instead of four.",
+        "**Introduced by the freeze (T026), carried by every compliance action.**",
+        "Seizure and pause (T027, T028) took the same type, and T029 gave it to the",
+        "policy change — in its arguments and in the proposal's stored form — and",
+        "made `set_policy` name its quorum in the instruction on both paths, so the",
+        "journal's event lists the signers of every action by name (FR-019c). One",
+        "type is what keeps \"an action without a reason is not executed\" one rule",
+        "instead of five.",
+        "",
+        "There is no `emit!` beside it: the indexer rebuilds each event from the",
+        "instruction that caused it, and a log line would be a second source of the",
+        "same fact — one that the runtime truncates.",
         "",
         "The catalogue of codes is not here. The program cannot tell a real reason",
         "from an invented one; what it can do is refuse an action whose reason was",
@@ -3701,6 +3720,14 @@ export type IssuerForge = {
               {
                 "name": "rules",
                 "type": "bytes"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           },
@@ -3930,6 +3957,21 @@ export type IssuerForge = {
               "stays readable for the client. The program checks the length."
             ],
             "type": "bytes"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Why the policy changes (FR-017). A policy change is a compliance",
+              "action like a freeze: it decides who may hold the token, and a journal",
+              "entry that says \"the rules changed\" without a case is the screenshot a",
+              "regulator does not accept. On the deferred path it must be the reason",
+              "the proposal holds — it is part of what the approvers signed."
+            ],
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
           }
         ]
       }
@@ -5850,7 +5892,12 @@ export const IDL: IssuerForge = {
         "two places: `remaining_accounts`, when the wallets sign this very",
         "transaction, or a matured `ActionProposal` in the optional `proposal`",
         "account, when they signed on different days (FR-019b). Both paths run",
-        "the same threshold check."
+        "the same threshold check. On the deferred path `remaining_accounts`",
+        "carry the proposal's approvers, unsigned and in its order, so that",
+        "the instruction itself names who authorised the change (FR-019c).",
+        "",
+        "A change carries a reason code and a case reference (FR-017); without",
+        "them it is refused."
       ],
       "discriminator": [
         40,
@@ -6927,6 +6974,14 @@ export const IDL: IssuerForge = {
                     32
                   ]
                 }
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           },
@@ -7160,11 +7215,17 @@ export const IDL: IssuerForge = {
         "Why a compliance action was taken (FR-017): a reason code and the case it",
         "belongs to.",
         "",
-        "**Introduced by the freeze (T026), meant for all four actions.** Seizure",
-        "and pause (T027, T028) take the same type, and T029 adds what is left of",
-        "FR-017 and FR-019c — the event with the named signers — on top of it",
-        "rather than beside it. One type is what keeps \"an action without a reason",
-        "is not executed\" one rule instead of four.",
+        "**Introduced by the freeze (T026), carried by every compliance action.**",
+        "Seizure and pause (T027, T028) took the same type, and T029 gave it to the",
+        "policy change — in its arguments and in the proposal's stored form — and",
+        "made `set_policy` name its quorum in the instruction on both paths, so the",
+        "journal's event lists the signers of every action by name (FR-019c). One",
+        "type is what keeps \"an action without a reason is not executed\" one rule",
+        "instead of five.",
+        "",
+        "There is no `emit!` beside it: the indexer rebuilds each event from the",
+        "instruction that caused it, and a log line would be a second source of the",
+        "same fact — one that the runtime truncates.",
         "",
         "The catalogue of codes is not here. The program cannot tell a real reason",
         "from an invented one; what it can do is refuse an action whose reason was",
@@ -7881,6 +7942,14 @@ export const IDL: IssuerForge = {
               {
                 "name": "rules",
                 "type": "bytes"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           },
@@ -8110,6 +8179,21 @@ export const IDL: IssuerForge = {
               "stays readable for the client. The program checks the length."
             ],
             "type": "bytes"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Why the policy changes (FR-017). A policy change is a compliance",
+              "action like a freeze: it decides who may hold the token, and a journal",
+              "entry that says \"the rules changed\" without a case is the screenshot a",
+              "regulator does not accept. On the deferred path it must be the reason",
+              "the proposal holds — it is part of what the approvers signed."
+            ],
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
           }
         ]
       }

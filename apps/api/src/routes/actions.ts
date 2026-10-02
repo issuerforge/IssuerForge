@@ -378,8 +378,13 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       mint: new PublicKey(view.mint),
       version: found.version,
       policy: found.policy,
+      reason: found.reason,
       payer: new PublicKey(payer),
-      quorum: { kind: 'proposal', proposal: new PublicKey(id) },
+      quorum: {
+        kind: 'proposal',
+        proposal: new PublicKey(id),
+        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+      },
     })
 
     c.get('log').info({ proposal: id, version: found.version, payer }, 'execution assembled')
@@ -442,7 +447,7 @@ function present(view: ProposalView, current: Standing): ProposalResponse {
 function presentBody(body: ProposedActionInput) {
   switch (body.kind) {
     case 'set-policy':
-      return { kind: body.kind, policy: body.policy }
+      return { kind: body.kind, policy: body.policy, reason: body.reason }
     case 'seize':
       return {
         kind: body.kind,
@@ -466,7 +471,12 @@ function toProposedAction(
       // Read from the chain, not typed by the person: `set_policy` accepts
       // exactly the next version, and the proposal is bound to it by its
       // digest.
-      return { kind: 'set-policy', version: policyVersion + 1, policy: input.policy }
+      return {
+        kind: 'set-policy',
+        version: policyVersion + 1,
+        policy: input.policy,
+        reason: input.reason,
+      }
     case 'seize':
       return {
         kind: 'seize',

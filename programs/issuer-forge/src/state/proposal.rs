@@ -20,8 +20,13 @@ use crate::state::ComplianceReason;
 /// those bytes.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub enum ProposedAction {
-    /// The next policy version and its full rule layout (FR-009, FR-010).
-    SetPolicy { version: u32, rules: Vec<u8> },
+    /// The next policy version, its full rule layout and why (FR-009,
+    /// FR-010, FR-017).
+    SetPolicy {
+        version: u32,
+        rules: Vec<u8>,
+        reason: ComplianceReason,
+    },
     /// Taking `amount` out of `token_account` under an order (FR-015). The
     /// body is small enough to store whole, so this one is its own stored
     /// form.
@@ -45,9 +50,11 @@ impl ProposedAction {
     /// diverged quietly instead.
     pub fn stored(&self) -> Result<ActionKind> {
         match self {
-            ProposedAction::SetPolicy { version, rules } => {
-                ActionKind::set_policy(*version, rules)
-            }
+            ProposedAction::SetPolicy {
+                version,
+                rules,
+                reason,
+            } => ActionKind::set_policy(*version, rules, *reason),
             ProposedAction::Seize {
                 token_account,
                 amount,
@@ -85,7 +92,17 @@ pub enum ActionKind {
     /// is what `init` leaves behind for the instant between creating the
     /// account and the handler writing it, and it is why a variant that must
     /// never be reached by accident does not belong in position zero.
-    SetPolicy { version: u32, rules_hash: [u8; 32] },
+    ///
+    /// The reason came with T029, in place rather than as a new variant: a
+    /// second "policy change" beside this one would be two forms of one fact
+    /// for as long as the program exists, and the only proposals the old
+    /// layout could misread are on a devnet deployment that predates it. The
+    /// account does not grow — the seizure is still the largest variant.
+    SetPolicy {
+        version: u32,
+        rules_hash: [u8; 32],
+        reason: ComplianceReason,
+    },
     /// A seizure (FR-015): whose account, how much, and why.
     ///
     /// An exact amount rather than "whatever the balance is at execution":
@@ -117,7 +134,12 @@ impl ActionKind {
     /// layout is validated at proposal time, so a body that could not have
     /// come out of `encode` never reaches the point where approvers are asked
     /// to authorise it.
-    pub fn set_policy(version: u32, rules: &[u8]) -> Result<Self> {
+    ///
+    /// The reason is part of the stored form, so the approvers authorise the
+    /// case along with the rules, and an execution that names another case
+    /// is another action.
+    pub fn set_policy(version: u32, rules: &[u8], reason: ComplianceReason) -> Result<Self> {
+        reason.validate()?;
         require!(
             rules.len() == RULES_BYTES,
             ForgeError::PolicyRulesNotCanonical
@@ -127,6 +149,7 @@ impl ActionKind {
         Ok(ActionKind::SetPolicy {
             version,
             rules_hash: layout::rules_hash(slots),
+            reason,
         })
     }
 
@@ -317,6 +340,7 @@ mod tests {
             action: ActionKind::SetPolicy {
                 version: 2,
                 rules_hash: [7u8; 32],
+                reason: a_reason(),
             },
             approvals: [Pubkey::default(); MAX_MEMBERS],
             approval_count: 0,
@@ -433,6 +457,7 @@ mod tests {
         let stored = ProposedAction::SetPolicy {
             version: 4,
             rules: rules.clone(),
+            reason: a_reason(),
         }
         .stored()
         .expect("a canonical layout");
@@ -443,6 +468,7 @@ mod tests {
             ActionKind::SetPolicy {
                 version: 4,
                 rules_hash: layout::rules_hash(slots),
+                reason: a_reason(),
             }
         );
     }
@@ -456,10 +482,11 @@ mod tests {
         let proposed = ProposedAction::SetPolicy {
             version: 4,
             rules: rules.clone(),
+            reason: a_reason(),
         }
         .stored()
         .expect("a canonical layout");
-        let executed = ActionKind::set_policy(4, &rules).expect("a canonical layout");
+        let executed = ActionKind::set_policy(4, &rules, a_reason()).expect("a canonical layout");
         assert_eq!(proposed, executed);
     }
 
@@ -469,8 +496,8 @@ mod tests {
         other[RULE_SLOT_BYTES] = rule_kind::TRANSFER_LIMIT;
         other[RULE_SLOT_BYTES + 2] = 1; // a non-zero limit: zero is out of range.
         assert_ne!(
-            ActionKind::set_policy(4, &minimal_rules()).expect("canonical"),
-            ActionKind::set_policy(4, &other).expect("canonical")
+            ActionKind::set_policy(4, &minimal_rules(), a_reason()).expect("canonical"),
+            ActionKind::set_policy(4, &other, a_reason()).expect("canonical")
         );
     }
 
@@ -543,6 +570,7 @@ mod tests {
         ActionKind::SetPolicy {
             version: 1,
             rules_hash: [0u8; 32],
+            reason: a_reason(),
         }
         .serialize(&mut policy)
         .expect("serialises");
@@ -569,6 +597,35 @@ mod tests {
             .expect("serialises");
         assert_eq!((pause[0], resume[0]), (2, 3));
         assert_eq!(pause.len(), 1 + 2 + 32);
+
+        // T029 put the reason into the policy change in place. Still smaller
+        // than the seizure, so the account kept its size.
+        assert_eq!(policy.len(), 1 + 4 + 32 + 2 + 32);
+        assert!(policy.len() < ActionKind::INIT_SPACE);
+    }
+
+    #[test]
+    fn a_policy_change_without_a_reason_never_becomes_a_proposal() {
+        let unstated = ComplianceReason {
+            code: 0,
+            ..a_reason()
+        };
+        assert_eq!(
+            err(ActionKind::set_policy(4, &minimal_rules(), unstated).map(|_| ())),
+            code(ForgeError::ReasonCodeMissing)
+        );
+    }
+
+    #[test]
+    fn the_case_of_a_policy_change_is_part_of_what_was_approved() {
+        let other_case = ComplianceReason {
+            case_ref: crate::state::case_ref_bytes(b"POLICY/2026/0002"),
+            ..a_reason()
+        };
+        assert_ne!(
+            ActionKind::set_policy(4, &minimal_rules(), a_reason()).expect("canonical"),
+            ActionKind::set_policy(4, &minimal_rules(), other_case).expect("canonical")
+        );
     }
 
     #[test]
@@ -608,11 +665,11 @@ mod tests {
         // Approvers must not be asked to authorise bytes that could not have
         // come out of `encode`.
         assert_eq!(
-            err(ActionKind::set_policy(4, &[0u8; 8]).map(|_| ())),
+            err(ActionKind::set_policy(4, &[0u8; 8], a_reason()).map(|_| ())),
             code(ForgeError::PolicyRulesNotCanonical)
         );
         assert_eq!(
-            err(ActionKind::set_policy(4, &vec![0u8; RULES_BYTES]).map(|_| ())),
+            err(ActionKind::set_policy(4, &vec![0u8; RULES_BYTES], a_reason()).map(|_| ())),
             code(ForgeError::PolicyStatusRuleMissing)
         );
     }

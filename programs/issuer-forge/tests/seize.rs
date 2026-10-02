@@ -767,7 +767,15 @@ fn a_policy_proposal_cannot_be_spent_on_a_seizure() {
     rules[2] = issuer_forge::rules::layout::status_source::REGISTER;
     succeeded(&f.run(
         NOW,
-        f.propose(1, OFFICER, ProposedAction::SetPolicy { version: 2, rules }),
+        f.propose(
+            1,
+            OFFICER,
+            ProposedAction::SetPolicy {
+                version: 2,
+                rules,
+                reason: a_reason(),
+            },
+        ),
     ));
     succeeded(&f.run(NOW, f.approve(1, ADMIN_A)));
     assert!(matches!(

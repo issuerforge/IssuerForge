@@ -213,7 +213,9 @@ const ACCOUNT = {
   initializeIssuer: { founder: 2 },
   createToken: { founder: 0, attestor: 1, issuerConfig: 2, mint: 3, founderTokenAccount: 7 },
   setTokenMetadata: { mint: 2 },
-  setPolicy: { tokenConfig: 1 },
+  // `proposal` (#5) is the program id when absent — Anchor's `None` still
+  // takes its slot — so the quorum starts at #6 on both paths.
+  setPolicy: { tokenConfig: 1, firstApprover: 6 },
   thawHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, authority: 7 },
   freezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
   unfreezeHolder: { issuerConfig: 0, mint: 2, tokenAccount: 3, officer: 6 },
@@ -467,6 +469,16 @@ async function decodeSetTokenMetadata(
   })
 }
 
+/**
+ * A policy change (FR-009, FR-017, FR-019c) — a compliance event and the
+ * mirror's version together.
+ *
+ * The signers are the accounts after the instruction's own list on both
+ * paths: the wallets that signed this transaction on the immediate one, the
+ * proposal's approvers on the deferred one, where the program refuses any
+ * list but the proposal's own (T029). The payer authorised nothing and is
+ * not named. No target and no amount: a policy is of the whole mint.
+ */
 async function decodeSetPolicy(
   ctx: Context,
   instruction: InstructionView,
@@ -475,9 +487,21 @@ async function decodeSetPolicy(
   const tokenConfig = at(instruction, ACCOUNT.setPolicy.tokenConfig, 'tokenConfig')
   const token = await ctx.lookups.tokenOfConfig(tokenConfig)
   if (token === undefined) throw new LookupFailed('token config', tokenConfig)
-  // No compliance event yet: the instruction carries neither a reason code
-  // nor a case reference, and the event schema rightly refuses one without
-  // them. T029 adds both to the arguments, and the event with them.
+
+  const reason = args.reason as ReasonInput
+  const event: ComplianceEvent = {
+    kind: 'compliance',
+    ...envelopeOf(ctx.tx),
+    eventIndex: ctx.events.length,
+    mint: token.mint,
+    action: 'set_policy',
+    target: null,
+    amount: null,
+    reasonCode: integer(reason.code).toString(),
+    caseRef: ascii(reason.caseRef),
+    signers: instruction.accounts.slice(ACCOUNT.setPolicy.firstApprover),
+  }
+  ctx.events.push({ issuerId: token.issuerId, event })
   ctx.changes.push({
     kind: 'token_policy',
     mint: token.mint,

@@ -41,6 +41,8 @@ const quorum = (quorumN = 2): QuorumView => ({
   ],
 })
 
+const POLICY_REASON = { code: 12, caseRef: 'POLICY/2026/0007' }
+
 const SEIZURE = {
   kind: 'seize',
   tokenAccount: WATCHER,
@@ -54,7 +56,12 @@ const view = (over: Partial<ProposalView> = {}): ProposalView => ({
   issuerConfig: issuerConfigPda(ISSUER_ID).toBase58(),
   payer: ADMIN,
   nonce: NONCE,
-  action: { kind: 'set-policy', version: 2, rulesHash: toHex(rulesHash(STRICT)) },
+  action: {
+    kind: 'set-policy',
+    version: 2,
+    rulesHash: toHex(rulesHash(STRICT)),
+    reason: POLICY_REASON,
+  },
   approvals: [ADMIN],
   createdAt: 1_000,
   expiresAt: 10_000,
@@ -99,10 +106,14 @@ describe('where a proposal stands', () => {
 })
 
 describe('the body a proposal committed to', () => {
-  it('matches only its own version and rules', () => {
-    expect(bodyMatches(view(), { kind: 'set-policy', version: 2, policy: STRICT })).toBe(true)
-    expect(bodyMatches(view(), { kind: 'set-policy', version: 3, policy: STRICT })).toBe(false)
-    expect(bodyMatches(view(), { kind: 'set-policy', version: 2, policy: OPEN_POLICY })).toBe(false)
+  it('matches only its own version, rules and case', () => {
+    const body = { kind: 'set-policy', version: 2, policy: STRICT, reason: POLICY_REASON } as const
+    expect(bodyMatches(view(), body)).toBe(true)
+    expect(bodyMatches(view(), { ...body, version: 3 })).toBe(false)
+    expect(bodyMatches(view(), { ...body, policy: OPEN_POLICY })).toBe(false)
+    // T029: the case is part of what the approvers signed.
+    expect(bodyMatches(view(), { ...body, reason: { code: 12, caseRef: 'OTHER' } })).toBe(false)
+    expect(bodyMatches(view(), { ...body, reason: { ...POLICY_REASON, code: 13 } })).toBe(false)
   })
 
   it('a seizure matches only its own account, amount and case — and never a policy', () => {
@@ -117,7 +128,14 @@ describe('the body a proposal committed to', () => {
     expect(bodyMatches(seizure, { ...body, amount: SEIZURE.amount + 1n })).toBe(false)
     expect(bodyMatches(seizure, { ...body, tokenAccount: new PublicKey(ADMIN) })).toBe(false)
     expect(bodyMatches(seizure, { ...body, reason: { code: 4, caseRef: 'OTHER' } })).toBe(false)
-    expect(bodyMatches(seizure, { kind: 'set-policy', version: 2, policy: STRICT })).toBe(false)
+    expect(
+      bodyMatches(seizure, {
+        kind: 'set-policy',
+        version: 2,
+        policy: STRICT,
+        reason: POLICY_REASON,
+      }),
+    ).toBe(false)
     expect(bodyMatches(view(), body)).toBe(false)
   })
 
@@ -143,7 +161,7 @@ describe('reading the body back from the node', () => {
       mint: MINT,
       nonce,
       termSeconds: 86_400,
-      action: { kind: 'set-policy', version: 2, policy },
+      action: { kind: 'set-policy', version: 2, policy, reason: POLICY_REASON },
       payer: new PublicKey(ADMIN),
       proposer: new PublicKey(ADMIN),
     })

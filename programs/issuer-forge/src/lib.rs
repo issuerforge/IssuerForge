@@ -83,7 +83,12 @@ pub mod issuer_forge {
     /// two places: `remaining_accounts`, when the wallets sign this very
     /// transaction, or a matured `ActionProposal` in the optional `proposal`
     /// account, when they signed on different days (FR-019b). Both paths run
-    /// the same threshold check.
+    /// the same threshold check. On the deferred path `remaining_accounts`
+    /// carry the proposal's approvers, unsigned and in its order, so that
+    /// the instruction itself names who authorised the change (FR-019c).
+    ///
+    /// A change carries a reason code and a case reference (FR-017); without
+    /// them it is refused.
     pub fn set_policy(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()> {
         instructions::set_policy::handler(ctx, args)
     }
