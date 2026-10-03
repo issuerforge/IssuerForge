@@ -36,8 +36,8 @@ describe('createIndexer', () => {
       },
     })
 
-    indexer.push(seen('a', 1))
-    indexer.push(seen('b', 2))
+    void indexer.handle(seen('a', 1))
+    void indexer.handle(seen('b', 2))
     await indexer.handle(seen('c', 3))
     await indexer.drain()
 
@@ -86,8 +86,8 @@ describe('createIndexer', () => {
 
     await indexer.handle(seen('a', 1))
     await indexer.handle(seen('b', 2))
-    // The subscription keeps delivering; nothing after the failure is applied.
-    indexer.push(seen('c', 3))
+    // Whatever comes next, nothing after the failure is applied.
+    await indexer.handle(seen('c', 3))
     await indexer.handle(seen('d', 4))
     await indexer.drain()
 

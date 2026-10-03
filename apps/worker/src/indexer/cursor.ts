@@ -33,16 +33,17 @@ export interface IndexerOptions {
 }
 
 export interface Indexer {
-  /** Fire-and-forget, from the subscription. Dropped while halted. */
-  push(seen: Seen): void
-  /** Awaited, from the backfill: the pass wants to know the transaction landed. */
+  /**
+   * Awaited, from a pass over the signature index (`follow.ts`) — the only
+   * caller. The subscription does not apply anything itself: a transaction it
+   * names past one the socket dropped would move the cursor over the gap.
+   */
   handle(seen: Seen): Promise<void>
   cursor(): Cursor | undefined
   /**
-   * Whether a transaction failed to apply since the last resume. The
-   * subscription is ignored while halted, so that nothing after the failed
-   * transaction gets ahead of it; the next backfill pass resumes from the
-   * cursor and meets the failed transaction again.
+   * Whether a transaction failed to apply since the last resume. Nothing
+   * after the failed transaction is applied while halted; the next pass
+   * resumes from the cursor and meets the failed transaction again.
    */
   halted(): boolean
   resume(): void
@@ -52,8 +53,8 @@ export interface Indexer {
 const RECENT_SIGNATURES = 256
 
 /**
- * One transaction at a time, in arrival order. The subscription and the
- * backfill both feed this queue, and the mirror upserts must not interleave.
+ * One transaction at a time, in arrival order: the mirror upserts must not
+ * interleave.
  *
  * A failure does not advance the cursor and halts the queue: the
  * alternative — carry on with the next transaction — would let the cursor
@@ -97,12 +98,6 @@ export function createIndexer(options: IndexerOptions): Indexer {
   }
 
   return {
-    push(seen) {
-      if (halted) return
-      handle(seen).catch((error: unknown) => {
-        options.logger.error({ err: error, signature: seen.signature }, 'cursor save failed')
-      })
-    },
     handle,
     cursor: () => cursor,
     halted: () => halted,

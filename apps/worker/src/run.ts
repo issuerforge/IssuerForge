@@ -13,6 +13,7 @@ import { Connection, type VersionedTransactionResponse } from '@solana/web3.js'
 import { createApplier, drizzleCursorStore, drizzleWriter } from './indexer/apply.ts'
 import { createIndexer, type Seen } from './indexer/cursor.ts'
 import { decodeTransaction } from './indexer/decode.ts'
+import { createFollower } from './indexer/follow.ts'
 import { createRpcLookups } from './indexer/lookups.ts'
 import { signaturesSince, subscribeSignatures } from './indexer/source.ts'
 import { toTransactionView } from './indexer/transaction.ts'
@@ -30,6 +31,9 @@ export interface WorkerHandle {
 
 /** How often the backfill re-checks the tip for anything the socket dropped. */
 const BACKFILL_EVERY_MS = 30_000
+
+/** A notification waits this long for its siblings, so a burst of them costs one listing. */
+const SETTLE_MS = 500
 
 /**
  * A confirmed notification can arrive a moment before the same node serves
@@ -97,43 +101,27 @@ export async function startWorker({
     },
   })
 
-  let passing = false
-  async function backfillPass(): Promise<void> {
-    if (passing) return
-    passing = true
-    try {
-      indexer.resume()
-      const since = indexer.cursor()?.signature
-      const pending = await signaturesSince(connection, PROGRAM_ID, since)
-      for (const seen of pending) {
-        await indexer.handle(seen)
-        if (indexer.halted()) break
-      }
-      logger.info(
-        {
-          since: since ?? null,
-          found: pending.length,
-          cursor: indexer.cursor()?.signature ?? null,
-        },
-        'backfill pass',
-      )
-    } catch (error) {
-      logger.warn({ err: error }, 'backfill failed')
-    } finally {
-      passing = false
-    }
-  }
+  const follower = createFollower({
+    indexer,
+    list: (since) => signaturesSince(connection, PROGRAM_ID, since),
+    logger,
+    settleMs: SETTLE_MS,
+  })
 
-  await backfillPass()
-  const subscription = subscribeSignatures(connection, PROGRAM_ID, indexer.push)
-  const timer = setInterval(() => void backfillPass(), BACKFILL_EVERY_MS)
+  await follower.pass()
+  // The subscription only wakes a pass; what to apply, and in what order,
+  // comes from the signature index (`indexer/follow.ts`).
+  const subscription = subscribeSignatures(connection, PROGRAM_ID, () => follower.wake())
+  const timer = setInterval(() => void follower.pass(), BACKFILL_EVERY_MS)
   // Only the host: the RPC key sits in the query string.
   logger.info({ program: PROGRAM_ID.toBase58(), rpc: new URL(rpcUrl).host }, 'worker listening')
 
   return {
     async stop() {
       clearInterval(timer)
+      follower.stop()
       await subscription.stop()
+      await follower.idle()
       await indexer.drain()
     },
   }

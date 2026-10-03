@@ -1,9 +1,10 @@
 // Where signatures come from: the backfill and the subscription.
 //
-// The subscription is the fast path, the backfill the complete one. A
+// The backfill is the only path anything is applied by; the subscription is
+// how it learns to run now rather than at the next tick (`follow.ts`). A
 // dropped socket therefore costs latency, never records — and a transaction
-// that failed to apply is met again by the next backfill pass, which starts
-// from the cursor rather than from where the subscription got to.
+// that failed to apply is met again by the next pass, which starts from the
+// cursor.
 //
 // Both mention the program's address. That covers more than the program's
 // own instructions: the hook program sits in the account list of every
@@ -60,9 +61,9 @@ export interface Subscription {
  * `confirmed`: `processed` can be rolled back, and a rolled-back transfer in
  * the feed would be a lie.
  *
- * The notification carries the signature and the slot, which is all the
- * indexer takes from it — the transaction itself is fetched in full when it
- * is applied. `Connection` reconnects the socket by itself.
+ * The notification carries the signature and the slot; the follower uses
+ * neither beyond "something happened" — the pass lists the signatures
+ * itself. `Connection` reconnects the socket by itself.
  */
 export function subscribeSignatures(
   connection: Connection,
