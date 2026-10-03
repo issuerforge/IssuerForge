@@ -193,7 +193,7 @@ mod tests {
 
         fn proposal(approvers: &[u8]) -> ActionProposal {
             let mut p = ActionProposal {
-                mint: wallet(50),
+                scope: wallet(50),
                 issuer: wallet(51),
                 payer: wallet(52),
                 nonce: 1,

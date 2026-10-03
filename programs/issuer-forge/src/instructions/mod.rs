@@ -5,6 +5,7 @@ pub mod initialize_issuer;
 pub mod pause;
 pub mod proposal;
 pub mod seize;
+pub mod set_delegation;
 pub mod set_policy;
 pub mod thaw_holder;
 
@@ -20,5 +21,6 @@ pub use initialize_issuer::*;
 pub use pause::*;
 pub use proposal::*;
 pub use seize::*;
+pub use set_delegation::*;
 pub use set_policy::*;
 pub use thaw_holder::*;

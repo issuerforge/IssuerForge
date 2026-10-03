@@ -139,7 +139,7 @@ pub(crate) fn handler(ctx: Context<SetPolicy>, args: SetPolicyArgs) -> Result<()
                 ForgeError::ProposalNotForThisIssuer
             );
             require!(
-                proposal.mint == ctx.accounts.token_config.mint,
+                proposal.scope == ctx.accounts.token_config.mint,
                 ForgeError::ProposalNotForThisToken
             );
             proposal.live(now)?;

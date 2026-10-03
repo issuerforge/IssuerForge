@@ -23,24 +23,6 @@ pub mod role {
     pub const AUTHORISING: u8 = ADMIN | COMPLIANCE;
 }
 
-/// The powers an issuer delegates to the platform's operational key (FR-035).
-///
-/// The list is closed **in code**, not in configuration: issuance, seizure,
-/// pause and policy change are not here and cannot be. That is what makes
-/// FR-035a a check rather than a promise — a compromised operational key
-/// will not get these rights even from the issuer's owner, because there is
-/// nothing to express them with.
-pub mod delegation {
-    /// Thawing an account after verification (FR-008b2).
-    pub const THAW_HOLDER: u8 = 1 << 0;
-    /// Updating the issuer's own status registry (FR-008a).
-    pub const SET_HOLDER_STATUS: u8 = 1 << 1;
-    /// Settling a redemption after the corridor's confirmation (FR-029).
-    pub const SETTLE_REDEMPTION: u8 = 1 << 2;
-
-    pub const ALL: u8 = THAW_HOLDER | SET_HOLDER_STATUS | SETTLE_REDEMPTION;
-}
-
 /// A row of the authorised membership: a wallet address and its role mask.
 ///
 /// A role is bound to the address, not to the login account (FR-034a): a
@@ -80,9 +62,11 @@ pub struct IssuerConfig {
     pub member_slots: u8,
     /// The quorum threshold (FR-019). Not below `MIN_QUORUM`.
     pub quorum_n: u8,
-    /// The platform's operational key. Moves no money (FR-035a).
+    /// The platform's operational key. Moves no money (FR-035a), and is never
+    /// an address of `members` (`state::delegation`).
     pub operational_key: Pubkey,
-    /// What exactly is delegated to it. Revoked with one action (FR-035b).
+    /// What exactly is delegated to it, a mask over `state::delegation`.
+    /// Revoked with one action (FR-035b, `set_delegation`).
     pub delegation_mask: u8,
     pub bump: u8,
     /// How many tokens the issuer has issued. The next one gets exactly this

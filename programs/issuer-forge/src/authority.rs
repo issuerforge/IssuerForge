@@ -14,8 +14,11 @@
 //! the delegation mask has no power that moves funds and cannot have one,
 //! and the second path leads to the issuer's own wallets.
 //!
-//! T030 will generalise this to the remaining instructions; here is exactly
-//! what thawing and statuses need.
+//! **Every other instruction refuses the operational key without asking about
+//! it** (T030). They all ask for a role in the membership or for the quorum,
+//! and the key is never a member (`state::delegation`), so there is no
+//! per-instruction exclusion to forget. This file is where the key is
+//! *accepted*, and only here.
 use anchor_lang::prelude::*;
 
 use crate::error::ForgeError;
@@ -23,10 +26,8 @@ use crate::state::{role, IssuerConfig};
 
 /// Whether this address may perform a routine action with the named power.
 ///
-/// The check order matters: the membership first, then the operational key.
-/// If the same address is in both, it acts as a member — otherwise an issuer
-/// that set its own wallet as the operational key would lose its rights
-/// along with the revocation of the delegation.
+/// The membership is asked first only because it is the common case; the
+/// order decides nothing, since the operational key is never a member.
 pub fn require_routine(issuer: &IssuerConfig, signer: &Pubkey, power: u8) -> Result<()> {
     if issuer.member_has(signer, role::AUTHORISING) {
         return Ok(());
@@ -183,13 +184,5 @@ mod tests {
                 "wallet {seed}"
             );
         }
-    }
-
-    #[test]
-    fn lets_a_member_act_as_a_member_even_when_they_are_the_operational_key() {
-        // Otherwise an issuer that set its own wallet as the operational key
-        // would lose its rights along with the revocation of the delegation.
-        let doubled = issuer(&[(1, role::ADMIN), (2, role::COMPLIANCE)], wallet(1), 0);
-        assert!(require_routine(&doubled, &wallet(1), delegation::THAW_HOLDER).is_ok());
     }
 }

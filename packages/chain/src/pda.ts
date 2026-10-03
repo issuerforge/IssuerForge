@@ -163,13 +163,18 @@ export function seizureVaultAddress(mint: PublicKey, programId = PROGRAM_ID): Pu
   )
 }
 
-/** `ActionProposal` — `["proposal", mint, nonce]`, nonce `u64`. */
+/**
+ * `ActionProposal` — `["proposal", scope, nonce]`, nonce `u64`. The scope is
+ * the mint for an action on a token and the issuer's config address
+ * (`issuerConfigPda`) for an action on the issuer itself, such as a
+ * delegation change.
+ */
 export function actionProposalPda(
-  mint: PublicKey,
+  scope: PublicKey,
   nonce: bigint,
   programId = PROGRAM_ID,
 ): PublicKey {
-  return derive([SEED.proposal, mint.toBytes(), u64Seed(nonce)], programId)
+  return derive([SEED.proposal, scope.toBytes(), u64Seed(nonce)], programId)
 }
 
 /**

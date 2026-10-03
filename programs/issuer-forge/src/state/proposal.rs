@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::constants::MAX_MEMBERS;
 use crate::error::ForgeError;
 use crate::rules::layout::{self, RuleSlot, RULES_BYTES};
-use crate::state::ComplianceReason;
+use crate::state::{delegation, ComplianceReason, IssuerConfig};
 
 /// What is proposed, as the proposer states it — **with the bodies**.
 ///
@@ -39,6 +39,10 @@ pub enum ProposedAction {
     Pause { reason: ComplianceReason },
     /// Letting it move again.
     Resume { reason: ComplianceReason },
+    /// Handing the platform's operational key a power, or handing the powers
+    /// to another key (FR-035). The first action of the issuer rather than of
+    /// a token: its proposal has no mint (`ActionProposal::scope`).
+    SetDelegation { operational_key: Pubkey, mask: u8 },
 }
 
 impl ProposedAction {
@@ -48,7 +52,10 @@ impl ProposedAction {
     /// types instead of two enums.** A new action kind that forgets its
     /// stored form does not compile here; two parallel enums would have
     /// diverged quietly instead.
-    pub fn stored(&self) -> Result<ActionKind> {
+    ///
+    /// The issuer is passed because a delegation change stores the state it
+    /// changes from, read here and never from the proposer.
+    pub fn stored(&self, issuer: &IssuerConfig) -> Result<ActionKind> {
         match self {
             ProposedAction::SetPolicy {
                 version,
@@ -62,7 +69,17 @@ impl ProposedAction {
             } => ActionKind::seize(*token_account, *amount, *reason),
             ProposedAction::Pause { reason } => ActionKind::pause(*reason),
             ProposedAction::Resume { reason } => ActionKind::resume(*reason),
+            ProposedAction::SetDelegation {
+                operational_key,
+                mask,
+            } => ActionKind::set_delegation(issuer, *operational_key, *mask),
         }
+    }
+
+    /// Whether the action belongs to the issuer rather than to one of its
+    /// tokens, i.e. whether its proposal is raised without a `TokenConfig`.
+    pub fn is_issuer_scoped(&self) -> bool {
+        matches!(self, ProposedAction::SetDelegation { .. })
     }
 }
 
@@ -123,6 +140,25 @@ pub enum ActionKind {
     /// `bool` beside a reason is one byte a console could render the wrong
     /// way round.
     Resume { reason: ComplianceReason },
+    /// A change of the operational key's delegation (FR-035, T030): **from**
+    /// what, **to** what.
+    ///
+    /// The approvers authorise a transition, not a destination. A proposal
+    /// that stored only the target would still execute after an admin had
+    /// revoked the delegation in a hurry — and hand a compromised key back
+    /// everything the revocation took, under signatures given before anyone
+    /// knew. With the starting point stored, any change in between makes the
+    /// execution refuse (`DelegationChangedSinceProposal`).
+    ///
+    /// No reason (FR-017): this is configuration of the issuer's own
+    /// platform, not a compliance action against a holder. 67 bytes, below
+    /// the seizure, so the account does not grow.
+    SetDelegation {
+        previous_key: Pubkey,
+        previous_mask: u8,
+        operational_key: Pubkey,
+        mask: u8,
+    },
 }
 
 impl ActionKind {
@@ -179,9 +215,33 @@ impl ActionKind {
         reason.validate()?;
         Ok(ActionKind::Resume { reason })
     }
+
+    /// The stored form of a delegation change, starting from the issuer's
+    /// delegation as it is now.
+    ///
+    /// The target is checked against the membership as it is now as well;
+    /// the execution checks it again, because the membership may change in
+    /// between.
+    pub fn set_delegation(
+        issuer: &IssuerConfig,
+        operational_key: Pubkey,
+        mask: u8,
+    ) -> Result<Self> {
+        delegation::validate(&operational_key, mask, &issuer.members)?;
+        require!(
+            operational_key != issuer.operational_key || mask != issuer.delegation_mask,
+            ForgeError::DelegationUnchanged
+        );
+        Ok(ActionKind::SetDelegation {
+            previous_key: issuer.operational_key,
+            previous_mask: issuer.delegation_mask,
+            operational_key,
+            mask,
+        })
+    }
 }
 
-/// A deferred action of the issuer's quorum. PDA: `["proposal", mint, nonce]`,
+/// A deferred action of the issuer's quorum. PDA: `["proposal", scope, nonce]`,
 /// the nonce a `u64` LE.
 ///
 /// **This account is what T025 brings; the quorum itself came with T014.**
@@ -200,15 +260,20 @@ impl ActionKind {
 #[account]
 #[derive(InitSpace)]
 pub struct ActionProposal {
-    /// The token this action is about. Every kind that exists is per-token.
+    /// What the action is about: the mint for an action on a token, the
+    /// `IssuerConfig` address for an action on the issuer itself
+    /// (`ProposedAction::is_issuer_scoped`).
     ///
-    /// Issuer-level actions — changing the membership and the threshold
-    /// (FR-019a) — have no mint, and they are not here yet. When they arrive
-    /// the choice is between a second seed family (`["issuer-proposal",
-    /// issuer, nonce]`) and generalising this field to a scope; it is not
-    /// made in advance, because either one is cheap while no such proposal
-    /// exists and neither is guessable before the action is specified.
-    pub mint: Pubkey,
+    /// One field and one seed family for both, chosen when the first
+    /// issuer-level action arrived (T030) rather than a second family
+    /// `["issuer-proposal", …]`: approval, closing and the threshold rule do
+    /// not care what the action is about, and with one family they stay one
+    /// instruction each. The two kinds of address never collide — both are
+    /// this program's PDAs under different seeds. The offset is the one the
+    /// field had as `mint`, so the API's lookup of a token's proposals by
+    /// `memcmp` reads the same bytes; an issuer's proposals sit at the
+    /// address of its config.
+    pub scope: Pubkey,
     /// The `IssuerConfig` this proposal belongs to.
     ///
     /// Stored rather than derived: `approve_action` and the executing
@@ -333,7 +398,7 @@ mod tests {
 
     fn proposal() -> ActionProposal {
         ActionProposal {
-            mint: wallet(50),
+            scope: wallet(50),
             issuer: wallet(51),
             payer: wallet(52),
             nonce: 7,
@@ -459,7 +524,7 @@ mod tests {
             rules: rules.clone(),
             reason: a_reason(),
         }
-        .stored()
+        .stored(&an_issuer())
         .expect("a canonical layout");
 
         let slots: &[RuleSlot] = bytemuck::cast_slice(&rules);
@@ -484,7 +549,7 @@ mod tests {
             rules: rules.clone(),
             reason: a_reason(),
         }
-        .stored()
+        .stored(&an_issuer())
         .expect("a canonical layout");
         let executed = ActionKind::set_policy(4, &rules, a_reason()).expect("a canonical layout");
         assert_eq!(proposed, executed);
@@ -501,6 +566,89 @@ mod tests {
         );
     }
 
+    fn an_issuer() -> IssuerConfig {
+        let mut members = [crate::state::Member::default(); MAX_MEMBERS];
+        members[0] = crate::state::Member {
+            wallet: wallet(1),
+            roles: crate::state::role::ADMIN,
+        };
+        members[1] = crate::state::Member {
+            wallet: wallet(2),
+            roles: crate::state::role::ADMIN,
+        };
+        IssuerConfig {
+            issuer_id: wallet(99),
+            members,
+            member_slots: 2,
+            quorum_n: 2,
+            operational_key: wallet(10),
+            delegation_mask: delegation::THAW_HOLDER,
+            bump: 254,
+            token_count: 0,
+        }
+    }
+
+    #[test]
+    fn a_delegation_change_stores_where_it_starts_from() {
+        let stored = ProposedAction::SetDelegation {
+            operational_key: wallet(11),
+            mask: delegation::ALL,
+        }
+        .stored(&an_issuer())
+        .expect("a valid grant");
+        assert_eq!(
+            stored,
+            ActionKind::SetDelegation {
+                previous_key: wallet(10),
+                previous_mask: delegation::THAW_HOLDER,
+                operational_key: wallet(11),
+                mask: delegation::ALL,
+            }
+        );
+    }
+
+    #[test]
+    fn the_same_target_from_another_start_is_another_action() {
+        // What makes a revocation in between stop an old grant.
+        let before = an_issuer();
+        let mut revoked = an_issuer();
+        revoked.delegation_mask = 0;
+        assert_ne!(
+            ActionKind::set_delegation(&before, wallet(10), delegation::ALL).expect("grant"),
+            ActionKind::set_delegation(&revoked, wallet(10), delegation::ALL).expect("grant")
+        );
+    }
+
+    #[test]
+    fn a_delegation_change_that_changes_nothing_or_names_a_member_is_never_raised() {
+        let issuer = an_issuer();
+        assert_eq!(
+            err(
+                ActionKind::set_delegation(&issuer, wallet(10), delegation::THAW_HOLDER)
+                    .map(|_| ())
+            ),
+            code(ForgeError::DelegationUnchanged)
+        );
+        assert_eq!(
+            err(ActionKind::set_delegation(&issuer, wallet(2), 0).map(|_| ())),
+            code(ForgeError::OperationalKeyIsAMember)
+        );
+        assert_eq!(
+            err(ActionKind::set_delegation(&issuer, wallet(10), 1 << 5).map(|_| ())),
+            code(ForgeError::UndelegatablePower)
+        );
+    }
+
+    #[test]
+    fn only_the_delegation_is_raised_without_a_token() {
+        assert!(ProposedAction::SetDelegation {
+            operational_key: wallet(11),
+            mask: 0,
+        }
+        .is_issuer_scoped());
+        assert!(!ProposedAction::Pause { reason: a_reason() }.is_issuer_scoped());
+    }
+
     fn a_reason() -> ComplianceReason {
         ComplianceReason {
             code: 4,
@@ -515,7 +663,7 @@ mod tests {
             amount: 500,
             reason: a_reason(),
         }
-        .stored()
+        .stored(&an_issuer())
         .expect("a valid seizure");
         assert_eq!(
             stored,
@@ -602,6 +750,17 @@ mod tests {
         // than the seizure, so the account kept its size.
         assert_eq!(policy.len(), 1 + 4 + 32 + 2 + 32);
         assert!(policy.len() < ActionKind::INIT_SPACE);
+
+        // T030 appended the delegation change, from and to. Still below the
+        // seizure.
+        let mut delegation_change = Vec::new();
+        ActionKind::set_delegation(&an_issuer(), wallet(11), 0)
+            .expect("valid")
+            .serialize(&mut delegation_change)
+            .expect("serialises");
+        assert_eq!(delegation_change[0], 4);
+        assert_eq!(delegation_change.len(), 1 + 32 + 1 + 32 + 1);
+        assert!(delegation_change.len() < ActionKind::INIT_SPACE);
     }
 
     #[test]
@@ -654,7 +813,7 @@ mod tests {
         );
         assert_eq!(
             ProposedAction::Resume { reason: a_reason() }
-                .stored()
+                .stored(&an_issuer())
                 .expect("valid"),
             ActionKind::Resume { reason: a_reason() }
         );

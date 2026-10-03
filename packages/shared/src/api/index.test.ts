@@ -18,13 +18,16 @@ import {
 const ISSUER_RS = fileURLToPath(
   new URL('../../../../programs/issuer-forge/src/state/issuer.rs', import.meta.url),
 )
+const DELEGATION_RS = fileURLToPath(
+  new URL('../../../../programs/issuer-forge/src/state/delegation.rs', import.meta.url),
+)
 
 /**
  * `pub const ADMIN: u8 = 1 << 0;` → 1. There are no parentheses and no more
  * complex arithmetic there.
  *
- * Catches both masks of the same file — roles and delegation: the names do
- * not overlap, and an extra entry in the map bothers no one.
+ * Reads either mask — roles from `issuer.rs`, delegation from
+ * `delegation.rs`: the shape of the line is the same in both.
  */
 function rustRoleBits(source: string): Record<string, number> {
   const bits: Record<string, number> = {}
@@ -68,7 +71,7 @@ describe('the delegation mask', () => {
   // from `IssuerConfig.delegation_mask` as a plain number, so a divergence
   // would be silent.
   it('matches `delegation` in the program', () => {
-    const rust = rustRoleBits(readFileSync(ISSUER_RS, 'utf8'))
+    const rust = rustRoleBits(readFileSync(DELEGATION_RS, 'utf8'))
 
     expect(rust.THAW_HOLDER).toBe(DELEGATION.THAW_HOLDER)
     expect(rust.SET_HOLDER_STATUS).toBe(DELEGATION.SET_HOLDER_STATUS)

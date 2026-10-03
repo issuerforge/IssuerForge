@@ -320,7 +320,7 @@ impl Fixture {
         build(
             issuer_forge::accounts::ProposeAction {
                 issuer_config: self.issuer_config,
-                token_config: self.token_config,
+                token_config: Some(self.token_config),
                 proposal: self.proposal,
                 payer: wallet(PAYER),
                 proposer: wallet(proposer),
@@ -520,7 +520,7 @@ fn a_quorum_collected_across_days_writes_the_policy_version() {
     assert_eq!(raised.created_at, NOW);
     assert_eq!(raised.expires_at, NOW + TERM);
     assert_eq!(raised.executed_at, 0);
-    assert_eq!(raised.mint, fixture.mint);
+    assert_eq!(raised.scope, fixture.mint);
     assert_eq!(
         raised.action,
         ActionKind::set_policy(NEXT_VERSION, &body, reason()).expect("a canonical body"),

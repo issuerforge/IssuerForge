@@ -74,7 +74,7 @@ pub struct ChangeCirculation<'info> {
 
     #[account(
         mut,
-        seeds = [PROPOSAL_SEED, proposal.mint.as_ref(), &proposal.nonce.to_le_bytes()],
+        seeds = [PROPOSAL_SEED, proposal.scope.as_ref(), &proposal.nonce.to_le_bytes()],
         bump = proposal.bump,
         constraint = proposal.issuer == issuer_config.key() @ ForgeError::ProposalNotForThisIssuer,
     )]
@@ -155,7 +155,7 @@ fn change(ctx: Context<ChangeCirculation>, action: ActionKind, pause: bool) -> R
     let accounts = &ctx.accounts;
 
     require!(
-        accounts.proposal.mint == accounts.token_config.mint,
+        accounts.proposal.scope == accounts.token_config.mint,
         ForgeError::ProposalNotForThisToken
     );
     accounts.proposal.live(now)?;

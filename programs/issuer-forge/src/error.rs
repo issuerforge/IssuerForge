@@ -193,6 +193,14 @@ pub enum ForgeError {
     MintAlreadyPaused,
     #[msg("circulation of this token is not paused")]
     MintNotPaused,
+    #[msg("the operational key cannot be an address of the membership")]
+    OperationalKeyIsAMember,
+    #[msg("the delegation already is exactly this")]
+    DelegationUnchanged,
+    #[msg("this action belongs to a token or to the issuer, and the proposal names the other")]
+    ProposalScopeMismatch,
+    #[msg("the delegation changed after this proposal was raised")]
+    DelegationChangedSinceProposal,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -317,6 +325,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::MintNotPaused),
             VALIDATION_ERROR_BASE + 56
+        );
+        // The first and the last of those added by T030.
+        assert_eq!(
+            u32::from(ForgeError::OperationalKeyIsAMember),
+            VALIDATION_ERROR_BASE + 57
+        );
+        assert_eq!(
+            u32::from(ForgeError::DelegationChangedSinceProposal),
+            VALIDATION_ERROR_BASE + 60
         );
     }
 }

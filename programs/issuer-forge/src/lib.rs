@@ -35,7 +35,9 @@ pub mod issuer_forge {
     ///
     /// The only issuer action that does not go through the quorum — because
     /// before it there is no quorum yet. Everything it sets is changed from
-    /// then on **only** by quorum.
+    /// then on **only** by quorum, save one thing: a single admin may take
+    /// powers away from the operational key (`set_delegation`). The key
+    /// itself may never be an address of the membership.
     pub fn initialize_issuer(
         ctx: Context<InitializeIssuer>,
         args: InitializeIssuerArgs,
@@ -126,6 +128,21 @@ pub mod issuer_forge {
     /// (FR-019c).
     pub fn close_action_proposal(ctx: Context<CloseActionProposal>) -> Result<()> {
         instructions::proposal::close_handler(ctx)
+    }
+
+    /// Changes what the platform's operational key may do, or which key it is
+    /// (FR-035, FR-035b).
+    ///
+    /// Narrowing — dropping powers from the key in place — takes one admin:
+    /// it is the action of the hour a key leaks, and it grants nobody
+    /// anything. A grant or a rotation takes the quorum, on the immediate
+    /// path through `remaining_accounts` or on the deferred one through a
+    /// proposal raised under the issuer's scope; the deferred path executes
+    /// only from the delegation the proposal was raised against. The powers
+    /// themselves are a closed list in code, and none of them moves funds
+    /// (FR-035a).
+    pub fn set_delegation(ctx: Context<SetDelegation>, args: SetDelegationArgs) -> Result<()> {
+        instructions::set_delegation::handler(ctx, args)
     }
 
     /// Thaws a holder's account and creates both accounts without which a

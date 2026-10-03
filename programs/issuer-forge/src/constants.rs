@@ -20,8 +20,10 @@ pub const TOKEN_SEED: &[u8] = b"token";
 /// on the client in `packages/chain/src/pda.ts`.
 pub const POLICY_SEED: &[u8] = b"policy";
 
-/// `["proposal", mint, nonce]` — a deferred action of the issuer's quorum,
-/// the nonce a `u64` LE.
+/// `["proposal", scope, nonce]` — a deferred action of the issuer's quorum,
+/// the nonce a `u64` LE. The scope is the mint for an action on a token and
+/// the `IssuerConfig` address for an action on the issuer
+/// (`ActionProposal::scope`).
 ///
 /// The nonce is chosen by the client and is not a counter: two proposals
 /// raised at the same time must not compete for the next number. Pinned on

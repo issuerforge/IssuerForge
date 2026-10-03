@@ -298,6 +298,8 @@ export function decodeProposedAction(
   if (resume !== undefined) {
     return { nonce, action: { kind: 'resume', reason: fromReason(resume.reason) } }
   }
+  // A delegation change (`delegation.ts`) is the issuer's action, not a
+  // token's, and is not one of the bodies this reader serves.
   return undefined
 }
 

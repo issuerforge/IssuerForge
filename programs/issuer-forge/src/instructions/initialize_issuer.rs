@@ -48,7 +48,7 @@ pub struct InitializeIssuer<'info> {
 pub(crate) fn handler(ctx: Context<InitializeIssuer>, args: InitializeIssuerArgs) -> Result<()> {
     let members = validate_members(&args.members)?;
     validate_quorum(args.quorum_n, &members)?;
-    validate_delegation(args.delegation_mask, &args.operational_key)?;
+    delegation::validate(&args.operational_key, args.delegation_mask, members)?;
 
     require!(
         members
@@ -116,20 +116,6 @@ fn validate_quorum(quorum_n: u8, members: &[Member]) -> Result<()> {
         quorum_n <= authorising,
         ForgeError::QuorumExceedsSigners
     );
-
-    Ok(())
-}
-
-fn validate_delegation(mask: u8, operational_key: &Pubkey) -> Result<()> {
-    require!(
-        *operational_key != Pubkey::default(),
-        ForgeError::MissingOperationalKey
-    );
-    // FR-035a: issuance, seizure, pause and policy change are not in the mask
-    // and cannot be. An unknown bit is an attempt to delegate something the
-    // program cannot execute under the operational key, and it is rejected
-    // here rather than silently stored until the first attempt to use it.
-    require!(mask & !delegation::ALL == 0, ForgeError::UndelegatablePower);
 
     Ok(())
 }
@@ -264,16 +250,32 @@ mod tests {
         // seizure, pause or policy change. There is nothing to express them
         // with, and that is the whole point.
         let key = Pubkey::new_from_array([9u8; 32]);
+        let members = two_admins();
         assert_eq!(
-            err(validate_delegation(1 << 3, &key)),
+            err(delegation::validate(&key, 1 << 3, &members)),
             code(ForgeError::UndelegatablePower)
         );
         assert_eq!(
-            err(validate_delegation(delegation::ALL, &Pubkey::default())),
+            err(delegation::validate(
+                &Pubkey::default(),
+                delegation::ALL,
+                &members
+            )),
             code(ForgeError::MissingOperationalKey)
         );
-        assert!(validate_delegation(delegation::ALL, &key).is_ok());
-        assert!(validate_delegation(0, &key).is_ok());
+        assert!(delegation::validate(&key, delegation::ALL, &members).is_ok());
+        assert!(delegation::validate(&key, 0, &members).is_ok());
+    }
+
+    #[test]
+    fn refuses_an_operational_key_from_the_membership() {
+        // Even with nothing delegated: as a member it would vote in the quorum
+        // and found tokens, which no mask can take back.
+        let members = two_admins();
+        assert_eq!(
+            err(delegation::validate(&members[1].wallet, 0, &members)),
+            code(ForgeError::OperationalKeyIsAMember)
+        );
     }
 
     #[test]

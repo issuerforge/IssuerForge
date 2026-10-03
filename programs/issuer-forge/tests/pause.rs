@@ -399,7 +399,7 @@ impl Fixture {
         build(
             issuer_forge::accounts::ProposeAction {
                 issuer_config: self.issuer_config,
-                token_config: self.token_config,
+                token_config: Some(self.token_config),
                 proposal: proposal_of(self.mint, nonce),
                 payer: wallet(PAYER),
                 proposer: wallet(proposer),

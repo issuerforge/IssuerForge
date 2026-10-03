@@ -117,6 +117,7 @@ type StoredAction = {
   }
   pause?: { reason: StoredReason }
   resume?: { reason: StoredReason }
+  setDelegation?: object
 }
 
 type StoredReason = { code: number; caseRef: number[] }
@@ -150,7 +151,8 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
 }
 
 type RawProposal = {
-  mint: PublicKey
+  /** The mint for a token's action, the issuer's config for the issuer's own. */
+  scope: PublicKey
   issuer: PublicKey
   payer: PublicKey
   nonce: { toString(): string }
@@ -162,10 +164,14 @@ type RawProposal = {
   executedAt: { toNumber(): number; isZero(): boolean }
 }
 
+function isIssuerScoped(action: StoredAction): boolean {
+  return action.setDelegation !== undefined
+}
+
 function toView(address: PublicKey, raw: RawProposal): ProposalView {
   return {
     address: address.toBase58(),
-    mint: raw.mint.toBase58(),
+    mint: raw.scope.toBase58(),
     issuerConfig: raw.issuer.toBase58(),
     payer: raw.payer.toBase58(),
     nonce: BigInt(raw.nonce.toString()),
@@ -227,8 +233,9 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     },
 
     async proposals(mint) {
-      // `mint` is the first field, right after the eight-byte discriminator;
-      // `all()` adds the discriminator filter itself.
+      // `scope` is the first field, right after the eight-byte discriminator,
+      // and for a token's action it is the mint; `all()` adds the
+      // discriminator filter itself.
       const found = await program.account.actionProposal.all([
         { memcmp: { offset: 8, bytes: mint.toBase58() } },
       ])
@@ -238,8 +245,13 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     },
 
     async proposal(address) {
-      const raw = await program.account.actionProposal.fetchNullable(address)
-      return raw === null ? undefined : toView(address, raw as RawProposal)
+      const raw = (await program.account.actionProposal.fetchNullable(
+        address,
+      )) as RawProposal | null
+      // An action on the issuer itself (a delegation change, T030) has no
+      // token, and these routes are a token's: to them it does not exist.
+      if (raw === null || isIssuerScoped(raw.action)) return undefined
+      return toView(address, raw)
     },
 
     async body(view) {

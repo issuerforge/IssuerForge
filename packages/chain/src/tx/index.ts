@@ -3,6 +3,7 @@
 // The package boundary: it assembles, but neither signs nor sends. There is no
 // key here — which is exactly why the platform's operational key cannot sign
 // an action with funds even by mistake (FR-035a).
+export * from './delegation.ts'
 export * from './freeze.ts'
 export * from './holders.ts'
 export * from './issue.ts'

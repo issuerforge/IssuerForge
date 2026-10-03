@@ -82,7 +82,7 @@ export type IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -275,7 +275,7 @@ export type IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -944,7 +944,9 @@ export type IssuerForge = {
         "",
         "The only issuer action that does not go through the quorum — because",
         "before it there is no quorum yet. Everything it sets is changed from",
-        "then on **only** by quorum."
+        "then on **only** by quorum, save one thing: a single admin may take",
+        "powers away from the operational key (`set_delegation`). The key",
+        "itself may never be an address of the membership."
       ],
       "discriminator": [
         231,
@@ -1109,7 +1111,7 @@ export type IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -1183,59 +1185,25 @@ export type IssuerForge = {
         {
           "name": "tokenConfig",
           "docs": [
-            "The token the action is about. Present so that a proposal cannot be",
-            "raised against a mint this issuer does not own: an approver reading",
-            "the console must not have to check that themselves."
+            "The token the action is about, for every action on a token; absent",
+            "for an action on the issuer itself (`ProposedAction::is_issuer_scoped`),",
+            "and the handler refuses either one in the other's place. Present so",
+            "that a proposal cannot be raised against a mint this issuer does not",
+            "own: an approver reading the console must not have to check that",
+            "themselves.",
+            "",
+            "No `seeds` here, for the reason `set_policy` gives for its optional",
+            "proposal: an optional account cannot name its own fields in a seed",
+            "expression. `Account<TokenConfig>` proves the owner and the",
+            "discriminator, and `create_token` creates every `TokenConfig` with",
+            "`init` at its PDA, so each one is at its address by construction;",
+            "whose it is, the handler checks."
           ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "token_config.mint",
-                "account": "tokenConfig"
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "proposal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  112,
-                  111,
-                  115,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "token_config.mint",
-                "account": "tokenConfig"
-              },
-              {
-                "kind": "arg",
-                "path": "args.nonce"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "payer",
@@ -1358,7 +1326,7 @@ export type IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -1494,7 +1462,7 @@ export type IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -1532,6 +1500,78 @@ export type IssuerForge = {
           "type": {
             "defined": {
               "name": "seizeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "setDelegation",
+      "docs": [
+        "Changes what the platform's operational key may do, or which key it is",
+        "(FR-035, FR-035b).",
+        "",
+        "Narrowing — dropping powers from the key in place — takes one admin:",
+        "it is the action of the hour a key leaks, and it grants nobody",
+        "anything. A grant or a rotation takes the quorum, on the immediate",
+        "path through `remaining_accounts` or on the deferred one through a",
+        "proposal raised under the issuer's scope; the deferred path executes",
+        "only from the delegation the proposal was raised against. The powers",
+        "themselves are a closed list in code, and none of them moves funds",
+        "(FR-035a)."
+      ],
+      "discriminator": [
+        28,
+        231,
+        56,
+        197,
+        225,
+        173,
+        129,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path. No `seeds`, for the reason",
+            "`set_policy` gives; the handler checks it is this issuer's and raised",
+            "under the issuer's scope."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setDelegationArgs"
             }
           }
         }
@@ -2709,6 +2749,26 @@ export type IssuerForge = {
       "code": 6069,
       "name": "mintNotPaused",
       "msg": "circulation of this token is not paused"
+    },
+    {
+      "code": 6070,
+      "name": "operationalKeyIsAMember",
+      "msg": "the operational key cannot be an address of the membership"
+    },
+    {
+      "code": 6071,
+      "name": "delegationUnchanged",
+      "msg": "the delegation already is exactly this"
+    },
+    {
+      "code": 6072,
+      "name": "proposalScopeMismatch",
+      "msg": "this action belongs to a token or to the issuer, and the proposal names the other"
+    },
+    {
+      "code": 6073,
+      "name": "delegationChangedSinceProposal",
+      "msg": "the delegation changed after this proposal was raised"
     }
   ],
   "types": [
@@ -2809,6 +2869,27 @@ export type IssuerForge = {
                 }
               }
             ]
+          },
+          {
+            "name": "setDelegation",
+            "fields": [
+              {
+                "name": "previousKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "previousMask",
+                "type": "u8"
+              },
+              {
+                "name": "operationalKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "mask",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -2816,7 +2897,7 @@ export type IssuerForge = {
     {
       "name": "actionProposal",
       "docs": [
-        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", mint, nonce]`,",
+        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", scope, nonce]`,",
         "the nonce a `u64` LE.",
         "",
         "**This account is what T025 brings; the quorum itself came with T014.**",
@@ -2837,16 +2918,21 @@ export type IssuerForge = {
         "kind": "struct",
         "fields": [
           {
-            "name": "mint",
+            "name": "scope",
             "docs": [
-              "The token this action is about. Every kind that exists is per-token.",
+              "What the action is about: the mint for an action on a token, the",
+              "`IssuerConfig` address for an action on the issuer itself",
+              "(`ProposedAction::is_issuer_scoped`).",
               "",
-              "Issuer-level actions — changing the membership and the threshold",
-              "(FR-019a) — have no mint, and they are not here yet. When they arrive",
-              "the choice is between a second seed family (`[\"issuer-proposal\",",
-              "issuer, nonce]`) and generalising this field to a scope; it is not",
-              "made in advance, because either one is cheap while no such proposal",
-              "exists and neither is guessable before the action is specified."
+              "One field and one seed family for both, chosen when the first",
+              "issuer-level action arrived (T030) rather than a second family",
+              "`[\"issuer-proposal\", …]`: approval, closing and the threshold rule do",
+              "not care what the action is about, and with one family they stay one",
+              "instruction each. The two kinds of address never collide — both are",
+              "this program's PDAs under different seeds. The offset is the one the",
+              "field had as `mint`, so the API's lookup of a token's proposals by",
+              "`memcmp` reads the same bytes; an issuer's proposals sit at the",
+              "address of its config."
             ],
             "type": "pubkey"
           },
@@ -3476,14 +3562,16 @@ export type IssuerForge = {
           {
             "name": "operationalKey",
             "docs": [
-              "The platform's operational key. Moves no money (FR-035a)."
+              "The platform's operational key. Moves no money (FR-035a), and is never",
+              "an address of `members` (`state::delegation`)."
             ],
             "type": "pubkey"
           },
           {
             "name": "delegationMask",
             "docs": [
-              "What exactly is delegated to it. Revoked with one action (FR-035b)."
+              "What exactly is delegated to it, a mask over `state::delegation`.",
+              "Revoked with one action (FR-035b, `set_delegation`)."
             ],
             "type": "u8"
           },
@@ -3777,6 +3865,19 @@ export type IssuerForge = {
                 }
               }
             ]
+          },
+          {
+            "name": "setDelegation",
+            "fields": [
+              {
+                "name": "operationalKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "mask",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -3910,6 +4011,30 @@ export type IssuerForge = {
                 "name": "complianceReason"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setDelegationArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operationalKey",
+            "docs": [
+              "The key that will hold the delegation. The current one for a change of",
+              "powers, another one for a rotation."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mask",
+            "docs": [
+              "The powers it will hold, a mask over `state::delegation`. Zero is a",
+              "full revocation."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -4304,7 +4429,7 @@ export const IDL: IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -4497,7 +4622,7 @@ export const IDL: IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -5166,7 +5291,9 @@ export const IDL: IssuerForge = {
         "",
         "The only issuer action that does not go through the quorum — because",
         "before it there is no quorum yet. Everything it sets is changed from",
-        "then on **only** by quorum."
+        "then on **only** by quorum, save one thing: a single admin may take",
+        "powers away from the operational key (`set_delegation`). The key",
+        "itself may never be an address of the membership."
       ],
       "discriminator": [
         231,
@@ -5331,7 +5458,7 @@ export const IDL: IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -5405,59 +5532,25 @@ export const IDL: IssuerForge = {
         {
           "name": "tokenConfig",
           "docs": [
-            "The token the action is about. Present so that a proposal cannot be",
-            "raised against a mint this issuer does not own: an approver reading",
-            "the console must not have to check that themselves."
+            "The token the action is about, for every action on a token; absent",
+            "for an action on the issuer itself (`ProposedAction::is_issuer_scoped`),",
+            "and the handler refuses either one in the other's place. Present so",
+            "that a proposal cannot be raised against a mint this issuer does not",
+            "own: an approver reading the console must not have to check that",
+            "themselves.",
+            "",
+            "No `seeds` here, for the reason `set_policy` gives for its optional",
+            "proposal: an optional account cannot name its own fields in a seed",
+            "expression. `Account<TokenConfig>` proves the owner and the",
+            "discriminator, and `create_token` creates every `TokenConfig` with",
+            "`init` at its PDA, so each one is at its address by construction;",
+            "whose it is, the handler checks."
           ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "token_config.mint",
-                "account": "tokenConfig"
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "proposal",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  112,
-                  111,
-                  115,
-                  97,
-                  108
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "token_config.mint",
-                "account": "tokenConfig"
-              },
-              {
-                "kind": "arg",
-                "path": "args.nonce"
-              }
-            ]
-          }
+          "writable": true
         },
         {
           "name": "payer",
@@ -5580,7 +5673,7 @@ export const IDL: IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -5716,7 +5809,7 @@ export const IDL: IssuerForge = {
               },
               {
                 "kind": "account",
-                "path": "proposal.mint",
+                "path": "proposal.scope",
                 "account": "actionProposal"
               },
               {
@@ -5754,6 +5847,78 @@ export const IDL: IssuerForge = {
           "type": {
             "defined": {
               "name": "seizeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "setDelegation",
+      "docs": [
+        "Changes what the platform's operational key may do, or which key it is",
+        "(FR-035, FR-035b).",
+        "",
+        "Narrowing — dropping powers from the key in place — takes one admin:",
+        "it is the action of the hour a key leaks, and it grants nobody",
+        "anything. A grant or a rotation takes the quorum, on the immediate",
+        "path through `remaining_accounts` or on the deferred one through a",
+        "proposal raised under the issuer's scope; the deferred path executes",
+        "only from the delegation the proposal was raised against. The powers",
+        "themselves are a closed list in code, and none of them moves funds",
+        "(FR-035a)."
+      ],
+      "discriminator": [
+        28,
+        231,
+        56,
+        197,
+        225,
+        173,
+        129,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path. No `seeds`, for the reason",
+            "`set_policy` gives; the handler checks it is this issuer's and raised",
+            "under the issuer's scope."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setDelegationArgs"
             }
           }
         }
@@ -6931,6 +7096,26 @@ export const IDL: IssuerForge = {
       "code": 6069,
       "name": "mintNotPaused",
       "msg": "circulation of this token is not paused"
+    },
+    {
+      "code": 6070,
+      "name": "operationalKeyIsAMember",
+      "msg": "the operational key cannot be an address of the membership"
+    },
+    {
+      "code": 6071,
+      "name": "delegationUnchanged",
+      "msg": "the delegation already is exactly this"
+    },
+    {
+      "code": 6072,
+      "name": "proposalScopeMismatch",
+      "msg": "this action belongs to a token or to the issuer, and the proposal names the other"
+    },
+    {
+      "code": 6073,
+      "name": "delegationChangedSinceProposal",
+      "msg": "the delegation changed after this proposal was raised"
     }
   ],
   "types": [
@@ -7031,6 +7216,27 @@ export const IDL: IssuerForge = {
                 }
               }
             ]
+          },
+          {
+            "name": "setDelegation",
+            "fields": [
+              {
+                "name": "previousKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "previousMask",
+                "type": "u8"
+              },
+              {
+                "name": "operationalKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "mask",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -7038,7 +7244,7 @@ export const IDL: IssuerForge = {
     {
       "name": "actionProposal",
       "docs": [
-        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", mint, nonce]`,",
+        "A deferred action of the issuer's quorum. PDA: `[\"proposal\", scope, nonce]`,",
         "the nonce a `u64` LE.",
         "",
         "**This account is what T025 brings; the quorum itself came with T014.**",
@@ -7059,16 +7265,21 @@ export const IDL: IssuerForge = {
         "kind": "struct",
         "fields": [
           {
-            "name": "mint",
+            "name": "scope",
             "docs": [
-              "The token this action is about. Every kind that exists is per-token.",
+              "What the action is about: the mint for an action on a token, the",
+              "`IssuerConfig` address for an action on the issuer itself",
+              "(`ProposedAction::is_issuer_scoped`).",
               "",
-              "Issuer-level actions — changing the membership and the threshold",
-              "(FR-019a) — have no mint, and they are not here yet. When they arrive",
-              "the choice is between a second seed family (`[\"issuer-proposal\",",
-              "issuer, nonce]`) and generalising this field to a scope; it is not",
-              "made in advance, because either one is cheap while no such proposal",
-              "exists and neither is guessable before the action is specified."
+              "One field and one seed family for both, chosen when the first",
+              "issuer-level action arrived (T030) rather than a second family",
+              "`[\"issuer-proposal\", …]`: approval, closing and the threshold rule do",
+              "not care what the action is about, and with one family they stay one",
+              "instruction each. The two kinds of address never collide — both are",
+              "this program's PDAs under different seeds. The offset is the one the",
+              "field had as `mint`, so the API's lookup of a token's proposals by",
+              "`memcmp` reads the same bytes; an issuer's proposals sit at the",
+              "address of its config."
             ],
             "type": "pubkey"
           },
@@ -7698,14 +7909,16 @@ export const IDL: IssuerForge = {
           {
             "name": "operationalKey",
             "docs": [
-              "The platform's operational key. Moves no money (FR-035a)."
+              "The platform's operational key. Moves no money (FR-035a), and is never",
+              "an address of `members` (`state::delegation`)."
             ],
             "type": "pubkey"
           },
           {
             "name": "delegationMask",
             "docs": [
-              "What exactly is delegated to it. Revoked with one action (FR-035b)."
+              "What exactly is delegated to it, a mask over `state::delegation`.",
+              "Revoked with one action (FR-035b, `set_delegation`)."
             ],
             "type": "u8"
           },
@@ -7999,6 +8212,19 @@ export const IDL: IssuerForge = {
                 }
               }
             ]
+          },
+          {
+            "name": "setDelegation",
+            "fields": [
+              {
+                "name": "operationalKey",
+                "type": "pubkey"
+              },
+              {
+                "name": "mask",
+                "type": "u8"
+              }
+            ]
           }
         ]
       }
@@ -8132,6 +8358,30 @@ export const IDL: IssuerForge = {
                 "name": "complianceReason"
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setDelegationArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "operationalKey",
+            "docs": [
+              "The key that will hold the delegation. The current one for a change of",
+              "powers, another one for a rotation."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mask",
+            "docs": [
+              "The powers it will hold, a mask over `state::delegation`. Zero is a",
+              "full revocation."
+            ],
+            "type": "u8"
           }
         ]
       }
