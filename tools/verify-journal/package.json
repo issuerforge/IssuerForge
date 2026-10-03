@@ -1,29 +1,26 @@
 {
-  "name": "@forge/worker",
+  "name": "@forge/verify-journal",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/run.ts",
-    "./indexer/decode": "./src/indexer/decode.ts",
-    "./indexer/transaction": "./src/indexer/transaction.ts"
+  "bin": {
+    "verify-journal": "./src/main.ts"
   },
   "scripts": {
-    "start": "node --env-file-if-exists=../../.env src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "verify": "node --env-file-if-exists=../../.env src/main.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@forge/chain": "workspace:^",
-    "@forge/db": "workspace:^",
     "@forge/policy": "workspace:^",
     "@forge/shared": "workspace:^",
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.98.4",
-    "drizzle-orm": "^0.45.2",
-    "pino": "^10.3.1",
     "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@forge/worker": "workspace:^"
   }
 }

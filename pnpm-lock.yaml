@@ -245,6 +245,34 @@ importers:
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
 
+  tools/verify-journal:
+    dependencies:
+      '@coral-xyz/anchor':
+        specifier: ^0.32.1
+        version: 0.32.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@forge/chain':
+        specifier: workspace:^
+        version: link:../../packages/chain
+      '@forge/policy':
+        specifier: workspace:^
+        version: link:../../packages/policy
+      '@forge/shared':
+        specifier: workspace:^
+        version: link:../../packages/shared
+      '@solana/spl-token':
+        specifier: ^0.4.15
+        version: 0.4.15(@solana/web3.js@1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      '@solana/web3.js':
+        specifier: ^1.98.4
+        version: 1.98.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
+    devDependencies:
+      '@forge/worker':
+        specifier: workspace:^
+        version: link:../../apps/worker
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':
