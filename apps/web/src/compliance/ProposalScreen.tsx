@@ -16,6 +16,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useConsoleSession } from '@/auth/guards'
 import { useApi } from '@/auth/providers'
 import { truncate } from '@/lib/format'
+import { describeMask } from '@/settings/model'
 import { Failure } from './ActionsScreen'
 import { actionTitle, formatUnits, nextStep, reasonLine, seats, standingLine, utc } from './model'
 import { useProposal, useTokens } from './queries'
@@ -30,6 +31,7 @@ export default function ProposalScreen() {
   if (detail.error) return <Failure error={detail.error} what="this proposal" />
 
   const { proposal, authorising } = detail.data
+  const action = proposal.action
   const token = tokens.data?.tokens.find((t) => t.mint === proposal.mint)
   // Until the token list arrives the amount is shown in the smallest unit,
   // and says so — never with a guessed number of decimals.
@@ -38,13 +40,25 @@ export default function ProposalScreen() {
 
   return (
     <div className="py-6">
-      <Link to={`/console/actions?token=${proposal.mint}`} className="btn-plain muted">
-        ← All actions on this token
-      </Link>
+      {proposal.mint === null ? (
+        <Link to="/settings/delegation" className="btn-plain muted">
+          ← The operational key
+        </Link>
+      ) : (
+        <Link to={`/console/actions?token=${proposal.mint}`} className="btn-plain muted">
+          ← All actions on this token
+        </Link>
+      )}
 
       <h1 className="mt-4 border-b border-hairline pb-5 text-[18px] font-medium">
-        Case <span className="num">{proposal.action.reason.caseRef}</span> ·{' '}
-        {actionTitle(proposal.action, decimals, symbol)}
+        {action.kind === 'set-delegation' ? (
+          <>Operational key · </>
+        ) : (
+          <>
+            Case <span className="num">{action.reason.caseRef}</span> ·{' '}
+          </>
+        )}
+        {actionTitle(action, decimals, symbol)}
       </h1>
 
       <Definition proposal={proposal} decimals={decimals} symbol={symbol} />
@@ -122,13 +136,20 @@ function Definition({
           },
         ]
       : []),
-    { label: 'Reason', value: reasonLine(action.reason) },
+    ...(action.kind === 'set-delegation'
+      ? [
+          { label: 'Key now', value: action.previousKey },
+          { label: 'Key after', value: action.operationalKey },
+          { label: 'Powers now', value: describeMask(action.previousMask) },
+          { label: 'Powers after', value: describeMask(action.mask) },
+        ]
+      : [{ label: 'Reason', value: reasonLine(action.reason) }]),
     { label: 'Proposed by', value: proposal.approvals[0] ?? '—' },
     { label: 'Raised', value: `${utc(proposal.createdAt)} UTC` },
     proposal.executedAt === null
       ? { label: 'Lapses', value: `${utc(proposal.expiresAt)} UTC` }
       : { label: 'Executed', value: `${utc(proposal.executedAt)} UTC` },
-    { label: 'Token', value: proposal.mint },
+    ...(proposal.mint === null ? [] : [{ label: 'Token', value: proposal.mint }]),
     { label: 'Proposal account', value: proposal.address },
   ]
 
@@ -184,7 +205,9 @@ function Step({
       <button
         type="button"
         className={
-          step.kind === 'approve' && proposal.action.kind !== 'resume'
+          // Red where the signature takes something: funds, or circulation.
+          step.kind === 'approve' &&
+          (proposal.action.kind === 'seize' || proposal.action.kind === 'pause')
             ? 'btn-destructive'
             : 'btn-primary'
         }

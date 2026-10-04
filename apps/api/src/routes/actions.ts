@@ -23,6 +23,7 @@ import {
   buildCloseActionProposal,
   buildProposeAction,
   buildSeize,
+  buildSetDelegation,
   buildSetPolicy,
   issuerConfigPda,
   MAX_TRANSACTION_BYTES,
@@ -49,6 +50,7 @@ import {
 import type { ChainReader } from '../chain.ts'
 import {
   type ActionTransactionResponse,
+  type DelegationBody,
   type ProposalResponse,
   type ProposeActionBody,
   type ProposeActionResponse,
@@ -202,7 +204,9 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       requireQuorum(session),
     ])
     const now = unixNow()
-    return c.json({ proposals: views.map((view) => present(view, standing(view, quorum, now))) })
+    return c.json({
+      proposals: views.map((view) => presentProposal(view, standing(view, quorum, now))),
+    })
   })
 
   /**
@@ -216,12 +220,21 @@ export function createActionRoutes(deps: ActionRouteDeps) {
     const view = await requireProposal(session, id)
     const quorum = await requireQuorum(session)
 
-    const found = await deps.actions.body(view)
-    if (found === undefined) throw bodyMissing(view)
+    // A delegation change is whole in the account; every other kind is read
+    // back from its proposing transaction and checked against the digest.
+    const action = view.action
+    let shown: ReturnType<typeof presentBody> | DelegationBody
+    if (action.kind === 'set-delegation') {
+      shown = { kind: action.kind, operationalKey: action.operationalKey, mask: action.mask }
+    } else {
+      const found = await deps.actions.body(view)
+      if (found === undefined) throw bodyMissing(view)
+      shown = presentBody(found)
+    }
 
     return c.json({
-      proposal: present(view, standing(view, quorum, unixNow())),
-      body: presentBody(found),
+      proposal: presentProposal(view, standing(view, quorum, unixNow())),
+      body: shown,
       authorising: quorum.members.filter((member) => hasRole(member.roles, ROLE_AUTHORISING)),
     })
   })
@@ -321,17 +334,54 @@ export function createActionRoutes(deps: ActionRouteDeps) {
     }
 
     const action = view.action
+    const approvers = view.approvals.map((wallet) => new PublicKey(wallet))
+    if (action.kind === 'set-delegation') {
+      // The program refuses a transition whose start has moved
+      // (`DelegationChangedSinceProposal`); said here before anyone pays.
+      // This is what keeps an emergency revocation from being undone by a
+      // grant raised before it.
+      const config = await deps.chain.issuerConfig(new PublicKey(session.issuerId))
+      if (
+        config === undefined ||
+        config.operationalKey !== action.previousKey ||
+        config.delegationMask !== action.previousMask
+      ) {
+        throw invalidInput('the delegation has changed since this proposal was raised', {
+          raisedAgainst: { operationalKey: action.previousKey, mask: action.previousMask },
+          now:
+            config === undefined
+              ? null
+              : { operationalKey: config.operationalKey, mask: config.delegationMask },
+        })
+      }
+      const plan = await buildSetDelegation(deps.chain.program, {
+        issuerId: new PublicKey(session.issuerId),
+        operationalKey: new PublicKey(action.operationalKey),
+        mask: action.mask,
+        payer: new PublicKey(payer),
+        quorum: { kind: 'proposal', proposal: new PublicKey(id), approvers },
+      })
+      c.get('log').info({ proposal: id, mask: action.mask, payer }, 'delegation change assembled')
+      return c.json(await respond(plan, id, payer))
+    }
+
+    const mint = view.mint
+    if (mint === null) {
+      // Only a delegation change is issuer-scoped, and it returned above.
+      throw internal('a token action without a mint', { proposal: id })
+    }
+
     if (action.kind === 'seize') {
       // Everything the seizure needs is in the account, approvers included:
       // they ride in the instruction so the journal can name them (FR-019c).
       const plan = await buildSeize(deps.chain.program, {
         issuerId: new PublicKey(session.issuerId),
-        mint: new PublicKey(view.mint),
+        mint: new PublicKey(mint),
         proposal: new PublicKey(id),
         tokenAccount: new PublicKey(action.tokenAccount),
         amount: action.amount,
         reason: action.reason,
-        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+        approvers,
         payer: new PublicKey(payer),
       })
       c.get('log').info(
@@ -348,17 +398,17 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       const plan = await buildChangeCirculation(deps.chain.program, {
         direction: action.kind,
         issuerId: new PublicKey(session.issuerId),
-        mint: new PublicKey(view.mint),
+        mint: new PublicKey(mint),
         proposal: new PublicKey(id),
         reason: action.reason,
-        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+        approvers,
         payer: new PublicKey(payer),
       })
       c.get('log').info({ proposal: id, direction: action.kind, payer }, 'circulation assembled')
       return c.json(await respond(plan, id, payer))
     }
 
-    const token = await requireToken(session, view.mint)
+    const token = await requireToken(session, mint)
     if (token.policyVersion + 1 !== action.version) {
       // Another change landed first — by the immediate path, or by another
       // proposal for the same number. The digest binds this one to a version
@@ -376,7 +426,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
 
     const plan = await buildSetPolicy(deps.chain.program, {
       issuerId: new PublicKey(session.issuerId),
-      mint: new PublicKey(view.mint),
+      mint: new PublicKey(mint),
       version: found.version,
       policy: found.policy,
       reason: found.reason,
@@ -384,7 +434,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       quorum: {
         kind: 'proposal',
         proposal: new PublicKey(id),
-        approvers: view.approvals.map((wallet) => new PublicKey(wallet)),
+        approvers,
       },
     })
 
@@ -423,7 +473,8 @@ export function createActionRoutes(deps: ActionRouteDeps) {
 
 // ─── Small conversions ───────────────────────────────────────────────────────
 
-function present(view: ProposalView, current: Standing): ProposalResponse {
+/** A proposal as every route presents it — the delegation routes too. */
+export function presentProposal(view: ProposalView, current: Standing): ProposalResponse {
   return {
     address: view.address,
     mint: view.mint,

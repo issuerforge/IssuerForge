@@ -357,7 +357,9 @@ function ProposalList({
             className="grid grid-cols-1 items-baseline gap-x-5 gap-y-1 py-3 md:grid-cols-[1fr_1fr_9rem_5rem_11rem]"
           >
             <span className="text-[13px]">{actionTitle(proposal.action, decimals, symbol)}</span>
-            <span className="mono12 break-all">{reasonLine(proposal.action.reason)}</span>
+            <span className="mono12 break-all">
+              {'reason' in proposal.action ? reasonLine(proposal.action.reason) : '—'}
+            </span>
             <span
               className={`smallcaps ${proposal.state === 'blocked' ? 'refuse' : proposal.state === 'ready' ? '' : 'muted'}`}
             >

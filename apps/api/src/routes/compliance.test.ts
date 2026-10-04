@@ -160,6 +160,7 @@ function app(fakes: Fakes = {}) {
     chain,
     actions,
     compliance,
+    delegations: { history: async () => [] },
     issuance: unused<IssuanceStore>('issuance'),
     holders: unused<HolderStore>('the holder store'),
     journal: unused<JournalStore>('the journal'),

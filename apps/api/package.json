@@ -7,6 +7,7 @@
     "./contracts": "./src/contracts/tokens.ts",
     "./contracts/actions": "./src/contracts/actions.ts",
     "./contracts/compliance": "./src/contracts/compliance.ts",
+    "./contracts/delegation": "./src/contracts/delegation.ts",
     "./server": "./src/server.ts",
     "./config": "./src/config.ts"
   },

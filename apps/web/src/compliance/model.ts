@@ -20,6 +20,7 @@ import { type FreezeBody, freezeBodySchema } from '@forge/api/contracts/complian
 import { hasRole, ROLE, ROLE_AUTHORISING } from '@forge/shared/api'
 import { reasonCodeLabel } from '@forge/shared/reasons'
 import type { z } from 'zod'
+import { describeMask } from '@/settings/model'
 
 // ─── Amounts ─────────────────────────────────────────────────────────────────
 
@@ -200,6 +201,10 @@ export function actionTitle(
       return 'Lifting of the pause'
     case 'set-policy':
       return `Policy version ${action.version}`
+    case 'set-delegation':
+      return action.operationalKey === action.previousKey
+        ? `Delegation: ${describeMask(action.previousMask)} → ${describeMask(action.mask)}`
+        : `Rotation of the operational key, with ${describeMask(action.mask)}`
   }
 }
 

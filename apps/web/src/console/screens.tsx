@@ -37,6 +37,10 @@ const ComplianceProposal = lazy(() =>
   import('@/compliance').then((module) => ({ default: module.ComplianceProposal })),
 )
 
+const Delegation = lazy(() =>
+  import('@/settings').then((module) => ({ default: module.Delegation })),
+)
+
 const opening = (what: string) => <p className="muted py-8 text-[13px]">Opening {what}…</p>
 
 /** The roles whose signature counts towards the quorum: both see compliance work. */
@@ -142,10 +146,9 @@ export const SCREENS: readonly Screen[] = [
     label: 'The operational key',
     requires: ROLE.ADMIN,
     element: (
-      <Stub
-        task="T035"
-        what="What this issuer has delegated to the platform’s operational key, and revoking any of it in one action"
-      />
+      <Suspense fallback={opening('the delegation')}>
+        <Delegation />
+      </Suspense>
     ),
   },
 ]

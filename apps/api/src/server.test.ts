@@ -121,6 +121,7 @@ function app(
     chain,
     actions,
     compliance: noCompliance,
+    delegations: { history: async () => [] },
     issuance,
     holders,
     journal,

@@ -675,3 +675,64 @@ describe('instructions with nothing to index', () => {
     expect(await decode(tx([list, execute, foreign]))).toEqual({ events: [], changes: [] })
   })
 })
+
+describe('set_delegation', () => {
+  const ADMIN = key()
+  const PROPOSAL = key()
+  const NEXT_KEY = new PublicKey(key())
+
+  it('a narrowing by one admin is a mirror change, named, and never a journal line', async () => {
+    const data = encoded('setDelegation', { operationalKey: new PublicKey(OPERATIONAL), mask: 1 })
+    const { events, changes } = await decode(tx([ours(data, [ISSUER_CONFIG, PROGRAM, ADMIN])]))
+
+    expect(events).toEqual([])
+    expect(changes).toEqual([
+      {
+        kind: 'delegation_set',
+        issuerId: ISSUER_ID,
+        signature: SIGNATURE,
+        changeIndex: 0,
+        slot: 412_003_881,
+        blockTime: 1_772_600_000,
+        operationalKey: OPERATIONAL,
+        mask: 1,
+        path: 'immediate',
+        proposal: null,
+        signers: [ADMIN],
+      },
+    ])
+  })
+
+  it('a rotation through a proposal names the proposal and its approvers in order', async () => {
+    const data = encoded('setDelegation', { operationalKey: NEXT_KEY, mask: 7 })
+    const { changes } = await decode(tx([ours(data, [ISSUER_CONFIG, PROPOSAL, OFFICER, ADMIN])]))
+
+    expect(changes[0]).toMatchObject({
+      kind: 'delegation_set',
+      operationalKey: NEXT_KEY.toBase58(),
+      mask: 7,
+      path: 'proposal',
+      proposal: PROPOSAL,
+      signers: [OFFICER, ADMIN],
+    })
+  })
+
+  it('numbers two changes of one transaction from zero', async () => {
+    const narrow = encoded('setDelegation', { operationalKey: new PublicKey(OPERATIONAL), mask: 1 })
+    const revoke = encoded('setDelegation', { operationalKey: new PublicKey(OPERATIONAL), mask: 0 })
+    const { changes } = await decode(
+      tx([
+        ours(narrow, [ISSUER_CONFIG, PROGRAM, ADMIN]),
+        ours(revoke, [ISSUER_CONFIG, PROGRAM, ADMIN], 1),
+      ]),
+    )
+    expect(changes.map((change) => change.kind === 'delegation_set' && change.changeIndex)).toEqual(
+      [0, 1],
+    )
+  })
+
+  it('a change that names nobody is not read as one', async () => {
+    const data = encoded('setDelegation', { operationalKey: new PublicKey(OPERATIONAL), mask: 0 })
+    await expect(decode(tx([ours(data, [ISSUER_CONFIG, PROGRAM])]))).rejects.toThrow()
+  })
+})

@@ -109,6 +109,25 @@ export type MirrorChange =
       readonly wallet: string
       readonly status: HolderStatus
     }
+  | {
+      /**
+       * `set_delegation` (T030, FR-035b). Only the destination: the program
+       * emits nothing, and the previous state is what the mirror holds when
+       * this is applied — in signature order, that is the chain's state just
+       * before (`delegation_changes` in the schema says why that holds).
+       */
+      readonly kind: 'delegation_set'
+      readonly issuerId: string
+      readonly signature: string
+      readonly changeIndex: number
+      readonly slot: number
+      readonly blockTime: number | null
+      readonly operationalKey: string
+      readonly mask: number
+      readonly path: 'immediate' | 'proposal'
+      readonly proposal: string | null
+      readonly signers: readonly string[]
+    }
 
 /** An event with the tenant it belongs to — the column RLS cuts the table by, not a field of the event. */
 export interface EventRecord {
@@ -223,6 +242,9 @@ const ACCOUNT = {
   changeCirculation: { issuerConfig: 0, mint: 2, firstApprover: 5 },
   setHolderStatus: { tokenConfig: 1, authority: 3 },
   attestReserve: { tokenConfig: 0, attestation: 1, attestor: 2 },
+  // `proposal` (#1) is the program id when absent, as in `setPolicy`; the
+  // members — signers or approvers — start at #2 on both paths.
+  setDelegation: { issuerConfig: 0, proposal: 1, firstMember: 2 },
 } as const
 
 /** Anchor decodes a `Pubkey` to a `PublicKey`; a `u64`/`i64` to a `BN`. */
@@ -705,6 +727,46 @@ type InstructionDecoder = (ctx: Context, instruction: InstructionView, args: Arg
  * changes no state anyone sees, and `execute` is the hook's CPI, already
  * covered by the transfer that invoked it.
  */
+/**
+ * A delegation change (FR-035b): a mirror fact and a history row, never a
+ * journal line — the token journal is cut by mint, and this has none.
+ *
+ * The path is read from the proposal slot: an absent `Option` account holds
+ * the program id. The members after it are named either way — signers on
+ * the immediate path, the proposal's approvers on the deferred one — and the
+ * fee payer is not among them.
+ */
+async function decodeSetDelegation(
+  ctx: Context,
+  instruction: InstructionView,
+  args: Args,
+): Promise<void> {
+  const accounts = ACCOUNT.setDelegation
+  const issuerConfig = at(instruction, accounts.issuerConfig, 'issuerConfig')
+  const issuerId = await ctx.lookups.issuerIdOfConfig(issuerConfig)
+  if (issuerId === undefined) throw new LookupFailed('issuer config', issuerConfig)
+
+  const proposal = at(instruction, accounts.proposal, 'proposal')
+  const deferred = proposal !== PROGRAM
+  const signers = instruction.accounts.slice(accounts.firstMember)
+  // The program refuses a change nobody authorised — even a revocation names
+  // its admin. One in the ledger means this is reading something else.
+  if (signers.length === 0) throw new Error('set_delegation names no member')
+  ctx.changes.push({
+    kind: 'delegation_set',
+    issuerId,
+    signature: ctx.tx.signature,
+    changeIndex: ctx.changes.filter((change) => change.kind === 'delegation_set').length,
+    slot: ctx.tx.slot,
+    blockTime: ctx.tx.blockTime,
+    operationalKey: address(args.operationalKey),
+    mask: Number(integer(args.mask)),
+    path: deferred ? 'proposal' : 'immediate',
+    proposal: deferred ? proposal : null,
+    signers,
+  })
+}
+
 const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   initializeIssuer: decodeInitializeIssuer,
   createToken: decodeCreateToken,
@@ -718,6 +780,7 @@ const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   pauseCirculation: decodeChangeCirculation('pause'),
   resumeCirculation: decodeChangeCirculation('unpause'),
   attestReserve: decodeAttestReserve,
+  setDelegation: decodeSetDelegation,
 }
 
 /**

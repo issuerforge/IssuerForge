@@ -10,6 +10,7 @@ import { createActionReader } from './actions.ts'
 import { createChainReader, fetchWithTimeout } from './chain.ts'
 import { createComplianceReader } from './compliance.ts'
 import { ConfigError, loadConfig } from './config.ts'
+import { createDelegationStore } from './delegation.ts'
 import { createDirectory } from './directory.ts'
 import { createHolderStore } from './holders.ts'
 import { createIssuanceStore } from './issuance.ts'
@@ -42,6 +43,7 @@ async function main() {
     issuance: createIssuanceStore(database),
     holders: createHolderStore(database),
     journal: createJournalStore(database),
+    delegations: createDelegationStore(database),
     chain,
     actions: createActionReader(connection, chain.program),
     compliance: createComplianceReader(connection, chain.program),

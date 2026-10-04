@@ -167,6 +167,7 @@ function app(fakes: Fakes = {}) {
     } as Directory,
     actions,
     compliance: noCompliance,
+    delegations: { history: async () => [] },
     chain: {
       program: undefined as unknown as ChainReader['program'],
       tokenCount: async () => 1,

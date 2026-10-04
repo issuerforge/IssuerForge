@@ -5,6 +5,7 @@
 // (T034) reads these schemas, and the route file would drag `hono` into the
 // browser bundle along with them.
 import { policyRulesSchema } from '@forge/policy/model'
+import { DELEGATION_ALL } from '@forge/shared/api'
 import { addressSchema, u64Schema, unixSecondsSchema } from '@forge/shared/primitives'
 import { z } from 'zod'
 import { unsignedTransactionSchema } from './tokens.ts'
@@ -18,6 +19,22 @@ import { unsignedTransactionSchema } from './tokens.ts'
  */
 export const MIN_PROPOSAL_TERM_SECONDS = 60 * 60
 export const MAX_PROPOSAL_TERM_SECONDS = 30 * 24 * 60 * 60
+
+/** `DELEGATION_ALL` bounds it: a bit outside the closed list is a power that does not exist. */
+export const delegationMaskSchema = z
+  .number()
+  .int()
+  .min(0)
+  .refine((mask) => (mask & ~DELEGATION_ALL) === 0, 'a power outside the closed list')
+
+/** A delegation change as a proposal body: the destination, the start is read from the chain. */
+export const delegationBodySchema = z.object({
+  kind: z.literal('set-delegation'),
+  operationalKey: addressSchema,
+  mask: delegationMaskSchema,
+})
+
+export type DelegationBody = z.infer<typeof delegationBodySchema>
 
 // ─── Bodies ──────────────────────────────────────────────────────────────────
 
@@ -101,11 +118,20 @@ export const proposalActionSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('pause'), reason: complianceReasonSchema }),
   z.object({ kind: z.literal('resume'), reason: complianceReasonSchema }),
+  z.object({
+    kind: z.literal('set-delegation'),
+    /** What the delegation was when this was raised. Execution refuses once it has moved. */
+    previousKey: addressSchema,
+    previousMask: delegationMaskSchema,
+    operationalKey: addressSchema,
+    mask: delegationMaskSchema,
+  }),
 ])
 
 export const proposalSchema = z.object({
   address: addressSchema,
-  mint: addressSchema,
+  /** `null` for an action on the issuer itself — a delegation change has no token. */
+  mint: addressSchema.nullable(),
   nonce: u64Schema,
   payer: addressSchema,
   action: proposalActionSchema,
@@ -144,7 +170,12 @@ export const quorumMemberSchema = z.object({
  */
 export const proposalDetailResponseSchema = z.object({
   proposal: proposalSchema,
-  body: proposedActionBodySchema,
+  /**
+   * What the approvers sign for. A delegation change carries its whole body in
+   * the account, so it is the same object as `proposal.action`; it is listed
+   * here only so the field means one thing for every kind.
+   */
+  body: z.union([proposedActionBodySchema, delegationBodySchema]),
   authorising: z.array(quorumMemberSchema),
 })
 

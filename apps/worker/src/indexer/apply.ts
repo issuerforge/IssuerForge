@@ -13,6 +13,7 @@
 // application of the same transaction must change nothing.
 import {
   type Database,
+  delegationChanges,
   events,
   holders,
   indexerState,
@@ -159,6 +160,47 @@ export function drizzleWriter(db: Database): Writer {
             .set({ name: change.name, symbol: change.symbol, syncedAt: stamp.syncedAt })
             .where(eq(tokens.mint, change.mint))
           return
+        case 'delegation_set': {
+          // One transaction, so the "from" read and the mirror write cannot
+          // be split by another writer; the history row goes first, keyed by
+          // signature, and a re-read writes nothing there.
+          await db.transaction(async (tx) => {
+            const [current] = await tx
+              .select({ key: issuers.operationalKey, mask: issuers.delegationMask })
+              .from(issuers)
+              .where(eq(issuers.issuerId, change.issuerId))
+            if (current === undefined) {
+              throw new Error(`delegation change for an issuer not mirrored: ${change.issuerId}`)
+            }
+            await tx
+              .insert(delegationChanges)
+              .values({
+                signature: change.signature,
+                changeIndex: change.changeIndex,
+                issuerId: change.issuerId,
+                slot: change.slot,
+                blockTime: change.blockTime,
+                previousKey: current.key,
+                previousMask: current.mask,
+                operationalKey: change.operationalKey,
+                mask: change.mask,
+                path: change.path,
+                proposal: change.proposal,
+                signers: [...change.signers],
+              })
+              .onConflictDoNothing()
+            await tx
+              .update(issuers)
+              .set({
+                operationalKey: change.operationalKey,
+                delegationMask: change.mask,
+                sourceSlot: stamp.slot,
+                syncedAt: stamp.syncedAt,
+              })
+              .where(eq(issuers.issuerId, change.issuerId))
+          })
+          return
+        }
         case 'token_policy':
           await db
             .update(tokens)

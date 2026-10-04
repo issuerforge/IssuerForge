@@ -121,6 +121,7 @@ function app(fakes: Fakes = {}) {
       if (view.action.kind === 'pause' || view.action.kind === 'resume') {
         return { kind: view.action.kind, reason: view.action.reason }
       }
+      if (view.action.kind === 'set-delegation') return undefined
       const policy = 'body' in fakes ? fakes.body : STRICT
       return policy === undefined
         ? undefined
@@ -155,6 +156,7 @@ function app(fakes: Fakes = {}) {
     chain,
     actions,
     compliance: noCompliance,
+    delegations: { history: async () => [] },
     issuance: unused<IssuanceStore>('issuance'),
     holders: unused<HolderStore>('the holder store'),
     journal: unused<JournalStore>('the journal'),

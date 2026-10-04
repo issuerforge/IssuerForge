@@ -294,6 +294,72 @@ export const events = pgTable(
 ).enableRLS()
 
 /**
+ * Every change of what the platform's operational key may do, or which key it
+ * is (FR-035b) — the history behind the delegation screen.
+ *
+ * **Its own table, not a row in `events`.** `events` is the token's journal:
+ * every row has a mint, and the export is cut by it (T032). A delegation
+ * belongs to the issuer, and forcing it under a mint would either invent one
+ * or make the journal's key nullable for every reader. The token journal
+ * stays format v1, and the verifier keeps naming `set_delegation` as outside
+ * it (T033).
+ *
+ * **The previous state is the mirror's, at the moment of application.** The
+ * program emits no event, and the instruction carries only the destination.
+ * The indexer applies transactions strictly in signature order (T033), so
+ * the `issuers` row it reads just before writing is the chain's state just
+ * before this transaction — and a re-read after a dropped connection hits
+ * the primary key and writes nothing, so it never records a "from" computed
+ * against its own later write.
+ */
+export const delegationPath = pgEnum('delegation_path', ['immediate', 'proposal'])
+
+export const delegationChanges = pgTable(
+  'delegation_changes',
+  {
+    signature: text('signature').notNull(),
+    /** Ordinal of the `set_delegation` inside the transaction, from zero. */
+    changeIndex: smallint('change_index').notNull(),
+    issuerId: text('issuer_id')
+      .notNull()
+      .references(() => issuers.issuerId, { onDelete: 'restrict' }),
+    slot: bigint('slot', { mode: 'number' }).notNull(),
+    blockTime: bigint('block_time', { mode: 'number' }),
+    previousKey: text('previous_key'),
+    previousMask: smallint('previous_mask').notNull(),
+    operationalKey: text('operational_key').notNull(),
+    mask: smallint('mask').notNull(),
+    path: delegationPath('path').notNull(),
+    /** The proposal on the deferred path; null on the immediate one. */
+    proposal: text('proposal'),
+    /**
+     * Named, in the order the instruction carries them (FR-019c): the
+     * signing members on the immediate path, the proposal's approvers on the
+     * deferred one. Never the fee payer — paying grants nothing.
+     */
+    signers: text('signers').array().notNull(),
+    indexedAt: timestamp('indexed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.signature, t.changeIndex] }),
+    index('delegation_changes_issuer_slot_idx').on(t.issuerId, t.slot),
+    check(
+      'delegation_changes_signature_is_base58',
+      sql`char_length(${t.signature}) between 64 and 88`,
+    ),
+    check(
+      'delegation_changes_masks_known',
+      sql`${t.mask} between 0 and 7 and ${t.previousMask} between 0 and 7`,
+    ),
+    check(
+      'delegation_changes_proposal_matches_path',
+      sql`(${t.path} = 'proposal') = (${t.proposal} is not null)`,
+    ),
+    check('delegation_changes_named', sql`cardinality(${t.signers}) >= 1`),
+  ],
+).enableRLS()
+
+/**
  * Where the indexer stopped: the last transaction applied, so that a
  * restart resumes from it instead of from the program's first slot.
  *
@@ -320,3 +386,5 @@ export type NewHolder = typeof holders.$inferInsert
 export type EventRow = typeof events.$inferSelect
 export type NewEventRow = typeof events.$inferInsert
 export type IndexerState = typeof indexerState.$inferSelect
+export type DelegationChange = typeof delegationChanges.$inferSelect
+export type NewDelegationChange = typeof delegationChanges.$inferInsert

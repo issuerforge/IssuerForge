@@ -63,10 +63,23 @@ export type ProposalActionView =
   // pause branch would lose `version` and `amount`.
   | { readonly kind: 'pause'; readonly reason: ComplianceReasonInput }
   | { readonly kind: 'resume'; readonly reason: ComplianceReasonInput }
+  /**
+   * A delegation change (T030). The issuer's, not a token's — and a
+   * transition, not a destination: the program refuses to execute it once the
+   * delegation has moved off `previous*`.
+   */
+  | {
+      readonly kind: 'set-delegation'
+      readonly previousKey: string
+      readonly previousMask: number
+      readonly operationalKey: string
+      readonly mask: number
+    }
 
 export interface ProposalView {
   readonly address: string
-  readonly mint: string
+  /** The token's mint, or `null` for an action on the issuer itself (a delegation change). */
+  readonly mint: string | null
   readonly issuerConfig: string
   readonly payer: string
   readonly nonce: bigint
@@ -84,8 +97,11 @@ export interface ActionReader {
   token(mint: PublicKey): Promise<TokenView | undefined>
   /** `undefined` — there is no `IssuerConfig` on the network. */
   quorum(issuerId: PublicKey): Promise<QuorumView | undefined>
-  /** Every proposal still open on chain for the token. Closed ones are gone with their rent. */
-  proposals(mint: PublicKey): Promise<ProposalView[]>
+  /**
+   * Every proposal still open on chain under a scope — a token's mint, or an
+   * issuer's config for its own actions. Closed ones are gone with their rent.
+   */
+  proposals(scope: PublicKey): Promise<ProposalView[]>
   proposal(address: PublicKey): Promise<ProposalView | undefined>
   /**
    * The full body, from the proposing transaction.
@@ -117,7 +133,12 @@ type StoredAction = {
   }
   pause?: { reason: StoredReason }
   resume?: { reason: StoredReason }
-  setDelegation?: object
+  setDelegation?: {
+    previousKey: PublicKey
+    previousMask: number
+    operationalKey: PublicKey
+    mask: number
+  }
 }
 
 type StoredReason = { code: number; caseRef: number[] }
@@ -145,6 +166,15 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
   if (action.resume !== undefined) {
     return { kind: 'resume', reason: fromReason(action.resume.reason) }
   }
+  if (action.setDelegation !== undefined) {
+    return {
+      kind: 'set-delegation',
+      previousKey: action.setDelegation.previousKey.toBase58(),
+      previousMask: action.setDelegation.previousMask,
+      operationalKey: action.setDelegation.operationalKey.toBase58(),
+      mask: action.setDelegation.mask,
+    }
+  }
   // A kind appended to the program before this line was written: refused
   // rather than shown as one of the kinds above.
   throw new TypeError(`unknown action kind at ${address.toBase58()}`)
@@ -171,7 +201,9 @@ function isIssuerScoped(action: StoredAction): boolean {
 function toView(address: PublicKey, raw: RawProposal): ProposalView {
   return {
     address: address.toBase58(),
-    mint: raw.scope.toBase58(),
+    // The scope of an issuer's own action is its config, which is no mint:
+    // naming it as one would send the console looking for a token.
+    mint: isIssuerScoped(raw.action) ? null : raw.scope.toBase58(),
     issuerConfig: raw.issuer.toBase58(),
     payer: raw.payer.toBase58(),
     nonce: BigInt(raw.nonce.toString()),
@@ -232,12 +264,12 @@ export function createActionReader(connection: Connection, program: ForgeProgram
       }
     },
 
-    async proposals(mint) {
-      // `scope` is the first field, right after the eight-byte discriminator,
-      // and for a token's action it is the mint; `all()` adds the
-      // discriminator filter itself.
+    async proposals(scope) {
+      // `scope` is the first field, right after the eight-byte discriminator:
+      // the mint for a token's action, the issuer's config for its own.
+      // `all()` adds the discriminator filter itself.
       const found = await program.account.actionProposal.all([
-        { memcmp: { offset: 8, bytes: mint.toBase58() } },
+        { memcmp: { offset: 8, bytes: scope.toBase58() } },
       ])
       return found
         .map(({ publicKey, account }) => toView(publicKey, account as RawProposal))
@@ -248,10 +280,7 @@ export function createActionReader(connection: Connection, program: ForgeProgram
       const raw = (await program.account.actionProposal.fetchNullable(
         address,
       )) as RawProposal | null
-      // An action on the issuer itself (a delegation change, T030) has no
-      // token, and these routes are a token's: to them it does not exist.
-      if (raw === null || isIssuerScoped(raw.action)) return undefined
-      return toView(address, raw)
+      return raw === null ? undefined : toView(address, raw)
     },
 
     async body(view) {
@@ -268,6 +297,9 @@ export function createActionReader(connection: Connection, program: ForgeProgram
       if (view.action.kind === 'pause' || view.action.kind === 'resume') {
         return { kind: view.action.kind, reason: view.action.reason }
       }
+      // A delegation change is not a `ProposedActionInput` — it has no body
+      // apart from the account. The routes read it from the view.
+      if (view.action.kind === 'set-delegation') return undefined
 
       const history = await connection.getSignaturesForAddress(new PublicKey(view.address), {
         limit: PROPOSAL_HISTORY_LIMIT,

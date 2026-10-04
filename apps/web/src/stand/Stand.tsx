@@ -7,12 +7,13 @@
 // and at 375, before anyone signs in: the gate checks modules, not screens.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { ProvideSession } from '@/auth/guards'
 import { ProvideApi } from '@/auth/providers'
 import ActionsScreen from '@/compliance/ActionsScreen'
 import ProposalScreen from '@/compliance/ProposalScreen'
 import { ProvideSubmitter } from '@/compliance/submit'
+import DelegationScreen from '@/settings/delegation'
 import { createStand, ISSUER, SESSIONS } from './fake'
 
 type As = keyof typeof SESSIONS
@@ -38,7 +39,15 @@ export default function Stand() {
             <div className="min-h-screen">
               <header className="border-b border-hairline">
                 <div className="mx-auto flex max-w-[1180px] flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-5 py-4">
-                  <span className="smallcaps">IssuerForge · dev stand</span>
+                  <span className="flex flex-wrap items-baseline gap-x-5">
+                    <span className="smallcaps">IssuerForge · dev stand</span>
+                    <NavLink to="/console/actions" className="btn-plain muted">
+                      Compliance actions
+                    </NavLink>
+                    <NavLink to="/settings/delegation" className="btn-plain muted">
+                      The operational key
+                    </NavLink>
+                  </span>
                   <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
                     {(Object.keys(SESSIONS) as As[]).map((role) => (
                       <button
@@ -61,6 +70,7 @@ export default function Stand() {
                 <Routes>
                   <Route path="/console/actions" element={<ActionsScreen />} />
                   <Route path="/console/actions/:id" element={<ProposalScreen />} />
+                  <Route path="/settings/delegation" element={<DelegationScreen />} />
                   <Route path="*" element={<Navigate to="/console/actions" replace />} />
                 </Routes>
               </main>

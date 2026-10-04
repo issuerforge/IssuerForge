@@ -164,6 +164,7 @@ function app(fakes: Fakes = {}) {
     chain,
     actions,
     compliance: noCompliance,
+    delegations: { history: async () => [] },
     issuance,
     holders,
     operational,
