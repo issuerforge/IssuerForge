@@ -10,6 +10,7 @@
     "./journal": "./src/journal/index.ts",
     "./errors": "./src/errors.ts",
     "./primitives": "./src/primitives.ts",
+    "./reasons": "./src/reasons.ts",
     "./refusal": "./src/refusal.ts",
     "./log": "./src/log.ts"
   },

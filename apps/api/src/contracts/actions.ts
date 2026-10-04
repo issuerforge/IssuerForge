@@ -128,10 +128,24 @@ export type ProposalResponse = z.infer<typeof proposalSchema>
 
 export const proposalListResponseSchema = z.object({ proposals: z.array(proposalSchema) })
 
-/** One proposal with its body — what an approver reads before signing. */
+/**
+ * A member whose signature counts, as the program reads the roster at
+ * execution — not the database mirror.
+ */
+export const quorumMemberSchema = z.object({
+  wallet: addressSchema,
+  roles: z.number().int().positive(),
+})
+
+/**
+ * One proposal with its body — what an approver reads before signing — and
+ * the members who could still approve it. Without the second list the screen
+ * can say "one of two", but not who the second could be.
+ */
 export const proposalDetailResponseSchema = z.object({
   proposal: proposalSchema,
   body: proposedActionBodySchema,
+  authorising: z.array(quorumMemberSchema),
 })
 
 /** Every handler that assembles a transaction answers in this shape. */

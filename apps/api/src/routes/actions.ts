@@ -222,6 +222,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
     return c.json({
       proposal: present(view, standing(view, quorum, unixNow())),
       body: presentBody(found),
+      authorising: quorum.members.filter((member) => hasRole(member.roles, ROLE_AUTHORISING)),
     })
   })
 

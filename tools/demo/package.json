@@ -6,6 +6,7 @@
   "scripts": {
     "us1": "node --env-file-if-exists=../../.env src/main.ts",
     "journal": "node --env-file-if-exists=../../.env src/journal.ts",
+    "officer": "node --env-file-if-exists=../../.env src/officer.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

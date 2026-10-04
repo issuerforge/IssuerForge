@@ -10,6 +10,7 @@ import { createLogger } from '@forge/shared/log'
 import { describe, expect, it, vi } from 'vitest'
 import type { ActionReader } from './actions.ts'
 import type { ChainReader } from './chain.ts'
+import type { ComplianceReader } from './compliance.ts'
 import type { Directory } from './directory.ts'
 import { unauthorized } from './errors.ts'
 import type { HolderStore } from './holders.ts'
@@ -18,6 +19,16 @@ import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
 import type { PrivyClient, PrivyUser } from './privy.ts'
 import { createServer, type ServerDeps } from './server.ts'
+
+/** These routes never read the officer's totals; the reader is here only because the server requires one. */
+const noCompliance: ComplianceReader = {
+  tokens: async () => undefined,
+  mint: async () => undefined,
+  freezes: async () => [],
+  freeze: async () => undefined,
+  tokenAccount: async () => undefined,
+  seized: async () => ({ vault: '11111111111111111111111111111111', amount: 0n }),
+}
 
 /** These routes never read proposals; the reader is here only because the server requires one. */
 const actions: ActionReader = {
@@ -109,6 +120,7 @@ function app(
     requestId: () => 'req-fixed',
     chain,
     actions,
+    compliance: noCompliance,
     issuance,
     holders,
     journal,

@@ -46,6 +46,15 @@ describe('the screen registry', () => {
     expect(paths).toEqual(expect.arrayContaining(['/console/holders', '/console/actions']))
   })
 
+  it('puts the proposal page under the actions screen, behind the same role, out of the menu', () => {
+    const actions = screenAt('/console/actions')
+    expect(actions?.detail?.path).toBe('/console/actions/:id')
+    // The page is reached from the list, never on its own: it has no line of
+    // its own, so no role can open it while the list is closed to it.
+    expect(SCREENS.some((s) => s.path === '/console/actions/:id')).toBe(false)
+    expect(permits(ROLE.OBSERVER, actions as (typeof SCREENS)[number])).toBe(false)
+  })
+
   it('adds up: a mask of two roles opens the union of both', () => {
     const union = screensFor(ROLE.ATTESTOR | ROLE.COMPLIANCE).map((s) => s.path)
     const apart = new Set([

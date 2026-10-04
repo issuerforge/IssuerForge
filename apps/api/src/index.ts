@@ -8,6 +8,7 @@ import { serve } from '@hono/node-server'
 import { Connection } from '@solana/web3.js'
 import { createActionReader } from './actions.ts'
 import { createChainReader, fetchWithTimeout } from './chain.ts'
+import { createComplianceReader } from './compliance.ts'
 import { ConfigError, loadConfig } from './config.ts'
 import { createDirectory } from './directory.ts'
 import { createHolderStore } from './holders.ts'
@@ -43,6 +44,7 @@ async function main() {
     journal: createJournalStore(database),
     chain,
     actions: createActionReader(connection, chain.program),
+    compliance: createComplianceReader(connection, chain.program),
     operational: createOperationalSigner(connection, config.operationalSecretKey),
   })
 

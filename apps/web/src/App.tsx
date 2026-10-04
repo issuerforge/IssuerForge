@@ -46,6 +46,17 @@ const App = () => (
             element={<RequireScreen screen={screen}>{screen.element}</RequireScreen>}
           />
         ))}
+        {SCREENS.flatMap((screen) =>
+          screen.detail === undefined
+            ? []
+            : [
+                <Route
+                  key={screen.detail.path}
+                  path={screen.detail.path}
+                  element={<RequireScreen screen={screen}>{screen.detail.element}</RequireScreen>}
+                />,
+              ],
+        )}
       </Route>
     </Route>
 

@@ -119,6 +119,29 @@ function ApiAndTenant({ apiUrl, children }: { apiUrl: string; children: ReactNod
   )
 }
 
+/**
+ * An api client and a tenant handed in — for the dev stand (`src/stand/`),
+ * which serves the screens from memory instead of the network. The same
+ * contexts the screens read, so the stand cannot drift into a second way of
+ * reaching them.
+ */
+export function ProvideApi({
+  api,
+  issuerId,
+  children,
+}: {
+  api: ApiClient
+  issuerId: string
+  children: ReactNode
+}) {
+  const tenant = useMemo<TenantValue>(() => ({ issuerId, select: () => {} }), [issuerId])
+  return (
+    <TenantContext.Provider value={tenant}>
+      <ApiContext.Provider value={api}>{children}</ApiContext.Provider>
+    </TenantContext.Provider>
+  )
+}
+
 export function ConsoleProviders({ env, children }: { env: WebEnv; children: ReactNode }) {
   const [queryClient] = useState(createQueryClient)
 

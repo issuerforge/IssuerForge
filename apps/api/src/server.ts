@@ -14,6 +14,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import type { ActionReader } from './actions.ts'
 import type { ChainReader } from './chain.ts'
+import type { ComplianceReader } from './compliance.ts'
 import type { AppEnv } from './env.ts'
 import { invalidInput, onError, onNotFound } from './errors.ts'
 import type { HolderStore } from './holders.ts'
@@ -21,6 +22,7 @@ import type { IssuanceStore } from './issuance.ts'
 import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
 import { createActionRoutes } from './routes/actions.ts'
+import { createComplianceRoutes } from './routes/compliance.ts'
 import { createHolderRoutes } from './routes/holders.ts'
 import { createJournalRoutes } from './routes/journal.ts'
 import { createTokenRoutes } from './routes/tokens.ts'
@@ -32,6 +34,8 @@ export interface ServerDeps extends SessionDeps {
   chain: ChainReader
   /** Quorum proposals, read from the chain rather than the mirror (`actions.ts`). */
   actions: ActionReader
+  /** The officer's totals and freezes, read from the chain (`compliance.ts`). */
+  compliance: ComplianceReader
   issuance: IssuanceStore
   holders: HolderStore
   journal: JournalStore
@@ -123,6 +127,7 @@ export function createServer(deps: ServerDeps) {
   app.route('/api', createHolderRoutes({ ...deps, now }))
   app.route('/api', createJournalRoutes({ ...deps, now }))
   app.route('/api', createActionRoutes({ ...deps, now }))
+  app.route('/api', createComplianceRoutes(deps))
 
   return app
 }

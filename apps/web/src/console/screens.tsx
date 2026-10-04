@@ -29,6 +29,16 @@ import Stub from './Stub'
  */
 const Wizard = lazy(() => import('@/wizard/Wizard'))
 
+/** The officer's screens sign too, so they load the same way (T034). */
+const ComplianceActions = lazy(() =>
+  import('@/compliance').then((module) => ({ default: module.ComplianceActions })),
+)
+const ComplianceProposal = lazy(() =>
+  import('@/compliance').then((module) => ({ default: module.ComplianceProposal })),
+)
+
+const opening = (what: string) => <p className="muted py-8 text-[13px]">Opening {what}…</p>
+
 /** The roles whose signature counts towards the quorum: both see compliance work. */
 const AUTHORISING = ROLE.ADMIN | ROLE.COMPLIANCE
 
@@ -46,6 +56,14 @@ export interface Screen {
    */
   requires: number
   element: ReactElement
+  /**
+   * A page under this screen — one record of a list, at its own address.
+   *
+   * Under the same `requires`, not a second registry line: a proposal page
+   * open to a role the list is closed to would be the "item you can reach but
+   * not see" this file exists to rule out. It is not a menu item.
+   */
+  detail?: { path: string; element: ReactElement }
 }
 
 export const SCREENS: readonly Screen[] = [
@@ -79,11 +97,18 @@ export const SCREENS: readonly Screen[] = [
     label: 'Compliance actions',
     requires: AUTHORISING,
     element: (
-      <Stub
-        task="T034"
-        what="A case, its reason code, and the quorum of signatures it still needs"
-      />
+      <Suspense fallback={opening('the compliance actions')}>
+        <ComplianceActions />
+      </Suspense>
     ),
+    detail: {
+      path: '/console/actions/:id',
+      element: (
+        <Suspense fallback={opening('the proposal')}>
+          <ComplianceProposal />
+        </Suspense>
+      ),
+    },
   },
   {
     path: '/issue',

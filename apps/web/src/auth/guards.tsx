@@ -153,6 +153,16 @@ export function RequireSession() {
   )
 }
 
+/**
+ * A session handed in rather than read — for the dev stand (`src/stand/`)
+ * and nothing else. The stand draws real screens without a login provider,
+ * and this is the one door it needs; production goes through
+ * `RequireSession` above.
+ */
+export function ProvideSession({ session, children }: { session: Session; children: ReactNode }) {
+  return <SessionContext.Provider value={session}>{children}</SessionContext.Provider>
+}
+
 /** The role does not open the screen — we say so, rather than showing a 404 or redirecting. */
 export function RequireScreen({ screen, children }: { screen: Screen; children: ReactNode }) {
   const session = useConsoleSession()

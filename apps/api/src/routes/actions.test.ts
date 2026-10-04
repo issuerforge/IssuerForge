@@ -13,6 +13,7 @@ import { Connection, PublicKey } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import type { ActionReader, ProposalView, QuorumView, TokenView } from '../actions.ts'
 import type { ChainReader } from '../chain.ts'
+import type { ComplianceReader } from '../compliance.ts'
 import type { Directory, RosterEntry } from '../directory.ts'
 import type { HolderStore } from '../holders.ts'
 import type { IssuanceStore } from '../issuance.ts'
@@ -20,6 +21,16 @@ import type { JournalStore } from '../journal.ts'
 import type { OperationalSigner } from '../operational.ts'
 import type { PrivyClient } from '../privy.ts'
 import { createServer } from '../server.ts'
+
+/** These routes never read the officer's totals; the reader is here only because the server requires one. */
+const noCompliance: ComplianceReader = {
+  tokens: async () => undefined,
+  mint: async () => undefined,
+  freezes: async () => [],
+  freeze: async () => undefined,
+  tokenAccount: async () => undefined,
+  seized: async () => ({ vault: '11111111111111111111111111111111', amount: 0n }),
+}
 
 const ISSUER = '11111111111111111111111111111112'
 const OTHER_ISSUER = 'Stake11111111111111111111111111111111111111'
@@ -143,6 +154,7 @@ function app(fakes: Fakes = {}) {
     directory,
     chain,
     actions,
+    compliance: noCompliance,
     issuance: unused<IssuanceStore>('issuance'),
     holders: unused<HolderStore>('the holder store'),
     journal: unused<JournalStore>('the journal'),
@@ -383,6 +395,14 @@ describe('reading proposals', () => {
     const policy = (body.body as unknown as { policy: PolicyRules }).policy
 
     expect(Buffer.from(encodeRules(policy))).toEqual(Buffer.from(encodeRules(STRICT)))
+  })
+
+  it('names the members who could still approve, from the on-chain roster, observers left out', async () => {
+    const body = await jsonOf(await get({}, `/api/actions/${PROPOSAL}`))
+    expect(body.authorising).toEqual([
+      { wallet: ADMIN, roles: ROLE.ADMIN },
+      { wallet: OFFICER, roles: ROLE.COMPLIANCE },
+    ])
   })
 
   it('a seizure is listed and read with its amount as a u64 string', async () => {
