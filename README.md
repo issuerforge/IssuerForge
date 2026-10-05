@@ -6,13 +6,36 @@ that can be bypassed. An issuer composes a policy in a wizard, signs three
 transactions, and from then on every transfer, from any wallet or any client,
 passes the same on-chain check.
 
-**Policy is data, not code.** One audited program (`issuer_forge`) serves every
+**Policy is data, not code.** One program (`issuer_forge`) serves every
 issuer. Each issuer's rules live in an on-chain account and change without
 re-issuing the token or migrating holders.
 
-## What is built (milestone M1, closed 2026-09-16)
+## What is built (milestones M1 and M2)
 
 Everything below is deployed on devnet and measured by a script, not by eye.
+The program is not audited.
+
+### M2 — the order is carried out (measured 2026-10-03 … 2026-10-05)
+
+An officer freezes an account alone; seizure, pause, resume, a policy change
+and a change of signers are proposals that take effect only on the second of
+the issuer's signatures, counted by the program. Every action carries one of
+twelve reason codes and a case reference. The platform's operational key holds
+only the routine powers the issuer delegates, and loses them in one action.
+The journal exports a period as NDJSON, and `tools/verify-journal` checks it
+against the chain without the api or our database.
+
+| Criterion | Budget | Measured on devnet |
+|---|---|---|
+| From the officer's request to a holder's refused transfer | < 30 s | freeze **max 17.0 s** (10 cycles, p50 7.2 s), seizure **max 11.6 s** (3 cycles); **0 of 1 345** transfers attempted afterwards went through |
+| Journal records without on-chain confirmation | 0 | **0 of 14**, checked by the independent verifier; **4 of 4** forged copies caught (altered amount, deleted seizure, invented line, truncated file) |
+| Money actions performed by the platform's operational key | 0 of ≥ 10 | **0 of 31** with every delegable power granted — 15 through the program, 9 against Token-2022 directly, 7 through the api |
+| One-of-two-signature actions with an on-chain effect | 0 of ≥ 10 per kind | **0 of 270** — seize, pause, resume 50 each, policy and delegation changes 60 each; the api refused 50 of 50 before the chain; the second signature executes every kind |
+
+The spread in the freeze time is the free public devnet node and its rate
+limits, not the program: the cleanest cycles took 1.4–2.0 s.
+
+### M1 — the rule holds (closed 2026-09-16)
 
 | Criterion | Budget | Measured on devnet |
 |---|---|---|
@@ -38,12 +61,8 @@ validator.
 | `issuer_forge` | `DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5` |
 | `attacker` (measurement-only CPI relay) | `9ZCmUGqkrtBrm83uiiMwBgRrV2cBPE9HGMgA25iRJGkQ` |
 
-### What M1 deliberately does not include
+### What is deliberately not there yet
 
-- **No compliance actions yet.** Freezing an account, seizing funds and
-  pausing circulation are milestone M2. The 2-of-N quorum exists today only on
-  policy changes, and only as signatures within a single transaction —
-  proposals with deferred signing and a revocation window come with M2.
 - **No continued minting.** Initial issuance is checked against the attested
   reserve; a separate `mint` instruction does not exist yet — not disabled,
   absent. That is M3.
@@ -52,19 +71,9 @@ validator.
   published by our own key acting as attestor — the mechanism is real, the
   content is a fixture. Holder statuses (tier, jurisdiction, denial) are
   written by the issuer's own register; there is no KYC provider integration.
-- **The journal can be read, but not yet checked by a stranger.**
-  `apps/worker` reads the program's and the token program's transactions into
-  Postgres — membership, tokens, holders, and every transfer, refusal, thaw,
-  status change and attestation as an event with its signature. Two routes
-  serve them: `GET /api/tokens/:mint/journal` exports a period as NDJSON and
-  `GET /api/tokens/:mint/stream` follows them live over SSE. The independent
-  verifier that reconciles an exported file against the network without
-  talking to us (`tools/verify-journal`) is still to come, and until it exists
-  the claim "every record is confirmed on chain" is ours rather than proven.
-- **No compliance actions on chain yet.** Freezing, seizure, pause, reason
-  codes and the deferred quorum are M2 work that has not started, so the
-  journal today carries transfers, refusals, thaws, status changes and
-  attestations — and no `compliance` events.
+- **No redemption into local currency.** M4.
+- **No licences, no filings.** The platform carries out an issuer's
+  obligations; it does not grant permission to issue.
 
 ## Design rules the code is built around
 
@@ -107,12 +116,17 @@ packages/db             Drizzle schema and migrations (Supabase/Postgres).
                         RLS is on from the first migration, with no policies
                         yet — deny-all except the owner.
 apps/api                Hono. Login (Privy), roster, policy simulation, token
-                        issuance (unsigned transactions), holder onboarding
+                        issuance (unsigned transactions), holder onboarding,
+                        compliance actions and proposals, delegations,
+                        journal export and live feed
 apps/web                React console: issuance wizard with live simulation,
-                        three signatures shown as three
+                        the officer's screen, delegations of the
+                        operational key
 apps/worker             Indexer: chain → Postgres mirror and event log; runs
                         inside the api behind RUN_WORKER, or on its own
-tools/demo              The measurement script behind the table above
+tools/demo              The measurement scripts behind the tables above
+tools/verify-journal    Checks an exported journal against the chain, both
+                        ways, talking only to a Solana node
 tools/spikes            Feasibility spikes kept with their tests (can the hook
                         resolve a provider attestation directly? — it can)
 scripts/                WSL build/test/localnet helpers, IDL sync
@@ -187,6 +201,9 @@ curl -H "authorization: Bearer $TOKEN" \
 # travels in the header, never in the query string.
 curl -N -H "authorization: Bearer $TOKEN" \
   "http://localhost:8787/api/tokens/$MINT/stream?backlog=20"
+
+# Check an exported period against the chain, without the api.
+node tools/verify-journal/src/main.ts journal.ndjson --rpc https://api.devnet.solana.com
 ```
 
 ### The demo / measurement script
@@ -269,11 +286,6 @@ latency, not records.
 
 ## What comes next
 
-- **M2 — the order is executed.** Deferred 2-of-N signing (`ActionProposal`,
-  revocation window), freeze, seize via `PermanentDelegate`, pause via
-  `Pausable`, a mandatory case reference on every action, an indexer, an
-  NDJSON journal with an independent verifier, and the compliance officer's
-  screens.
 - **M3 — the reserve holds.** Continued minting under the attested reserve,
   attestation expiry as a token parameter, the platform fee, a public
   transparency page (Astro) showing circulation, reserve and attestation age.
@@ -284,4 +296,4 @@ real off-ramp partner, and mainnet.
 
 ## Status
 
-Milestone M1 is closed and measured on devnet. Milestone M2 is next.
+Milestones M1 and M2 are measured on devnet. Milestone M3 is next.
