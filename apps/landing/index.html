@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IssuerForge — carry out a regulator's order on Solana</title>
+<meta name="description" content="Issue your own stablecoin on Solana with compliance rules in the token. Freeze, seize or pause on your quorum's signatures; file a journal anyone can check.">
+<meta name="theme-color" content="#264996">
+<link rel="canonical" href="https://issuerforge.github.io/IssuerForge/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="IssuerForge">
+<meta property="og:title" content="IssuerForge — carry out a regulator's order on Solana">
+<meta property="og:description" content="A freeze in force within 17.0 s, 0 of 270 one-signature actions with any effect, 0 of 14 journal lines unconfirmed. Measured on devnet.">
+<meta property="og:url" content="https://issuerforge.github.io/IssuerForge/">
+<meta property="og:image" content="https://issuerforge.github.io/IssuerForge/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="IssuerForge return of execution: freeze in force within 17.0 s, 0 of 270, 0 of 14.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&amp;display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="wrap">
+    <a class="brand" href="./" aria-label="IssuerForge, home">
+      <svg class="mark" width="40" height="40" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 6h30l10 10v18c0 14-9 22-20 27C21 56 12 48 12 34z"/><path d="M42 6v10h10"/><path d="M19 17h18M19 23h22M19 29h22M19 35h18"/><path d="M17 45l4-5 6 5 22-15"/></svg>
+      <span>
+        <span class="brand-name">IssuerForge</span>
+        <span class="cap">Return of execution</span>
+      </span>
+    </a>
+    <div class="masthead-side">
+      <span class="cap status">Devnet · not audited</span>
+      <a class="btn" href="app/">Open the console</a>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="wrap hero">
+    <div class="cols">
+      <div>
+        <p class="cap kicker">A stablecoin issuer's console on Solana</p>
+        <h1>Carry out a regulator's order from your own wallets — and file the proof.</h1>
+        <p class="lede">IssuerForge lets a fintech issue its own stablecoin on Solana with the compliance rules written into the token. When an order arrives, the officer freezes, seizes or pauses from the console; the issuer's quorum signs; and every action lands in a journal that anyone can check against the chain without asking us.</p>
+        <div class="actions">
+          <a class="btn" href="app/">Open the console</a>
+          <a class="btn-line" href="https://github.com/issuerforge/IssuerForge">Read the code</a>
+        </div>
+      </div>
+
+      <div>
+        <div class="form" role="group" aria-label="Return of execution, filled from a measured devnet run">
+          <div class="form-title">
+            <strong>Return of execution</strong>
+            <span class="cap">Filled from a measured run · devnet</span>
+          </div>
+          <div class="row c2w">
+            <div class="box"><span class="bn">1</span><span class="cap">Token</span><span class="entry">vNGN · Vantara Naira<br><a href="https://explorer.solana.com/address/G9vpu3K27hZWGrDpmUvpfPWbWbaSFc1MwBvgZGpBV5Ms?cluster=devnet" title="G9vpu3K27hZWGrDpmUvpfPWbWbaSFc1MwBvgZGpBV5Ms">G9vpu3…BV5Ms</a></span></div>
+            <div class="box"><span class="bn">2</span><span class="cap">Issuer</span><span class="entry"><a href="https://explorer.solana.com/address/8hLHmyxHR9pUWizi6snBkL8fdipGbGuCFL3hyXqjAFcQ?cluster=devnet" title="8hLHmyxHR9pUWizi6snBkL8fdipGbGuCFL3hyXqjAFcQ">8hLHmy…AFcQ</a></span></div>
+          </div>
+          <div class="row c2w">
+            <div class="box"><span class="bn">3</span><span class="cap">Basis</span><span class="entry">04 · Financial intelligence request</span></div>
+            <div class="box"><span class="bn">4</span><span class="cap">Case reference</span><span class="entry">FIU-NG/2026/T036</span></div>
+          </div>
+          <div class="row">
+            <div class="box"><span class="bn">5</span><span class="cap">Actions</span><span class="entry">Freeze × 10 · Seizure × 3</span></div>
+          </div>
+          <div class="row c2">
+            <div class="box"><span class="bn">6</span><span class="cap">Freeze in force within</span><span class="entry"><span class="big">17.0 s</span><br>worst of 10 · p50 7.2 s</span></div>
+            <div class="box"><span class="bn">7</span><span class="cap">Transfers attempted afterwards that went through</span><span class="entry"><span class="big">0</span> of 1,345</span></div>
+          </div>
+          <div class="row c2">
+            <div class="box"><span class="bn">8</span><span class="cap">Seizure in force within</span><span class="entry">11.6 s · worst of 3</span></div>
+            <div class="box"><span class="bn">9</span><span class="cap">Network · date</span><span class="entry">devnet · 2026-10-05</span></div>
+          </div>
+        </div>
+        <p class="note">Vantara Naira is a test token. Every value is from a measured devnet run; the case reference is the run's own.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-a">
+    <div class="part-head"><span class="tag">Part A</span><h2 id="part-a">Every action names its basis and its case.</h2></div>
+    <div class="cols">
+      <div class="prose">
+        <p>Freeze, seizure, pause and resume each carry one of twelve reason codes and a case reference. Without a basis the action is not taken. A frozen account can neither send nor receive, and frozen and seized balances are totalled apart from free circulation.</p>
+        <p class="note">The code is a number on chain and a caption in the console. Renumbering would change what yesterday's actions mean, so codes are only ever added.</p>
+      </div>
+      <div class="form">
+        <div class="form-title"><span class="cap">Table of reason codes</span></div>
+        <div class="row c2">
+          <ul class="codes box">
+            <li><span>01</span>Sanctions match</li>
+            <li><span>02</span>Court order</li>
+            <li><span>03</span>Regulator instruction</li>
+            <li><span>04</span>Financial intelligence request</li>
+            <li><span>05</span>Suspected fraud</li>
+            <li><span>06</span>AML investigation</li>
+          </ul>
+          <ul class="codes box">
+            <li><span>07</span>Holder recovery</li>
+            <li><span>08</span>Security incident</li>
+            <li><span>09</span>Order lifted</li>
+            <li><span>10</span>Correction</li>
+            <li><span>11</span>Holder request</li>
+            <li><span>12</span>Policy review</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-b">
+    <div class="part-head"><span class="tag">Part B</span><h2 id="part-b">In force in seconds, measured from the holder's side.</h2></div>
+    <div class="cols">
+      <div class="prose">
+        <p>The clock starts when the officer's request reaches the api and stops when a holder's next transfer is refused. A pump of transfers ran the whole time, so "in force" means a real transfer failed — not that a transaction confirmed.</p>
+        <p class="note">The spread is the free public devnet node and its rate limits, not the program: the cleanest cycles took 1.4–2.0 s.</p>
+      </div>
+      <div class="form">
+        <div class="row c3">
+          <div class="box"><span class="bn">B1</span><span class="cap">Freeze</span><span class="entry"><span class="big">17.0 s</span><br>worst of 10 · p50 7.2 s</span></div>
+          <div class="box"><span class="bn">B2</span><span class="cap">Seizure</span><span class="entry"><span class="big">11.6 s</span><br>worst of 3</span></div>
+          <div class="box"><span class="bn">B3</span><span class="cap">Got through after</span><span class="entry"><span class="big">0</span><br>of 1,345 transfers</span></div>
+        </div>
+        <div class="row">
+          <div class="box"><span class="bn">B4</span><span class="cap">Budget</span><span class="entry">under 30 s · devnet · 2026-10-05</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-c">
+    <div class="part-head"><span class="tag">Part C</span><h2 id="part-c">Money moves on two of your signatures. Never on ours.</h2></div>
+    <div class="cols">
+      <div class="prose">
+        <p>A freeze needs the officer alone: it moves nothing, and the same officer can lift it. Seizure, pause, a policy change and a change of who may sign need two of the issuer's wallets, and the program counts them — not the console.</p>
+        <p>The platform runs an operational key for routine work — onboarding holders, updating their status — only within powers the issuer delegated, and the issuer revokes them in one action.</p>
+      </div>
+      <div class="stack">
+        <div class="form">
+          <div class="form-title"><span class="cap">Signatures required · seizure, pause, resume, policy, signers</span></div>
+          <div class="row c2">
+            <div class="box sig-box"><div class="sig">issuer wallet · signed</div><span class="cap">Signatory 1</span></div>
+            <div class="box sig-box"><div class="sig muted" aria-label="not signed">—</div><span class="cap">Signatory 2</span></div>
+          </div>
+          <div class="row">
+            <div class="box"><span class="bn">C1</span><span class="cap">One signature of two — took effect on chain</span><span class="entry"><span class="big">0</span> of 270 · seize, pause, resume 50 each · policy and signers 60 each<br>the api refused 50 of 50 before the chain · the second signature executed each kind</span></div>
+          </div>
+        </div>
+        <div class="form">
+          <div class="row">
+            <div class="box"><span class="bn">C2</span><span class="cap">Platform operational key, holding every delegable power — money actions that succeeded</span><span class="entry"><span class="big">0</span> of 31 · our program 15 · Token-2022 directly 9 · api 7</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-d">
+    <div class="part-head"><span class="tag">Part D</span><h2 id="part-d">The policy sits in the token, and you can amend it after issue.</h2></div>
+    <div class="cols">
+      <div class="prose">
+        <p>One shared program serves every issuer; each issuer's policy is data — verified recipients by tier, allowed jurisdictions, a cap per transfer, a cap per period, denied addresses. A refused transfer names the rule that refused it. Changing the policy is a quorum action; holders change nothing.</p>
+      </div>
+      <div class="form">
+        <div class="row">
+          <div class="box"><span class="bn">D1</span><span class="cap">Forbidden transfers refused</span><span class="entry"><span class="big">64</span> of 64 · three runs<br>an outside client · another program · a delegate · an amount split into pieces</span></div>
+        </div>
+        <div class="row c2">
+          <div class="box"><span class="bn">D2</span><span class="cap">Fee to the holder, with rules vs without</span><span class="entry"><span class="big">1.00×</span><br>5,000 vs 5,000 lamports</span></div>
+          <div class="box"><span class="bn">D3</span><span class="cap">Compute, with rules</span><span class="entry"><span class="big">52–70k</span><br>52,410–70,410 CU vs 2,045 without</span></div>
+        </div>
+        <div class="row">
+          <div class="box"><p class="note">The rules cost compute, not fees — and stay under the 100,000 CU line, below which a transfer still shares a transaction with other work.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-e">
+    <div class="part-head"><span class="tag">Part E</span><h2 id="part-e">A stranger can reconcile the journal with the chain.</h2></div>
+    <div class="cols">
+      <div class="prose">
+        <p>The journal exports a period as NDJSON. A separate verifier reads only that file and a Solana node — no api, no database of ours — and checks both ways: every line against a transaction, every transaction against a line.</p>
+      </div>
+      <div class="form">
+        <div class="row c2">
+          <div class="box"><span class="bn">E1</span><span class="cap">Lines without on-chain confirmation</span><span class="entry"><span class="big">0</span> of 14<br>devnet · 2026-10-03</span></div>
+          <div class="box"><span class="bn">E2</span><span class="cap">Forged copies caught</span><span class="entry"><span class="big">4</span> of 4</span></div>
+        </div>
+        <div class="row c4">
+          <div class="box"><span class="cap refusal">Amount altered</span></div>
+          <div class="box"><span class="cap refusal">Seizure deleted</span></div>
+          <div class="box"><span class="cap refusal">Line invented</span></div>
+          <div class="box"><span class="cap refusal">File truncated</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap part" aria-labelledby="part-f">
+    <div class="part-head"><span class="tag">Part F</span><h2 id="part-f">Conditions of this return.</h2></div>
+    <div class="form">
+      <ol class="conditions">
+        <li><span>Devnet only. No mainnet, no real money. The program is not audited.</span></li>
+        <li><span>IssuerForge carries out obligations; it does not grant permission to issue. No licences, no filings.</span></li>
+        <li><span>Holder verification, the sanctions list and the bank reserve are fixtures. The reserve attestor is our own key: the mechanism is real, the figures are made up.</span></li>
+        <li><span>No further minting yet. The first issuance is checked against the attested reserve — 10 of 10 over-reserve attempts refused; a separate mint comes next.</span></li>
+        <li><span>No public reserve page and no redemption into local currency yet.</span></li>
+        <li><span>Amounts and addresses are public, like any token on Solana.</span></li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><span class="cap">Program · devnet</span><a class="mono" href="https://explorer.solana.com/address/DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5?cluster=devnet">DLkwvpN7EjtXLiXJFMiibLf7NXgFFFTBCmMcFvKgsGe5</a></div>
+    <div><span class="cap">Console</span><a href="app/">issuerforge.github.io/IssuerForge/app/</a></div>
+    <div><span class="cap">Repository</span><a href="https://github.com/issuerforge/IssuerForge">github.com/issuerforge/IssuerForge</a></div>
+    <div><span class="cap">Licence · contact</span><span class="muted">No licence granted yet · contact through the repository</span></div>
+  </div>
+</footer>
+
+</body>
+</html>

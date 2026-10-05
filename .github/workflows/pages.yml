@@ -1,9 +1,11 @@
 name: Pages
 
-# Deploys the issuer console (apps/web) to GitHub Pages:
-# https://issuerforge.github.io/IssuerForge/
+# Deploys the landing page (apps/landing) and the issuer console (apps/web)
+# to GitHub Pages as one artifact:
+# https://issuerforge.github.io/IssuerForge/       landing, plain static files
+# https://issuerforge.github.io/IssuerForge/app/   console
 #
-# Only the static bundle goes here. The api holds keys and a database
+# Only static files go here. The api holds keys and a database
 # connection and is hosted elsewhere (render.yaml); the console reaches it
 # through VITE_API_URL. The bundle is public, so every VITE_* value is public
 # too — the paid RPC node with a key stays on the api side (DEVNET_RPC_URL).
@@ -14,7 +16,8 @@ name: Pages
 #     VITE_API_URL          https://issuerforge-api.onrender.com
 #     VITE_PRIVY_APP_ID     the Privy app id (public identifier, not a key)
 #     VITE_DEVNET_RPC_URL   optional; defaults to the public devnet node
-#     PAGES_BASE_PATH       only for a custom domain: "/"
+#     PAGES_BASE_PATH       only for a custom domain: "/app/" (the console's
+#                           base; the landing then takes the domain's root)
 #
 # Rust is not needed: the IDL is vendored in packages/chain.
 
@@ -50,25 +53,44 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # A project site lives under /<repo>/; a custom domain sets PAGES_BASE_PATH to /.
-      # The web build fails loudly on a missing or placeholder variable — see
-      # apps/web/src/env.ts — rather than shipping a bundle that cannot log in.
+      # The console lives under /<repo>/app/; a custom domain sets
+      # PAGES_BASE_PATH to /app/. The web build fails loudly on a missing or
+      # placeholder variable — see apps/web/src/env.ts — rather than shipping
+      # a bundle that cannot log in.
       - name: Build the console
         run: pnpm --filter @forge/web build
         env:
-          BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+          BASE_PATH: ${{ vars.PAGES_BASE_PATH || format('/{0}/app/', github.event.repository.name) }}
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_PRIVY_APP_ID: ${{ vars.VITE_PRIVY_APP_ID }}
           VITE_DEVNET_RPC_URL: ${{ vars.VITE_DEVNET_RPC_URL || 'https://api.devnet.solana.com' }}
 
-      # Pages has no rewrites: an unknown path is served 404.html, and a copy of
-      # the app shell there lets the router take over on a deep link.
-      - name: SPA fallback
-        run: cp apps/web/dist/index.html apps/web/dist/404.html
+      # Pages has no rewrites and serves a custom 404.html only from the site
+      # root, never from /app/. So the root 404.html is the console's shell,
+      # and the router takes over on a deep link. In front of it, a redirect
+      # for links from before the console moved to /app/: /<repo>/x becomes
+      # /<repo>/app/x instead of a console mounted under the wrong basename.
+      - name: Assemble the site
+        env:
+          APP_BASE: ${{ vars.PAGES_BASE_PATH || format('/{0}/app/', github.event.repository.name) }}
+        run: |
+          mkdir -p dist
+          cp -r apps/landing/. dist/
+          cp -r apps/web/dist dist/app
+          node -e '
+            const fs = require("node:fs")
+            const app = process.env.APP_BASE
+            const site = app.replace(/app\/$/, "")
+            const redirect = `<script>(function(){var a=${JSON.stringify(app)},s=${JSON.stringify(site)},p=location.pathname;` +
+              `if(p.indexOf(a)!==0&&p.indexOf(s)===0)location.replace(a+p.slice(s.length)+location.search+location.hash)})()</script>`
+            const shell = fs.readFileSync("dist/app/index.html", "utf8")
+            if (!shell.includes("<head>")) throw new Error("no <head> in the console shell")
+            fs.writeFileSync("dist/404.html", shell.replace("<head>", "<head>" + redirect))
+          '
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: apps/web/dist
+          path: dist
 
   deploy:
     needs: build

@@ -119,6 +119,7 @@ apps/api                Hono. Login (Privy), roster, policy simulation, token
                         issuance (unsigned transactions), holder onboarding,
                         compliance actions and proposals, delegations,
                         journal export and live feed
+apps/landing            The landing page: static HTML and CSS, no build step
 apps/web                React console: issuance wizard with live simulation,
                         the officer's screen, delegations of the
                         operational key
@@ -130,7 +131,8 @@ tools/verify-journal    Checks an exported journal against the chain, both
 tools/spikes            Feasibility spikes kept with their tests (can the hook
                         resolve a provider attestation directly? — it can)
 scripts/                WSL build/test/localnet helpers, IDL sync
-.github/workflows/      Pages deploy of the console, keep-alive ping of the api
+.github/workflows/      Pages deploy of the landing and the console, keep-alive
+                        ping of the api
 render.yaml             Render Blueprint for the api (one free web service)
 docs/                   SPEC, PLAN, TASKS, SCRATCHPAD — not tracked in git
 ```
@@ -249,11 +251,14 @@ thing runs at $0: **GitHub Pages** for the console, **Render** (free web
 service) for the api, **Supabase** for Postgres. Nothing here touches mainnet.
 
 ```
-https://issuerforge.github.io/IssuerForge/   apps/web   GitHub Pages, on every push to main
-https://issuerforge-api.onrender.com         apps/api   Render Blueprint, on every push to main
+https://issuerforge.github.io/IssuerForge/       apps/landing   GitHub Pages, on every push to main
+https://issuerforge.github.io/IssuerForge/app/   apps/web       the same Pages deploy
+https://issuerforge-api.onrender.com             apps/api       Render Blueprint, on every push to main
 ```
 
-**Console → GitHub Pages** (`.github/workflows/pages.yml`). Once, in the
+**Landing and console → GitHub Pages** (`.github/workflows/pages.yml`). The
+landing page is plain static files (`apps/landing`, no build step) copied to
+the site's root; the console is built into `app/` beside it. Once, in the
 repository settings:
 
 1. *Settings → Pages → Source:* **GitHub Actions**.
@@ -263,11 +268,14 @@ repository settings:
    devnet node — the paid node with a key stays on the api side, because
    everything in `VITE_*` is baked into a public bundle.
 
-A project site lives under `/IssuerForge/`; the workflow passes that as
+The console lives under `/IssuerForge/app/`; the workflow passes that as
 `BASE_PATH` to Vite and the router picks it up as `basename`. Pages has no
-rewrites, so the workflow copies `index.html` to `404.html` and deep links
-land in the router. For a custom domain set the variable `PAGES_BASE_PATH=/`
-and add the domain under *Settings → Pages*.
+rewrites and serves a custom `404.html` only from the site's root, so the
+root `404.html` is the console's shell and deep links land in the router; a
+short script in front of it sends links from before the move
+(`/IssuerForge/<path>`) to `/IssuerForge/app/<path>`. For a custom domain set
+the variable `PAGES_BASE_PATH=/app/` and add the domain under
+*Settings → Pages*; the landing page then takes the domain's root.
 
 **Api → Render** (`render.yaml`). *Render → New → Blueprint → this
 repository*, then fill in the values marked `sync: false`: `WEB_ORIGIN` is
