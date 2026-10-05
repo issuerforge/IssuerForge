@@ -96,6 +96,8 @@ export function newKeys(): DemoKeys {
  * counters even in the worst case, when all requests are of one method.
  */
 const NODE_LIMIT = { burst: 30, perSecond: 3 } as const
+/** 0.5 + 1 + 2 + 4 + 8 + 16 s. */
+const RATE_LIMIT_RETRIES = 6
 
 const isLocal = (rpcUrl: string): boolean =>
   rpcUrl.includes('127.0.0.1') || rpcUrl.includes('localhost')
@@ -130,7 +132,15 @@ function pacedFetch(limit: { burst: number; perSecond: number } | undefined): Fe
       queue = turn
       await turn
     }
-    return await fetch(input as string, init as RequestInit)
+    // web3.js gives up after five quick retries, and the api's indexer shares
+    // this IP and these methods: a run long enough (T036) meets a 429 streak
+    // that outlasts them, and the run dies on the node, not on the rule. The
+    // back-off here doubles to ~30 s in total before the 429 is handed on.
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetch(input as string, init as RequestInit)
+      if (response.status !== 429 || attempt === RATE_LIMIT_RETRIES) return response
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt))
+    }
   }
 
   // `FetchFn` is described with node-fetch's types, while at runtime it is
@@ -138,6 +148,9 @@ function pacedFetch(limit: { burst: number; perSecond: number } | undefined): Fe
   // else.
   return paced as unknown as FetchFn
 }
+
+/** No bucket, only the 429 back-off: for a timed path that must not queue (`pump.ts`). */
+export const unpacedFetch = (): FetchFn => pacedFetch(undefined)
 
 export function createContext(rpcUrl: string, overrides: Partial<DemoKeys> = {}): DemoContext {
   const connection = new Connection(rpcUrl, {

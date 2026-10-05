@@ -8,6 +8,7 @@
     "journal": "node --env-file-if-exists=../../.env src/journal.ts",
     "officer": "node --env-file-if-exists=../../.env src/officer.ts",
     "delegation": "node --env-file-if-exists=../../.env src/delegation.ts",
+    "us2": "node --env-file-if-exists=../../.env src/us2.ts",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

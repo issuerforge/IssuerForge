@@ -93,7 +93,14 @@ export async function openApiSession(
     issuerId: issuerId.toBase58(),
   })
   const waited = Date.now()
-  await awaitMembership(api, issuerId.toBase58())
+  try {
+    await awaitMembership(api, issuerId.toBase58())
+  } catch (error) {
+    // Nobody else holds the fixture yet: left open, it keeps the process
+    // alive after the error and the port taken for the next run.
+    await login.close()
+    throw error
+  }
   console.log(`mirror:  membership indexed after ${((Date.now() - waited) / 1000).toFixed(1)} s`)
 
   return {
