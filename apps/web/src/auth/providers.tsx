@@ -9,6 +9,7 @@
 // (`main.tsx`), the way dependencies come into `createServer(deps)` on the
 // api side.
 import { PrivyProvider, usePrivy } from '@privy-io/react-auth'
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createContext,
@@ -162,6 +163,12 @@ export function ConsoleProviders({ env, children }: { env: WebEnv; children: Rea
         // Email plus an external wallet — both paths from FR-034: an officer
         // without crypto gets an embedded key, an admin brings their own.
         loginMethods: ['email', 'wallet'],
+        // Without Solana connectors Privy does not see a browser wallet at
+        // all: "Continue with a wallet" lists only the WalletConnect catalogue,
+        // and Phantom installed in this very browser asks to be installed.
+        externalWallets: {
+          solana: { connectors: toSolanaWalletConnectors() },
+        },
         embeddedWallets: {
           // `users-without-wallets`: whoever logged in with an external wallet
           // already has the address they are in the membership under, and a
