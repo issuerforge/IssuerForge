@@ -305,3 +305,7 @@ real off-ramp partner, and mainnet.
 ## Status
 
 Milestones M1 and M2 are measured on devnet. Milestone M3 is next.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
