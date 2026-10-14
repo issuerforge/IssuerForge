@@ -42,8 +42,6 @@ import type { InstructionView, TransactionView } from './transaction.ts'
 export interface TokenView {
   readonly mint: string
   readonly issuerId: string
-  /** Seconds a reserve attestation stays current (FR-023b). */
-  readonly attestationMaxAge: number
 }
 
 export interface Lookups {
@@ -245,6 +243,8 @@ const ACCOUNT = {
   // `proposal` (#1) is the program id when absent, as in `setPolicy`; the
   // members — signers or approvers — start at #2 on both paths.
   setDelegation: { issuerConfig: 0, proposal: 1, firstMember: 2 },
+  // The same shape again: `proposal` (#2) is the program id when absent.
+  setAttestor: { tokenConfig: 1, firstMember: 3 },
 } as const
 
 /** Anchor decodes a `Pubkey` to a `PublicKey`; a `u64`/`i64` to a `BN`. */
@@ -714,7 +714,46 @@ async function decodeAttestReserve(
     currency: ascii(args.currency),
     attestor: at(instruction, ACCOUNT.attestReserve.attestor, 'attestor'),
     attestedAt,
-    expiresAt: attestedAt + token.attestationMaxAge,
+    // The period the attestor signed under, from the instruction itself: the
+    // chain keeps only the latest one, and the quorum may have changed it
+    // since (FR-023b). The program refuses any other than the one in force.
+    expiresAt: attestedAt + Number(integer(args.attestationMaxAge)),
+  }
+  ctx.events.push({ issuerId: token.issuerId, event })
+}
+
+/**
+ * A change of the reserve terms (FR-023b, FR-024a): a compliance event whose
+ * target is the attestor from now on, with the period beside it.
+ *
+ * Both paths name the quorum after the accounts — the signers, or the
+ * proposal's approvers — so the event reads them the way `set_policy` does.
+ * Who attested before is not repeated here: every attestation event names
+ * its own attestor, and that history is what FR-024a keeps.
+ */
+async function decodeSetAttestor(
+  ctx: Context,
+  instruction: InstructionView,
+  args: Args,
+): Promise<void> {
+  const tokenConfig = at(instruction, ACCOUNT.setAttestor.tokenConfig, 'tokenConfig')
+  const token = await ctx.lookups.tokenOfConfig(tokenConfig)
+  if (token === undefined) throw new LookupFailed('token config', tokenConfig)
+
+  const maxAge = Number(integer(args.attestationMaxAge))
+  const reason = args.reason as ReasonInput
+  const event: ComplianceEvent = {
+    kind: 'compliance',
+    ...envelopeOf(ctx.tx),
+    eventIndex: ctx.events.length,
+    mint: token.mint,
+    action: 'set_attestor',
+    target: address(args.attestor),
+    amount: null,
+    reasonCode: integer(reason.code).toString(),
+    caseRef: ascii(reason.caseRef),
+    signers: instruction.accounts.slice(ACCOUNT.setAttestor.firstMember),
+    attestationMaxAge: maxAge,
   }
   ctx.events.push({ issuerId: token.issuerId, event })
 }
@@ -781,6 +820,7 @@ const DECODERS: Readonly<Record<string, InstructionDecoder>> = {
   resumeCirculation: decodeChangeCirculation('unpause'),
   attestReserve: decodeAttestReserve,
   setDelegation: decodeSetDelegation,
+  setAttestor: decodeSetAttestor,
 }
 
 /**

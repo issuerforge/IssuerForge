@@ -144,7 +144,7 @@ pub enum ForgeError {
     AttestationNotLatest,
     #[msg("named attestor is not a member of this issuer holding the attestor role")]
     NotAnAttestorMember,
-    #[msg("attestation lifetime must be positive, or no attestation is ever current")]
+    #[msg("attestation lifetime must be from one second to 90 days")]
     AttestationMaxAgeInvalid,
     #[msg("token name, symbol or uri is longer than this program writes")]
     TokenMetadataTooLong,
@@ -201,6 +201,12 @@ pub enum ForgeError {
     ProposalScopeMismatch,
     #[msg("the delegation changed after this proposal was raised")]
     DelegationChangedSinceProposal,
+    #[msg("the attestor and the attestation lifetime already are exactly these")]
+    AttestationTermsUnchanged,
+    #[msg("the attestor or the attestation lifetime changed after this proposal was raised")]
+    AttestationTermsChangedSinceProposal,
+    #[msg("attestation is signed under a lifetime that is not the token's current one")]
+    AttestationMaxAgeMismatch,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -334,6 +340,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::DelegationChangedSinceProposal),
             VALIDATION_ERROR_BASE + 60
+        );
+        // The first and the last of those added by T037.
+        assert_eq!(
+            u32::from(ForgeError::AttestationTermsUnchanged),
+            VALIDATION_ERROR_BASE + 61
+        );
+        assert_eq!(
+            u32::from(ForgeError::AttestationMaxAgeMismatch),
+            VALIDATION_ERROR_BASE + 63
         );
     }
 }

@@ -48,6 +48,17 @@ const OWN_CONFIG = issuerConfigPda(new PublicKey(ISSUER)).toBase58()
 
 const STRICT: PolicyRules = { ...OPEN_POLICY, status: { ...OPEN_POLICY.status, minTier: 2 } }
 
+const ATTESTOR = 'Vote111111111111111111111111111111111111111'
+const SUCCESSOR = 'Config1111111111111111111111111111111111111'
+const WEEK = 7 * 86_400
+/** The token as the chain holds it: version 1, attested by `ATTESTOR` for a week. */
+const TOKEN: TokenView = {
+  issuerConfig: OWN_CONFIG,
+  policyVersion: 1,
+  attestor: ATTESTOR,
+  attestationMaxAge: WEEK,
+}
+
 const unused = <T extends object>(name: string) =>
   new Proxy({} as T, {
     get: (_, key) => () => {
@@ -100,8 +111,7 @@ function app(fakes: Fakes = {}) {
   }))
 
   const actions: ActionReader = {
-    token: async () =>
-      'token' in fakes ? fakes.token : { issuerConfig: OWN_CONFIG, policyVersion: 1 },
+    token: async () => ('token' in fakes ? fakes.token : TOKEN),
     quorum: async () =>
       fakes.quorum ?? {
         quorumN: 2,
@@ -122,6 +132,14 @@ function app(fakes: Fakes = {}) {
         return { kind: view.action.kind, reason: view.action.reason }
       }
       if (view.action.kind === 'set-delegation') return undefined
+      if (view.action.kind === 'set-attestor') {
+        return {
+          kind: 'set-attestor',
+          attestor: new PublicKey(view.action.attestor),
+          attestationMaxAge: view.action.maxAge,
+          reason: view.action.reason,
+        }
+      }
       const policy = 'body' in fakes ? fakes.body : STRICT
       return policy === undefined
         ? undefined
@@ -222,6 +240,19 @@ const seizure = (over: Partial<ProposalView> = {}) =>
 const circulation = (kind: 'pause' | 'resume', over: Partial<ProposalView> = {}) =>
   proposal({ action: { kind, reason: REASON }, ...over })
 
+const handover = (over: Partial<ProposalView> = {}) =>
+  proposal({
+    action: {
+      kind: 'set-attestor',
+      previousAttestor: ATTESTOR,
+      previousMaxAge: WEEK,
+      attestor: SUCCESSOR,
+      maxAge: 30 * 86_400,
+      reason: REASON,
+    },
+    ...over,
+  })
+
 describe('raising a proposal', () => {
   it('proposes the next version at the nonce the server chose, signed by the proposer alone', async () => {
     const response = await post({}, `/api/tokens/${MINT}/actions`, proposeBody)
@@ -288,8 +319,8 @@ describe('raising a proposal', () => {
     const response = await post(
       {
         token: {
+          ...TOKEN,
           issuerConfig: issuerConfigPda(new PublicKey(OTHER_ISSUER)).toBase58(),
-          policyVersion: 1,
         },
       },
       `/api/tokens/${MINT}/actions`,
@@ -420,6 +451,29 @@ describe('reading proposals', () => {
 
     const one = await jsonOf(await get({ proposal: seizure() }, `/api/actions/${PROPOSAL}`))
     expect(one.body).toEqual(action)
+  })
+
+  it('an attestor change is listed with both terms, from and to, and its body', async () => {
+    const response = await get({ proposal: handover() }, `/api/actions/${PROPOSAL}`)
+    expect(response.status).toBe(200)
+    const json = (await response.json()) as {
+      proposal: { action: Record<string, unknown> }
+      body: Record<string, unknown>
+    }
+    expect(json.proposal.action).toEqual({
+      kind: 'set-attestor',
+      previousAttestor: ATTESTOR,
+      previousMaxAge: WEEK,
+      attestor: SUCCESSOR,
+      maxAge: 30 * 86_400,
+      reason: REASON,
+    })
+    expect(json.body).toEqual({
+      kind: 'set-attestor',
+      attestor: SUCCESSOR,
+      attestationMaxAge: 30 * 86_400,
+      reason: REASON,
+    })
   })
 
   it('a body the node no longer has is an internal failure, not an empty policy', async () => {
@@ -564,9 +618,39 @@ describe('executing', () => {
     expect((await errorOf(response)).details).toMatchObject({ state: 'open' })
   })
 
+  it('assembles set_attestor on the deferred path with the approvers named, only the payer signing', async () => {
+    const response = await post(
+      { proposal: handover({ approvals: [OFFICER, ADMIN] }) },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    const { accounts } = instructionOf(transaction)
+    expect(transaction.step).toBe('set-attestor')
+    expect(transaction.signers).toEqual([ADMIN])
+    expect(accounts[2]).toBe(PROPOSAL)
+    expect(accounts.slice(3)).toEqual([OFFICER, ADMIN])
+  })
+
+  it('an attestor change raised against terms that have moved can only lapse', async () => {
+    const response = await post(
+      {
+        proposal: handover({ approvals: [OFFICER, ADMIN] }),
+        token: { ...TOKEN, attestationMaxAge: 86_400 },
+      },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toEqual({
+      raisedAgainst: { attestor: ATTESTOR, maxAge: WEEK },
+      now: { attestor: ATTESTOR, maxAge: 86_400 },
+    })
+  })
+
   it('a proposal for a version that is no longer next can only lapse', async () => {
     const response = await post(
-      { proposal: ready, token: { issuerConfig: OWN_CONFIG, policyVersion: 2 } },
+      { proposal: ready, token: { ...TOKEN, policyVersion: 2 } },
       `/api/actions/${PROPOSAL}/execute`,
     )
     expect(response.status).toBe(400)

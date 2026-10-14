@@ -13,6 +13,16 @@ pub struct AttestReserveArgs {
     /// the state of the account at a certain time, and the validity period is
     /// counted from exactly that (FR-023).
     pub attested_at: i64,
+    /// The validity period the attestor signs under — the token's current
+    /// one, or the attestation is refused.
+    ///
+    /// Carried although the program already knows it, for two reasons. The
+    /// quorum may change the period (FR-023b) while the attestor is signing,
+    /// and an attestation signed for seven days must not land as one for a
+    /// day. And the chain keeps only the latest period, so this is what lets
+    /// the journal and its verifier date an attestation from its own
+    /// transaction rather than from a history neither of them holds.
+    pub attestation_max_age: i64,
 }
 
 /// Publishing a reserve attestation (FR-021, FR-024, FR-024b, FR-026).
@@ -69,6 +79,11 @@ pub(crate) fn handler(ctx: Context<AttestReserve>, args: AttestReserveArgs) -> R
     require!(
         args.currency == ctx.accounts.token_config.reserve_currency,
         ForgeError::ReserveCurrencyMismatch
+    );
+
+    require!(
+        args.attestation_max_age == ctx.accounts.token_config.attestation_max_age,
+        ForgeError::AttestationMaxAgeMismatch
     );
 
     let now = Clock::get()?.unix_timestamp;

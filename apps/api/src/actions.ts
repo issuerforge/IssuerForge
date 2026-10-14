@@ -36,6 +36,9 @@ export interface TokenView {
   /** The `IssuerConfig` address the token belongs to — compared, never trusted from the request. */
   readonly issuerConfig: string
   readonly policyVersion: number
+  /** The reserve terms in force — what an attestor change must still start from. */
+  readonly attestor: string
+  readonly attestationMaxAge: number
 }
 
 /** The membership as the program will read it at execution — not the database mirror. */
@@ -74,6 +77,19 @@ export type ProposalActionView =
       readonly previousMask: number
       readonly operationalKey: string
       readonly mask: number
+    }
+  /**
+   * A change of the reserve terms (T037): attestor and validity period, from
+   * and to. A transition, like the delegation change: the program refuses it
+   * once the terms have moved off `previous*`.
+   */
+  | {
+      readonly kind: 'set-attestor'
+      readonly previousAttestor: string
+      readonly previousMaxAge: number
+      readonly attestor: string
+      readonly maxAge: number
+      readonly reason: ComplianceReasonInput
     }
 
 export interface ProposalView {
@@ -139,6 +155,13 @@ type StoredAction = {
     operationalKey: PublicKey
     mask: number
   }
+  setAttestor?: {
+    previousAttestor: PublicKey
+    previousMaxAge: { toNumber(): number }
+    attestor: PublicKey
+    maxAge: { toNumber(): number }
+    reason: StoredReason
+  }
 }
 
 type StoredReason = { code: number; caseRef: number[] }
@@ -173,6 +196,16 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
       previousMask: action.setDelegation.previousMask,
       operationalKey: action.setDelegation.operationalKey.toBase58(),
       mask: action.setDelegation.mask,
+    }
+  }
+  if (action.setAttestor !== undefined) {
+    return {
+      kind: 'set-attestor',
+      previousAttestor: action.setAttestor.previousAttestor.toBase58(),
+      previousMaxAge: action.setAttestor.previousMaxAge.toNumber(),
+      attestor: action.setAttestor.attestor.toBase58(),
+      maxAge: action.setAttestor.maxAge.toNumber(),
+      reason: fromReason(action.setAttestor.reason),
     }
   }
   // A kind appended to the program before this line was written: refused
@@ -242,6 +275,14 @@ export function bodyMatches(view: ProposalView, body: ProposedActionInput): bool
         body.reason.code === stored.reason.code &&
         body.reason.caseRef === stored.reason.caseRef
       )
+    case 'set-attestor':
+      return (
+        stored.kind === 'set-attestor' &&
+        body.attestor.toBase58() === stored.attestor &&
+        body.attestationMaxAge === stored.maxAge &&
+        body.reason.code === stored.reason.code &&
+        body.reason.caseRef === stored.reason.caseRef
+      )
   }
 }
 
@@ -250,7 +291,12 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     async token(mint) {
       const config = await program.account.tokenConfig.fetchNullable(tokenConfigPda(mint))
       if (config === null) return undefined
-      return { issuerConfig: config.issuer.toBase58(), policyVersion: config.policyVersion }
+      return {
+        issuerConfig: config.issuer.toBase58(),
+        policyVersion: config.policyVersion,
+        attestor: config.attestor.toBase58(),
+        attestationMaxAge: config.attestationMaxAge.toNumber(),
+      }
     },
 
     async quorum(issuerId) {
@@ -296,6 +342,14 @@ export function createActionReader(connection: Connection, program: ForgeProgram
       }
       if (view.action.kind === 'pause' || view.action.kind === 'resume') {
         return { kind: view.action.kind, reason: view.action.reason }
+      }
+      if (view.action.kind === 'set-attestor') {
+        return {
+          kind: 'set-attestor',
+          attestor: new PublicKey(view.action.attestor),
+          attestationMaxAge: view.action.maxAge,
+          reason: view.action.reason,
+        }
       }
       // A delegation change is not a `ProposedActionInput` — it has no body
       // apart from the account. The routes read it from the view.

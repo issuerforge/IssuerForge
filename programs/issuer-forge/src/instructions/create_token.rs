@@ -37,7 +37,7 @@ use crate::constants::{
     ISSUER_SEED, MINT_SEED, POLICY_SEED, RESERVE_SEED, TOKEN_SEED, VELOCITY_SEED,
 };
 use crate::error::ForgeError;
-use crate::reserve::{require_latest, ReserveCheck};
+use crate::reserve::{require_latest, validate_max_age, ReserveCheck};
 use crate::state::{
     role, validate_currency, HolderStatus, HolderStatusInput, IssuerConfig, PolicyConfig,
     ReserveAttestation, TokenConfig, VelocityCounter, CURRENCY_BYTES, POLICY_CONFIG_LEN,
@@ -256,12 +256,7 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     );
 
     validate_currency(&args.reserve_currency)?;
-    // A zero period would make every attestation expired, including the one
-    // created a line below: the token would be issued unfit for issuance.
-    require!(
-        args.attestation_max_age > 0,
-        ForgeError::AttestationMaxAgeInvalid
-    );
+    validate_max_age(args.attestation_max_age)?;
     require!(args.fee_bps <= MAX_FEE_BPS, ForgeError::FeeRateOutOfRange);
 
     let now = Clock::get()?.unix_timestamp;

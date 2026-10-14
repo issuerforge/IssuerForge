@@ -234,6 +234,18 @@ pub mod issuer_forge {
         instructions::attest_reserve::handler(ctx, args)
     }
 
+    /// Replaces the token's reserve attestor, changes how long an attestation
+    /// stays current, or both (FR-023b, FR-024a).
+    ///
+    /// By the quorum of a policy change, on the immediate path through
+    /// `remaining_accounts` or on the deferred one through a proposal raised
+    /// under the token, and with a reason (FR-017). The new attestor must
+    /// already hold the attestor role. Earlier attestations keep the attestor
+    /// that signed them; only the next one is signed by the new one.
+    pub fn set_attestor(ctx: Context<SetAttestor>, args: SetAttestorArgs) -> Result<()> {
+        instructions::set_attestor::handler(ctx, args)
+    }
+
     /// Creates the `ExtraAccountMetaList` — the list of accounts the token
     /// program will hand to the hook on every transfer (FR-012).
     ///

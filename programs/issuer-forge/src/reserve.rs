@@ -16,6 +16,25 @@ use anchor_lang::prelude::*;
 use crate::error::ForgeError;
 use crate::state::{ReserveAttestation, TokenConfig};
 
+/// The longest an attestation may stay current, in seconds (FR-023b).
+///
+/// Without a ceiling the quorum could set `i64::MAX` and switch FR-023 off
+/// while appearing to configure it. Ninety days fits a quarterly reserve
+/// report; anything longer is no longer a validity period.
+pub const MAX_ATTESTATION_MAX_AGE: i64 = 90 * 24 * 60 * 60;
+
+/// One rule for the period, at issuance and at every change by quorum.
+///
+/// A zero period would make every attestation expired, including the one a
+/// token is issued with: the token would be born unfit for issuance.
+pub fn validate_max_age(max_age: i64) -> Result<()> {
+    require!(
+        (1..=MAX_ATTESTATION_MAX_AGE).contains(&max_age),
+        ForgeError::AttestationMaxAgeInvalid
+    );
+    Ok(())
+}
+
 /// Whether this really is the **latest** attestation of this token.
 ///
 /// Without this check an older attestation with a larger amount would be a
@@ -256,6 +275,25 @@ mod tests {
             )),
             code(ForgeError::AttestationNotLatest)
         );
+    }
+
+    #[test]
+    fn accepts_a_period_from_one_second_to_the_ceiling() {
+        assert!(validate_max_age(1).is_ok());
+        assert!(validate_max_age(7 * DAY).is_ok());
+        assert!(validate_max_age(MAX_ATTESTATION_MAX_AGE).is_ok());
+    }
+
+    #[test]
+    fn refuses_a_period_that_is_no_period() {
+        // Zero and below: no attestation is ever current. Above the ceiling:
+        // FR-023 switched off by a number.
+        for max_age in [0, -1, i64::MIN, MAX_ATTESTATION_MAX_AGE + 1, i64::MAX] {
+            assert_eq!(
+                err(validate_max_age(max_age)),
+                code(ForgeError::AttestationMaxAgeInvalid)
+            );
+        }
     }
 
     #[test]

@@ -98,7 +98,12 @@ function app(fakes: Fakes = {}) {
   ).map(([wallet, roles], memberIndex) => ({ wallet, roles, memberIndex }))
 
   const actions: ActionReader = {
-    token: async () => ({ issuerConfig: OWN_CONFIG, policyVersion: 1 }),
+    token: async () => ({
+      issuerConfig: OWN_CONFIG,
+      policyVersion: 1,
+      attestor: 'Vote111111111111111111111111111111111111111',
+      attestationMaxAge: 604_800,
+    }),
     quorum: async () =>
       fakes.quorum ?? {
         quorumN: 2,

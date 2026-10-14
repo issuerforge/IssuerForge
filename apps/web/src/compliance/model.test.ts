@@ -5,6 +5,7 @@ import {
   type ActionDraft,
   actionTitle,
   EMPTY_DRAFT,
+  formatPeriod,
   formatUnits,
   nextStep,
   parseUnits,
@@ -224,6 +225,28 @@ describe('headings and standing', () => {
     }
     expect(actionTitle(seize, 6, 'vNGN')).toBe('Seizure of 180,000.000000 vNGN')
     expect(actionTitle(proposal().action, 6, null)).toBe('Pause of circulation')
+  })
+
+  it('names a change of the reserve terms by what changes', () => {
+    const terms = {
+      kind: 'set-attestor' as const,
+      previousAttestor: HOLDER,
+      previousMaxAge: 7 * 86_400,
+      attestor: HOLDER,
+      maxAge: 30 * 86_400,
+      reason: { code: 21, caseRef: 'AUDIT/2026/0007' },
+    }
+    expect(actionTitle(terms, 6, null)).toBe('Attestation lifetime: 7 days → 30 days')
+    expect(actionTitle({ ...terms, attestor: OFFICER }, 6, null)).toBe(
+      'Replacement of the reserve attestor',
+    )
+  })
+
+  it('writes a period in the largest whole unit', () => {
+    expect(formatPeriod(86_400)).toBe('1 day')
+    expect(formatPeriod(90 * 86_400)).toBe('90 days')
+    expect(formatPeriod(7_200)).toBe('2 hours')
+    expect(formatPeriod(90)).toBe('90 seconds')
   })
 
   it('says nothing has moved until execution', () => {

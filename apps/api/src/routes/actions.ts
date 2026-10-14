@@ -23,6 +23,7 @@ import {
   buildCloseActionProposal,
   buildProposeAction,
   buildSeize,
+  buildSetAttestor,
   buildSetDelegation,
   buildSetPolicy,
   issuerConfigPda,
@@ -308,8 +309,8 @@ export function createActionRoutes(deps: ActionRouteDeps) {
   })
 
   /**
-   * Execution: `set_policy` on the deferred path, `seize`, or the pause and
-   * its lifting.
+   * Execution: `set_policy` on the deferred path, `seize`, the pause and its
+   * lifting, or a change of the reserve terms (`set_attestor`).
    *
    * Anyone of the session's authorising wallets may send it and pay the rent
    * — of the new policy version, or of the vault on a token's first seizure.
@@ -387,6 +388,36 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       c.get('log').info(
         { proposal: id, tokenAccount: action.tokenAccount, amount: fromU64(action.amount), payer },
         'seizure assembled',
+      )
+      return c.json(await respond(plan, id, payer))
+    }
+
+    if (action.kind === 'set-attestor') {
+      // The program refuses a change raised against terms that have moved
+      // since (`AttestationTermsChangedSinceProposal`); said here before
+      // anyone pays, as for a delegation change.
+      const token = await requireToken(session, mint)
+      if (
+        token.attestor !== action.previousAttestor ||
+        token.attestationMaxAge !== action.previousMaxAge
+      ) {
+        throw invalidInput('the reserve terms have changed since this proposal was raised', {
+          raisedAgainst: { attestor: action.previousAttestor, maxAge: action.previousMaxAge },
+          now: { attestor: token.attestor, maxAge: token.attestationMaxAge },
+        })
+      }
+      const plan = await buildSetAttestor(deps.chain.program, {
+        issuerId: new PublicKey(session.issuerId),
+        mint: new PublicKey(mint),
+        attestor: new PublicKey(action.attestor),
+        attestationMaxAge: action.maxAge,
+        reason: action.reason,
+        payer: new PublicKey(payer),
+        quorum: { kind: 'proposal', proposal: new PublicKey(id), approvers },
+      })
+      c.get('log').info(
+        { proposal: id, attestor: action.attestor, maxAge: action.maxAge, payer },
+        'attestor change assembled',
       )
       return c.json(await respond(plan, id, payer))
     }
@@ -510,6 +541,13 @@ function presentBody(body: ProposedActionInput) {
     case 'pause':
     case 'resume':
       return { kind: body.kind, reason: body.reason }
+    case 'set-attestor':
+      return {
+        kind: body.kind,
+        attestor: body.attestor.toBase58(),
+        attestationMaxAge: body.attestationMaxAge,
+        reason: body.reason,
+      }
   }
 }
 

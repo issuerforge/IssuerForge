@@ -1506,6 +1506,97 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "setAttestor",
+      "docs": [
+        "Replaces the token's reserve attestor, changes how long an attestation",
+        "stays current, or both (FR-023b, FR-024a).",
+        "",
+        "By the quorum of a policy change, on the immediate path through",
+        "`remaining_accounts` or on the deferred one through a proposal raised",
+        "under the token, and with a reason (FR-017). The new attestor must",
+        "already hold the attestor role. Earlier attestations keep the attestor",
+        "that signed them; only the next one is signed by the new one."
+      ],
+      "discriminator": [
+        95,
+        11,
+        236,
+        157,
+        234,
+        146,
+        163,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path. No `seeds`, for the reason",
+            "`set_policy` gives; the handler checks it is this issuer's and this",
+            "token's."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setAttestorArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setDelegation",
       "docs": [
         "Changes what the platform's operational key may do, or which key it is",
@@ -2643,7 +2734,7 @@ export type IssuerForge = {
     {
       "code": 6048,
       "name": "attestationMaxAgeInvalid",
-      "msg": "attestation lifetime must be positive, or no attestation is ever current"
+      "msg": "attestation lifetime must be from one second to 90 days"
     },
     {
       "code": 6049,
@@ -2769,6 +2860,21 @@ export type IssuerForge = {
       "code": 6073,
       "name": "delegationChangedSinceProposal",
       "msg": "the delegation changed after this proposal was raised"
+    },
+    {
+      "code": 6074,
+      "name": "attestationTermsUnchanged",
+      "msg": "the attestor and the attestation lifetime already are exactly these"
+    },
+    {
+      "code": 6075,
+      "name": "attestationTermsChangedSinceProposal",
+      "msg": "the attestor or the attestation lifetime changed after this proposal was raised"
+    },
+    {
+      "code": 6076,
+      "name": "attestationMaxAgeMismatch",
+      "msg": "attestation is signed under a lifetime that is not the token's current one"
     }
   ],
   "types": [
@@ -2888,6 +2994,35 @@ export type IssuerForge = {
               {
                 "name": "mask",
                 "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "setAttestor",
+            "fields": [
+              {
+                "name": "previousAttestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "previousMaxAge",
+                "type": "i64"
+              },
+              {
+                "name": "attestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "maxAge",
+                "type": "i64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           }
@@ -3047,6 +3182,21 @@ export type IssuerForge = {
               "The moment the attestation refers to. Not \"now\": the attestor attests",
               "the state of the account at a certain time, and the validity period is",
               "counted from exactly that (FR-023)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "The validity period the attestor signs under — the token's current",
+              "one, or the attestation is refused.",
+              "",
+              "Carried although the program already knows it, for two reasons. The",
+              "quorum may change the period (FR-023b) while the attestor is signing,",
+              "and an attestation signed for seven days must not land as one for a",
+              "day. And the chain keeps only the latest period, so this is what lets",
+              "the journal and its verifier date an attestation from its own",
+              "transaction rather than from a history neither of them holds."
             ],
             "type": "i64"
           }
@@ -3878,6 +4028,27 @@ export type IssuerForge = {
                 "type": "u8"
               }
             ]
+          },
+          {
+            "name": "setAttestor",
+            "fields": [
+              {
+                "name": "attestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "attestationMaxAge",
+                "type": "i64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
           }
         ]
       }
@@ -4006,6 +4177,42 @@ export type IssuerForge = {
           },
           {
             "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setAttestorArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestor",
+            "docs": [
+              "The attestor from now on. The current one when only the period",
+              "changes."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "The validity period from now on, seconds. The current one when only",
+              "the attestor changes."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Why (FR-017). On the deferred path it must be the reason the proposal",
+              "holds — it is part of what the approvers signed."
+            ],
             "type": {
               "defined": {
                 "name": "complianceReason"
@@ -5853,6 +6060,97 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "setAttestor",
+      "docs": [
+        "Replaces the token's reserve attestor, changes how long an attestation",
+        "stays current, or both (FR-023b, FR-024a).",
+        "",
+        "By the quorum of a policy change, on the immediate path through",
+        "`remaining_accounts` or on the deferred one through a proposal raised",
+        "under the token, and with a reason (FR-017). The new attestor must",
+        "already hold the attestor role. Earlier attestations keep the attestor",
+        "that signed them; only the next one is signed by the new one."
+      ],
+      "discriminator": [
+        95,
+        11,
+        236,
+        157,
+        234,
+        146,
+        163,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "proposal",
+          "docs": [
+            "A matured proposal, on the deferred path. No `seeds`, for the reason",
+            "`set_policy` gives; the handler checks it is this issuer's and this",
+            "token's."
+          ],
+          "writable": true,
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "setAttestorArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "setDelegation",
       "docs": [
         "Changes what the platform's operational key may do, or which key it is",
@@ -6990,7 +7288,7 @@ export const IDL: IssuerForge = {
     {
       "code": 6048,
       "name": "attestationMaxAgeInvalid",
-      "msg": "attestation lifetime must be positive, or no attestation is ever current"
+      "msg": "attestation lifetime must be from one second to 90 days"
     },
     {
       "code": 6049,
@@ -7116,6 +7414,21 @@ export const IDL: IssuerForge = {
       "code": 6073,
       "name": "delegationChangedSinceProposal",
       "msg": "the delegation changed after this proposal was raised"
+    },
+    {
+      "code": 6074,
+      "name": "attestationTermsUnchanged",
+      "msg": "the attestor and the attestation lifetime already are exactly these"
+    },
+    {
+      "code": 6075,
+      "name": "attestationTermsChangedSinceProposal",
+      "msg": "the attestor or the attestation lifetime changed after this proposal was raised"
+    },
+    {
+      "code": 6076,
+      "name": "attestationMaxAgeMismatch",
+      "msg": "attestation is signed under a lifetime that is not the token's current one"
     }
   ],
   "types": [
@@ -7235,6 +7548,35 @@ export const IDL: IssuerForge = {
               {
                 "name": "mask",
                 "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "setAttestor",
+            "fields": [
+              {
+                "name": "previousAttestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "previousMaxAge",
+                "type": "i64"
+              },
+              {
+                "name": "attestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "maxAge",
+                "type": "i64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
               }
             ]
           }
@@ -7394,6 +7736,21 @@ export const IDL: IssuerForge = {
               "The moment the attestation refers to. Not \"now\": the attestor attests",
               "the state of the account at a certain time, and the validity period is",
               "counted from exactly that (FR-023)."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "The validity period the attestor signs under — the token's current",
+              "one, or the attestation is refused.",
+              "",
+              "Carried although the program already knows it, for two reasons. The",
+              "quorum may change the period (FR-023b) while the attestor is signing,",
+              "and an attestation signed for seven days must not land as one for a",
+              "day. And the chain keeps only the latest period, so this is what lets",
+              "the journal and its verifier date an attestation from its own",
+              "transaction rather than from a history neither of them holds."
             ],
             "type": "i64"
           }
@@ -8225,6 +8582,27 @@ export const IDL: IssuerForge = {
                 "type": "u8"
               }
             ]
+          },
+          {
+            "name": "setAttestor",
+            "fields": [
+              {
+                "name": "attestor",
+                "type": "pubkey"
+              },
+              {
+                "name": "attestationMaxAge",
+                "type": "i64"
+              },
+              {
+                "name": "reason",
+                "type": {
+                  "defined": {
+                    "name": "complianceReason"
+                  }
+                }
+              }
+            ]
           }
         ]
       }
@@ -8353,6 +8731,42 @@ export const IDL: IssuerForge = {
           },
           {
             "name": "reason",
+            "type": {
+              "defined": {
+                "name": "complianceReason"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "setAttestorArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "attestor",
+            "docs": [
+              "The attestor from now on. The current one when only the period",
+              "changes."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "attestationMaxAge",
+            "docs": [
+              "The validity period from now on, seconds. The current one when only",
+              "the attestor changes."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reason",
+            "docs": [
+              "Why (FR-017). On the deferred path it must be the reason the proposal",
+              "holds — it is part of what the approvers signed."
+            ],
             "type": {
               "defined": {
                 "name": "complianceReason"

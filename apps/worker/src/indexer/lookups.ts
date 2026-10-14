@@ -57,11 +57,7 @@ export function createRpcLookups(connection: Connection): Lookups {
     if (config === undefined) return undefined
     const issuerId = await issuerIdOfConfig(config.issuer.toBase58())
     if (issuerId === undefined) return undefined
-    return {
-      mint: config.mint.toBase58(),
-      issuerId,
-      attestationMaxAge: config.attestationMaxAge.toNumber(),
-    }
+    return { mint: config.mint.toBase58(), issuerId }
   })
 
   const policyRulesAt = memoised(async (address) => {

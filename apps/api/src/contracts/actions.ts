@@ -126,6 +126,15 @@ export const proposalActionSchema = z.discriminatedUnion('kind', [
     operationalKey: addressSchema,
     mask: delegationMaskSchema,
   }),
+  z.object({
+    kind: z.literal('set-attestor'),
+    /** The terms this was raised against. Execution refuses once they have moved. */
+    previousAttestor: addressSchema,
+    previousMaxAge: z.number().int().positive(),
+    attestor: addressSchema,
+    maxAge: z.number().int().positive(),
+    reason: complianceReasonSchema,
+  }),
 ])
 
 export const proposalSchema = z.object({

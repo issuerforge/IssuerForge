@@ -24,6 +24,7 @@ import { PublicKey } from '@solana/web3.js'
 import { IDL } from '../idl/issuer-forge.ts'
 import { actionProposalPda, issuerConfigPda, policyConfigPda, tokenConfigPda } from '../pda.ts'
 import type { ForgeProgram } from '../program.ts'
+import { checkMaxAge } from './attestor.ts'
 import { type TxPlan, toPlan } from './plan.ts'
 import { type ComplianceReasonInput, fromReason, toReason } from './reason.ts'
 
@@ -54,6 +55,13 @@ export type ProposedActionInput =
   /** Stopping circulation (FR-016) and lifting it. Only the reason: one pause per mint. */
   | { readonly kind: 'pause'; readonly reason: ComplianceReasonInput }
   | { readonly kind: 'resume'; readonly reason: ComplianceReasonInput }
+  /** The reserve terms from now on (FR-023b, FR-024a): built and checked in `attestor.ts`. */
+  | {
+      readonly kind: 'set-attestor'
+      readonly attestor: PublicKey
+      readonly attestationMaxAge: number
+      readonly reason: ComplianceReasonInput
+    }
 
 /** The Anchor shape of `ProposedAction`. The rules as canonical bytes, as the program hashes them. */
 function toProposedAction(action: ProposedActionInput) {
@@ -81,6 +89,14 @@ function toProposedAction(action: ProposedActionInput) {
       return { pause: { reason: toReason(action.reason) } }
     case 'resume':
       return { resume: { reason: toReason(action.reason) } }
+    case 'set-attestor':
+      return {
+        setAttestor: {
+          attestor: action.attestor,
+          attestationMaxAge: new BN(checkMaxAge(action.attestationMaxAge)),
+          reason: toReason(action.reason),
+        },
+      }
   }
 }
 
@@ -265,7 +281,7 @@ export function decodeProposedAction(
 
   const args = (decoded.data as { args: DecodedProposeArgs }).args
   const nonce = BigInt(args.nonce.toString())
-  const { setPolicy, seize, pause, resume } = args.action
+  const { setPolicy, seize, pause, resume, setAttestor } = args.action
 
   if (setPolicy !== undefined) {
     return {
@@ -298,6 +314,17 @@ export function decodeProposedAction(
   if (resume !== undefined) {
     return { nonce, action: { kind: 'resume', reason: fromReason(resume.reason) } }
   }
+  if (setAttestor !== undefined) {
+    return {
+      nonce,
+      action: {
+        kind: 'set-attestor',
+        attestor: new PublicKey(setAttestor.attestor.toBase58()),
+        attestationMaxAge: setAttestor.attestationMaxAge.toNumber(),
+        reason: fromReason(setAttestor.reason),
+      },
+    }
+  }
   // A delegation change (`delegation.ts`) is the issuer's action, not a
   // token's, and is not one of the bodies this reader serves.
   return undefined
@@ -318,6 +345,11 @@ type DecodedProposeArgs = {
     }
     readonly pause?: { readonly reason: DecodedReason }
     readonly resume?: { readonly reason: DecodedReason }
+    readonly setAttestor?: {
+      readonly attestor: { toBase58(): string }
+      readonly attestationMaxAge: { toNumber(): number }
+      readonly reason: DecodedReason
+    }
   }
 }
 

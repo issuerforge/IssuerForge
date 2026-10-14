@@ -18,7 +18,16 @@ import { useApi } from '@/auth/providers'
 import { truncate } from '@/lib/format'
 import { describeMask } from '@/settings/model'
 import { Failure } from './ActionsScreen'
-import { actionTitle, formatUnits, nextStep, reasonLine, seats, standingLine, utc } from './model'
+import {
+  actionTitle,
+  formatPeriod,
+  formatUnits,
+  nextStep,
+  reasonLine,
+  seats,
+  standingLine,
+  utc,
+} from './model'
 import { useProposal, useTokens } from './queries'
 import { isBusy, RunLine, useRun } from './submit'
 
@@ -134,6 +143,14 @@ function Definition({
             label: 'Amount',
             value: `${formatUnits(action.amount, decimals)}${symbol ? ` ${symbol}` : ''}`,
           },
+        ]
+      : []),
+    ...(action.kind === 'set-attestor'
+      ? [
+          { label: 'Attestor now', value: action.previousAttestor },
+          { label: 'Attestor after', value: action.attestor },
+          { label: 'Lifetime now', value: formatPeriod(action.previousMaxAge) },
+          { label: 'Lifetime after', value: formatPeriod(action.maxAge) },
         ]
       : []),
     ...(action.kind === 'set-delegation'

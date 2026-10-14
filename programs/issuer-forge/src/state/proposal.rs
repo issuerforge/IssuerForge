@@ -2,8 +2,9 @@ use anchor_lang::prelude::*;
 
 use crate::constants::MAX_MEMBERS;
 use crate::error::ForgeError;
+use crate::reserve::validate_max_age;
 use crate::rules::layout::{self, RuleSlot, RULES_BYTES};
-use crate::state::{delegation, ComplianceReason, IssuerConfig};
+use crate::state::{delegation, role, ComplianceReason, IssuerConfig, TokenConfig};
 
 /// What is proposed, as the proposer states it — **with the bodies**.
 ///
@@ -43,6 +44,15 @@ pub enum ProposedAction {
     /// to another key (FR-035). The first action of the issuer rather than of
     /// a token: its proposal has no mint (`ActionProposal::scope`).
     SetDelegation { operational_key: Pubkey, mask: u8 },
+    /// Who attests the token's reserve from now on, and how long an
+    /// attestation stays current (FR-023b, FR-024a). Both in one action: they
+    /// are the terms the reserve is attested under, and a change of attestor
+    /// is when those terms get renegotiated.
+    SetAttestor {
+        attestor: Pubkey,
+        attestation_max_age: i64,
+        reason: ComplianceReason,
+    },
 }
 
 impl ProposedAction {
@@ -53,9 +63,11 @@ impl ProposedAction {
     /// stored form does not compile here; two parallel enums would have
     /// diverged quietly instead.
     ///
-    /// The issuer is passed because a delegation change stores the state it
-    /// changes from, read here and never from the proposer.
-    pub fn stored(&self, issuer: &IssuerConfig) -> Result<ActionKind> {
+    /// The issuer and the token are passed because a delegation change and an
+    /// attestor change store the state they change from, read here and never
+    /// from the proposer. The token is `None` exactly for the issuer's own
+    /// actions — `propose_action` checks that before calling this.
+    pub fn stored(&self, issuer: &IssuerConfig, token: Option<&TokenConfig>) -> Result<ActionKind> {
         match self {
             ProposedAction::SetPolicy {
                 version,
@@ -73,6 +85,17 @@ impl ProposedAction {
                 operational_key,
                 mask,
             } => ActionKind::set_delegation(issuer, *operational_key, *mask),
+            ProposedAction::SetAttestor {
+                attestor,
+                attestation_max_age,
+                reason,
+            } => ActionKind::set_attestor(
+                issuer,
+                token.ok_or(ForgeError::ProposalScopeMismatch)?,
+                *attestor,
+                *attestation_max_age,
+                *reason,
+            ),
         }
     }
 
@@ -159,6 +182,25 @@ pub enum ActionKind {
         operational_key: Pubkey,
         mask: u8,
     },
+    /// A change of the reserve terms (FR-023b, FR-024a): attestor and period,
+    /// **from** what, **to** what, and why.
+    ///
+    /// A transition for the reason `SetDelegation` gives: a proposal raised
+    /// before another change of the terms must not execute after it and
+    /// quietly undo it. The reason is here because replacing whoever vouches
+    /// for the reserve is the change a regulator asks "why" about (FR-017).
+    ///
+    /// 114 bytes, the first variant larger than the seizure: every proposal
+    /// account grows by 40 bytes of rent. Nothing already on chain re-reads
+    /// differently — Borsh writes a variant at its own length — and nothing
+    /// looks proposals up by `dataSize`.
+    SetAttestor {
+        previous_attestor: Pubkey,
+        previous_max_age: i64,
+        attestor: Pubkey,
+        max_age: i64,
+        reason: ComplianceReason,
+    },
 }
 
 impl ActionKind {
@@ -237,6 +279,40 @@ impl ActionKind {
             previous_mask: issuer.delegation_mask,
             operational_key,
             mask,
+        })
+    }
+
+    /// The stored form of a change of the reserve terms, starting from the
+    /// token's terms as they are now.
+    ///
+    /// The new attestor must already hold the attestor role in the
+    /// membership — the same rule `create_token` applies to the first one
+    /// (FR-024): otherwise a quorum could name one of its own admins and the
+    /// issuer would vouch for its own reserve. The execution checks it again,
+    /// because the membership may change in between.
+    pub fn set_attestor(
+        issuer: &IssuerConfig,
+        token: &TokenConfig,
+        attestor: Pubkey,
+        max_age: i64,
+        reason: ComplianceReason,
+    ) -> Result<Self> {
+        reason.validate()?;
+        validate_max_age(max_age)?;
+        require!(
+            issuer.member_has(&attestor, role::ATTESTOR),
+            ForgeError::NotAnAttestorMember
+        );
+        require!(
+            attestor != token.attestor || max_age != token.attestation_max_age,
+            ForgeError::AttestationTermsUnchanged
+        );
+        Ok(ActionKind::SetAttestor {
+            previous_attestor: token.attestor,
+            previous_max_age: token.attestation_max_age,
+            attestor,
+            max_age,
+            reason,
         })
     }
 }
@@ -524,7 +600,7 @@ mod tests {
             rules: rules.clone(),
             reason: a_reason(),
         }
-        .stored(&an_issuer())
+        .stored(&an_issuer(), None)
         .expect("a canonical layout");
 
         let slots: &[RuleSlot] = bytemuck::cast_slice(&rules);
@@ -549,7 +625,7 @@ mod tests {
             rules: rules.clone(),
             reason: a_reason(),
         }
-        .stored(&an_issuer())
+        .stored(&an_issuer(), None)
         .expect("a canonical layout");
         let executed = ActionKind::set_policy(4, &rules, a_reason()).expect("a canonical layout");
         assert_eq!(proposed, executed);
@@ -594,7 +670,7 @@ mod tests {
             operational_key: wallet(11),
             mask: delegation::ALL,
         }
-        .stored(&an_issuer())
+        .stored(&an_issuer(), None)
         .expect("a valid grant");
         assert_eq!(
             stored,
@@ -663,7 +739,7 @@ mod tests {
             amount: 500,
             reason: a_reason(),
         }
-        .stored(&an_issuer())
+        .stored(&an_issuer(), None)
         .expect("a valid seizure");
         assert_eq!(
             stored,
@@ -729,7 +805,6 @@ mod tests {
             .expect("serialises");
         assert_eq!((policy[0], seizure[0]), (0, 1));
         assert_eq!(seizure.len(), 1 + 32 + 8 + 2 + 32);
-        assert_eq!(ActionKind::INIT_SPACE, seizure.len());
 
         // T028 appended two more. The largest variant is still the seizure,
         // so no proposal account changed size.
@@ -761,6 +836,157 @@ mod tests {
         assert_eq!(delegation_change[0], 4);
         assert_eq!(delegation_change.len(), 1 + 32 + 1 + 32 + 1);
         assert!(delegation_change.len() < ActionKind::INIT_SPACE);
+
+        // T037 appended the change of the reserve terms, from and to, with
+        // its reason. The first variant above the seizure: it sizes the
+        // account now.
+        let mut terms = Vec::new();
+        ActionKind::set_attestor(
+            &an_issuer_with_attestors(),
+            &a_token(),
+            wallet(4),
+            30 * DAY,
+            a_reason(),
+        )
+        .expect("valid")
+        .serialize(&mut terms)
+        .expect("serialises");
+        assert_eq!(terms[0], 5);
+        assert_eq!(terms.len(), 1 + 32 + 8 + 32 + 8 + 2 + 32);
+        assert_eq!(ActionKind::INIT_SPACE, terms.len());
+        assert!(seizure.len() < ActionKind::INIT_SPACE);
+    }
+
+    const DAY: i64 = 24 * 60 * 60;
+
+    /// `an_issuer` with two attestors beside the admins: the current one and
+    /// the one a change hands the role to.
+    fn an_issuer_with_attestors() -> IssuerConfig {
+        let mut issuer = an_issuer();
+        for (slot, seed) in [(2, 3u8), (3, 4u8)] {
+            issuer.members[slot] = crate::state::Member {
+                wallet: wallet(seed),
+                roles: role::ATTESTOR,
+            };
+        }
+        issuer.member_slots = 4;
+        issuer
+    }
+
+    fn a_token() -> TokenConfig {
+        TokenConfig {
+            issuer: wallet(60),
+            mint: wallet(61),
+            attestation_credential: wallet(62),
+            attestation_schema: wallet(63),
+            attestor: wallet(3),
+            treasury: wallet(64),
+            policy_version: 1,
+            fee_bps: 0,
+            attestation_max_age: 7 * DAY,
+            paused_at: 0,
+            bump: 254,
+            attestation_count: 1,
+            reserve_currency: crate::state::currency_bytes(b"NGN"),
+        }
+    }
+
+    #[test]
+    fn an_attestor_change_stores_where_it_starts_from() {
+        let stored = ProposedAction::SetAttestor {
+            attestor: wallet(4),
+            attestation_max_age: 30 * DAY,
+            reason: a_reason(),
+        }
+        .stored(&an_issuer_with_attestors(), Some(&a_token()))
+        .expect("a valid change");
+        assert_eq!(
+            stored,
+            ActionKind::SetAttestor {
+                previous_attestor: wallet(3),
+                previous_max_age: 7 * DAY,
+                attestor: wallet(4),
+                max_age: 30 * DAY,
+                reason: a_reason(),
+            }
+        );
+    }
+
+    #[test]
+    fn either_half_of_the_terms_may_change_alone() {
+        let issuer = an_issuer_with_attestors();
+        let token = a_token();
+        assert!(ActionKind::set_attestor(&issuer, &token, wallet(4), 7 * DAY, a_reason()).is_ok());
+        assert!(ActionKind::set_attestor(&issuer, &token, wallet(3), DAY, a_reason()).is_ok());
+    }
+
+    #[test]
+    fn the_same_terms_from_another_start_are_another_action() {
+        // What makes a change in between stop an older proposal.
+        let issuer = an_issuer_with_attestors();
+        let mut moved = a_token();
+        moved.attestation_max_age = 14 * DAY;
+        assert_ne!(
+            ActionKind::set_attestor(&issuer, &a_token(), wallet(4), 30 * DAY, a_reason())
+                .expect("valid"),
+            ActionKind::set_attestor(&issuer, &moved, wallet(4), 30 * DAY, a_reason())
+                .expect("valid")
+        );
+    }
+
+    #[test]
+    fn an_attestor_change_that_cannot_hold_is_never_raised() {
+        let issuer = an_issuer_with_attestors();
+        let token = a_token();
+        let refused = |attestor: u8, max_age: i64, reason: ComplianceReason| {
+            err(
+                ActionKind::set_attestor(&issuer, &token, wallet(attestor), max_age, reason)
+                    .map(|_| ()),
+            )
+        };
+        assert_eq!(
+            refused(3, 7 * DAY, a_reason()),
+            code(ForgeError::AttestationTermsUnchanged)
+        );
+        // An admin is no attestor: the issuer would vouch for its own reserve.
+        assert_eq!(
+            refused(1, 7 * DAY, a_reason()),
+            code(ForgeError::NotAnAttestorMember)
+        );
+        assert_eq!(
+            refused(9, 7 * DAY, a_reason()),
+            code(ForgeError::NotAnAttestorMember)
+        );
+        assert_eq!(
+            refused(4, 0, a_reason()),
+            code(ForgeError::AttestationMaxAgeInvalid)
+        );
+        assert_eq!(
+            refused(4, crate::reserve::MAX_ATTESTATION_MAX_AGE + 1, a_reason()),
+            code(ForgeError::AttestationMaxAgeInvalid)
+        );
+        let unstated = ComplianceReason {
+            code: 0,
+            ..a_reason()
+        };
+        assert_eq!(
+            refused(4, 7 * DAY, unstated),
+            code(ForgeError::ReasonCodeMissing)
+        );
+    }
+
+    #[test]
+    fn an_attestor_change_is_raised_only_under_a_token() {
+        let action = ProposedAction::SetAttestor {
+            attestor: wallet(4),
+            attestation_max_age: 30 * DAY,
+            reason: a_reason(),
+        };
+        assert!(!action.is_issuer_scoped());
+        assert_eq!(
+            err(action.stored(&an_issuer_with_attestors(), None).map(|_| ())),
+            code(ForgeError::ProposalScopeMismatch)
+        );
     }
 
     #[test]
@@ -813,7 +1039,7 @@ mod tests {
         );
         assert_eq!(
             ProposedAction::Resume { reason: a_reason() }
-                .stored(&an_issuer())
+                .stored(&an_issuer(), None)
                 .expect("valid"),
             ActionKind::Resume { reason: a_reason() }
         );

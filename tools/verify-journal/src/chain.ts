@@ -108,18 +108,11 @@ export function rpcChain(connection: Connection, programId: string): Chain {
       return config?.issuerId.toBase58()
     },
     async tokenAt(tokenConfig): Promise<TokenFacts | undefined> {
-      const config = await read<{ mint: Key; issuer: Key; attestationMaxAge: Int }>(
-        'tokenConfig',
-        tokenConfig,
-      )
+      const config = await read<{ mint: Key; issuer: Key }>('tokenConfig', tokenConfig)
       if (config === undefined) return undefined
       const issuerId = await state.issuerIdOf(config.issuer.toBase58())
       if (issuerId === undefined) return undefined
-      return {
-        mint: config.mint.toBase58(),
-        issuerId,
-        attestationMaxAge: Number(config.attestationMaxAge.toString()),
-      }
+      return { mint: config.mint.toBase58(), issuerId }
     },
     async rulesAt(policyConfig) {
       const policy = await read<{ rules: { kind: number; op: number; params: number[] }[] }>(

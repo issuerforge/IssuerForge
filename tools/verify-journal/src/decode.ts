@@ -34,7 +34,6 @@ import { PublicKey, type VersionedTransactionResponse } from '@solana/web3.js'
 export interface TokenFacts {
   readonly mint: string
   readonly issuerId: string
-  readonly attestationMaxAge: number
 }
 
 /**
@@ -416,7 +415,25 @@ const EVENT_READERS: Readonly<Record<string, EventReader>> = {
         currency: text(args.currency),
         attestor: accounts.get('attestor'),
         attestedAt,
-        expiresAt: attestedAt + token.attestationMaxAge,
+        // From the instruction, as `create_token` gives it: the chain holds
+        // only the latest period, and the window may not reach the change.
+        expiresAt: attestedAt + Number(int(args.attestationMaxAge)),
+      },
+    ]
+  },
+
+  async setAttestor({ state }, accounts, args) {
+    const token = await tokenAt(state, accounts.get('tokenConfig'))
+    return [
+      {
+        kind: 'compliance',
+        mint: token.mint,
+        action: 'set_attestor',
+        target: pubkey(args.attestor),
+        amount: null,
+        ...reason(args),
+        signers: accounts.remaining(),
+        attestationMaxAge: Number(int(args.attestationMaxAge)),
       },
     ]
   },

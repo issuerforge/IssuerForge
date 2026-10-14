@@ -48,7 +48,7 @@ export const RULES = encodeRules({
   periodLimit: { amount: '200000000', windowSeconds: 86_400 },
 })
 
-export const TOKEN: TokenFacts = { mint: MINT, issuerId: ISSUER_ID, attestationMaxAge: 86_400 }
+export const TOKEN: TokenFacts = { mint: MINT, issuerId: ISSUER_ID }
 
 /** The account state behind every fixture. */
 export const WORLD = {

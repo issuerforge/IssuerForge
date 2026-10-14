@@ -186,6 +186,14 @@ function messageFor(field: DraftField, fallback: string): string {
 
 // ─── Proposals ───────────────────────────────────────────────────────────────
 
+/** A period in the unit an issuer sets it in: whole days, else whole hours, else seconds. */
+export function formatPeriod(seconds: number): string {
+  const unit = (count: number, name: string) => `${count} ${name}${count === 1 ? '' : 's'}`
+  if (seconds % 86_400 === 0) return unit(seconds / 86_400, 'day')
+  if (seconds % 3_600 === 0) return unit(seconds / 3_600, 'hour')
+  return unit(seconds, 'second')
+}
+
 /** A proposal's action as a heading. */
 export function actionTitle(
   action: ProposalResponse['action'],
@@ -205,6 +213,10 @@ export function actionTitle(
       return action.operationalKey === action.previousKey
         ? `Delegation: ${describeMask(action.previousMask)} → ${describeMask(action.mask)}`
         : `Rotation of the operational key, with ${describeMask(action.mask)}`
+    case 'set-attestor':
+      return action.attestor === action.previousAttestor
+        ? `Attestation lifetime: ${formatPeriod(action.previousMaxAge)} → ${formatPeriod(action.maxAge)}`
+        : 'Replacement of the reserve attestor'
   }
 }
 

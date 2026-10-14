@@ -110,7 +110,14 @@ function app(fakes: Fakes = {}) {
   const actions: ActionReader = {
     token: async () => {
       const owner = 'tokenOwner' in fakes ? fakes.tokenOwner : OWN_CONFIG
-      return owner === undefined ? undefined : { issuerConfig: owner, policyVersion: 1 }
+      return owner === undefined
+        ? undefined
+        : {
+            issuerConfig: owner,
+            policyVersion: 1,
+            attestor: 'Vote111111111111111111111111111111111111111',
+            attestationMaxAge: 604_800,
+          }
     },
     quorum: async () =>
       fakes.quorum ?? {

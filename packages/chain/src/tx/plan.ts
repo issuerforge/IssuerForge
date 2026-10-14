@@ -42,6 +42,7 @@ export const TX_STEPS = [
   'pause-circulation',
   'resume-circulation',
   'set-delegation',
+  'set-attestor',
 ] as const
 
 export type TxStep = (typeof TX_STEPS)[number]

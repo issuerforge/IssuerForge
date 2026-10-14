@@ -174,6 +174,23 @@ describe('compliance event', () => {
     expect(complianceEventSchema.safeParse({ ...compliance, action: 'mint' }).success).toBe(false)
     expect(complianceEventSchema.safeParse({ ...compliance, action: 'thaw' }).success).toBe(false)
   })
+
+  it('carries the new terms on a change of the attestor, and only there', () => {
+    const handover = { ...compliance, action: 'set_attestor', amount: null } as const
+    const parsed = complianceEventSchema.parse({ ...handover, attestationMaxAge: 2_592_000 })
+    expect(parsed.attestationMaxAge).toBe(2_592_000)
+
+    // FR-023b: a change of the terms that does not say the period hides half of it.
+    expect(complianceEventSchema.safeParse(handover).success).toBe(false)
+    expect(
+      complianceEventSchema.safeParse({ ...compliance, attestationMaxAge: 2_592_000 }).success,
+    ).toBe(false)
+    for (const attestationMaxAge of [0, -1, 1.5]) {
+      expect(complianceEventSchema.safeParse({ ...handover, attestationMaxAge }).success).toBe(
+        false,
+      )
+    }
+  })
 })
 
 describe('attestation event', () => {

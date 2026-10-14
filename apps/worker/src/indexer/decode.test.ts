@@ -37,7 +37,7 @@ const BOB_ATA = key()
 const SIGNATURE =
   '5j7s6NiJS3JAkvgkoc18WVAsiSaci2pxB2A6ueCJP4tprA2TFg9wSyTLeYouxPBJEMzJinENTkpA52YStRW5Dia7'
 
-const TOKEN: TokenView = { mint: MINT, issuerId: ISSUER_ID, attestationMaxAge: 86_400 }
+const TOKEN: TokenView = { mint: MINT, issuerId: ISSUER_ID }
 
 /** The demo policy: status, jurisdictions, transfer limit, period limit — slots 0…3. */
 const RULES = encodeRules({
@@ -350,7 +350,13 @@ describe('create_token', () => {
     const { events, changes } = await decode(tx([ours(data, accounts)]))
 
     expect(changes).toEqual([
-      { kind: 'token_created', mint: MINT, issuerId: ISSUER_ID, decimals: 2, policyVersion: 1 },
+      {
+        kind: 'token_created',
+        mint: MINT,
+        issuerId: ISSUER_ID,
+        decimals: 2,
+        policyVersion: 1,
+      },
       {
         kind: 'holder_thawed',
         mint: MINT,
@@ -632,16 +638,19 @@ describe('pause and resume', () => {
   })
 })
 
+const attestUnder = (maxAge: number) =>
+  encoded('attestReserve', {
+    amount: new BN('2600000000'),
+    currency: ascii('NGN', 8),
+    attestedAt: new BN(1_772_600_000),
+    attestationMaxAge: new BN(maxAge),
+  })
+const attest = attestUnder(86_400)
+const attestAccounts = (attestor: string) => [TOKEN_CONFIG, key(), attestor, attestor, key()]
+
 describe('attest_reserve', () => {
   it('records the attestation with its index and expiry', async () => {
-    const data = encoded('attestReserve', {
-      amount: new BN('2600000000'),
-      currency: ascii('NGN', 8),
-      attestedAt: new BN(1_772_600_000),
-    })
-    const { events } = await decode(
-      tx([ours(data, [TOKEN_CONFIG, key(), ATTESTOR, ATTESTOR, key()])]),
-    )
+    const { events } = await decode(tx([ours(attest, attestAccounts(ATTESTOR))]))
     expect(events[0]?.event).toEqual(
       expect.objectContaining({
         kind: 'attestation',
@@ -653,6 +662,57 @@ describe('attest_reserve', () => {
         expiresAt: 1_772_600_000 + 86_400,
       }),
     )
+  })
+
+  it('dates the attestation by the period it was signed under, not by the chain’s latest', async () => {
+    // The chain keeps only the latest period; a backlog read after a change
+    // would date every older attestation by it. The instruction carries its own.
+    const { events } = await decode(tx([ours(attestUnder(3_600), attestAccounts(ATTESTOR))]))
+    expect(events[0]?.event).toMatchObject({ expiresAt: 1_772_600_000 + 3_600 })
+  })
+})
+
+describe('set_attestor', () => {
+  const SUCCESSOR = key()
+  const PROPOSAL = key()
+  const THIRTY_DAYS = 30 * 86_400
+  const reason = { code: 21, caseRef: ascii('AUDIT/2026/0007', 32) }
+  const data = encoded('setAttestor', {
+    attestor: new PublicKey(SUCCESSOR),
+    attestationMaxAge: new BN(THIRTY_DAYS),
+    reason,
+  })
+
+  for (const [path, proposal] of [
+    ['immediate', PROGRAM],
+    ['deferred', PROPOSAL],
+  ] as const) {
+    it(`records a ${path} change as a compliance action naming its quorum`, async () => {
+      const { events, changes } = await decode(
+        tx([ours(data, [ISSUER_CONFIG, TOKEN_CONFIG, proposal, OFFICER, FOUNDER])]),
+      )
+      expect(events).toHaveLength(1)
+      expect(events[0]?.issuerId).toBe(ISSUER_ID)
+      expect(events[0]?.event).toMatchObject({
+        kind: 'compliance',
+        action: 'set_attestor',
+        mint: MINT,
+        target: SUCCESSOR,
+        amount: null,
+        reasonCode: '21',
+        caseRef: 'AUDIT/2026/0007',
+        signers: [OFFICER, FOUNDER],
+        attestationMaxAge: THIRTY_DAYS,
+      })
+      // Nothing in the mirror tables holds the attestor or the period.
+      expect(changes).toEqual([])
+    })
+  }
+
+  it('a change that names nobody is not a valid event', async () => {
+    await expect(
+      decode(tx([ours(data, [ISSUER_CONFIG, TOKEN_CONFIG, PROPOSAL])])),
+    ).rejects.toThrow()
   })
 })
 

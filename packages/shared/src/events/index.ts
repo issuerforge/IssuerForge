@@ -119,16 +119,35 @@ export const complianceActionSchema = z.enum(COMPLIANCE_ACTIONS)
  * target, a policy change has no amount. An empty string or a zero in those
  * places would read as values.
  */
-export const complianceEventSchema = z.object({
-  kind: z.literal('compliance'),
-  ...envelope,
-  action: complianceActionSchema,
-  target: addressSchema.nullable(),
-  amount: u64Schema.nullable(),
-  reasonCode: z.string().min(1),
-  caseRef: z.string().min(1),
-  signers: z.array(addressSchema).min(1),
-})
+export const complianceEventSchema = z
+  .object({
+    kind: z.literal('compliance'),
+    ...envelope,
+    action: complianceActionSchema,
+    target: addressSchema.nullable(),
+    amount: u64Schema.nullable(),
+    reasonCode: z.string().min(1),
+    caseRef: z.string().min(1),
+    signers: z.array(addressSchema).min(1),
+    /**
+     * The validity period of an attestation from this change on, in seconds
+     * (FR-023b) — on `set_attestor` and nowhere else; `target` is then the
+     * attestor from this change on.
+     *
+     * Optional rather than nullable: every line written before it existed
+     * stays valid as it is, so the journal format does not move. A change of
+     * the period alone is still `set_attestor` with the attestor unchanged —
+     * the program changes both terms in one instruction.
+     */
+    attestationMaxAge: z.number().int().positive().optional(),
+  })
+  .refine(
+    (event) => (event.action === 'set_attestor') === (event.attestationMaxAge !== undefined),
+    {
+      message: 'attestationMaxAge belongs to set_attestor, and set_attestor carries it',
+      path: ['attestationMaxAge'],
+    },
+  )
 
 /**
  * A published reserve attestation (FR-021, FR-026).

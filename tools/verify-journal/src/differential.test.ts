@@ -280,6 +280,39 @@ const CASES: Record<string, TxShape> = {
           amount: new BN('2600000000'),
           currency: ascii('NGN', 8),
           attestedAt: new BN(1_772_600_000),
+          attestationMaxAge: new BN(86_400),
+        },
+        [TOKEN_CONFIG, ATTESTATION, ATTESTOR, ATTESTOR, SYSTEM],
+      ),
+    ],
+  },
+  'set_attestor on each path, then an attestation under the new period': {
+    instructions: [
+      ours(
+        'setAttestor',
+        {
+          attestor: new PublicKey(ATTESTOR),
+          attestationMaxAge: new BN(30 * 86_400),
+          reason: reason(21, 'AUDIT/2026/0007'),
+        },
+        [ISSUER_CONFIG, TOKEN_CONFIG, PROGRAM, ADMIN, OFFICER],
+      ),
+      ours(
+        'setAttestor',
+        {
+          attestor: new PublicKey(ATTESTOR),
+          attestationMaxAge: new BN(7 * 86_400),
+          reason: reason(22, 'AUDIT/2026/0008'),
+        },
+        [ISSUER_CONFIG, TOKEN_CONFIG, PROPOSAL, OFFICER, ADMIN],
+      ),
+      ours(
+        'attestReserve',
+        {
+          amount: new BN('2700000000'),
+          currency: ascii('NGN', 8),
+          attestedAt: new BN(1_772_600_000),
+          attestationMaxAge: new BN(7 * 86_400),
         },
         [TOKEN_CONFIG, ATTESTATION, ATTESTOR, ATTESTOR, SYSTEM],
       ),
@@ -341,6 +374,7 @@ describe('the verifier reads the chain as the indexer does', () => {
       'compliance:freeze',
       'compliance:pause',
       'compliance:seize',
+      'compliance:set_attestor',
       'compliance:set_policy',
       'compliance:unfreeze',
       'compliance:unpause',

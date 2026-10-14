@@ -140,7 +140,10 @@ pub(crate) fn propose_handler(
     // The body is checked before anyone is asked to approve it. A digest of
     // bytes that could not have come out of `encode` would collect signatures
     // for days and only then fail at execution.
-    let action = args.action.stored(&ctx.accounts.issuer_config)?;
+    let action = args.action.stored(
+        &ctx.accounts.issuer_config,
+        ctx.accounts.token_config.as_deref(),
+    )?;
 
     let now = Clock::get()?.unix_timestamp;
     let scope = scope_of(&ctx.accounts.issuer_config, &ctx.accounts.token_config);
