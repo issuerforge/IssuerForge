@@ -39,6 +39,8 @@ export interface TokenView {
   /** The reserve terms in force — what an attestor change must still start from. */
   readonly attestor: string
   readonly attestationMaxAge: number
+  /** How many attestations exist; the latest — the one an issuance is checked against — is `count - 1`. */
+  readonly attestationCount: bigint
 }
 
 /** The membership as the program will read it at execution — not the database mirror. */
@@ -91,6 +93,8 @@ export type ProposalActionView =
       readonly maxAge: number
       readonly reason: ComplianceReasonInput
     }
+  /** Further issuance (T038), whole in the account. Whether the reserve covers it is the program's call at execution. */
+  | { readonly kind: 'mint'; readonly tokenAccount: string; readonly amount: bigint }
 
 export interface ProposalView {
   readonly address: string
@@ -162,6 +166,7 @@ type StoredAction = {
     maxAge: { toNumber(): number }
     reason: StoredReason
   }
+  mint?: { tokenAccount: PublicKey; amount: { toString(): string } }
 }
 
 type StoredReason = { code: number; caseRef: number[] }
@@ -206,6 +211,13 @@ function toActionView(address: PublicKey, action: StoredAction): ProposalActionV
       attestor: action.setAttestor.attestor.toBase58(),
       maxAge: action.setAttestor.maxAge.toNumber(),
       reason: fromReason(action.setAttestor.reason),
+    }
+  }
+  if (action.mint !== undefined) {
+    return {
+      kind: 'mint',
+      tokenAccount: action.mint.tokenAccount.toBase58(),
+      amount: BigInt(action.mint.amount.toString()),
     }
   }
   // A kind appended to the program before this line was written: refused
@@ -283,6 +295,12 @@ export function bodyMatches(view: ProposalView, body: ProposedActionInput): bool
         body.reason.code === stored.reason.code &&
         body.reason.caseRef === stored.reason.caseRef
       )
+    case 'mint':
+      return (
+        stored.kind === 'mint' &&
+        body.tokenAccount.toBase58() === stored.tokenAccount &&
+        body.amount === stored.amount
+      )
   }
 }
 
@@ -296,6 +314,7 @@ export function createActionReader(connection: Connection, program: ForgeProgram
         policyVersion: config.policyVersion,
         attestor: config.attestor.toBase58(),
         attestationMaxAge: config.attestationMaxAge.toNumber(),
+        attestationCount: BigInt(config.attestationCount.toString()),
       }
     },
 
@@ -330,7 +349,7 @@ export function createActionReader(connection: Connection, program: ForgeProgram
     },
 
     async body(view) {
-      // The account holds a seizure and a pause whole; there is no
+      // The account holds a seizure, a pause and an issuance whole; there is no
       // transaction to read.
       if (view.action.kind === 'seize') {
         return {
@@ -349,6 +368,13 @@ export function createActionReader(connection: Connection, program: ForgeProgram
           attestor: new PublicKey(view.action.attestor),
           attestationMaxAge: view.action.maxAge,
           reason: view.action.reason,
+        }
+      }
+      if (view.action.kind === 'mint') {
+        return {
+          kind: 'mint',
+          tokenAccount: new PublicKey(view.action.tokenAccount),
+          amount: view.action.amount,
         }
       }
       // A delegation change is not a `ProposedActionInput` — it has no body

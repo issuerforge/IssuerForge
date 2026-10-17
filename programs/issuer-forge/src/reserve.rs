@@ -1,8 +1,7 @@
 //! The check "issuance + circulation ≤ attested reserve" (FR-022, FR-023).
 //!
 //! **One check for every way tokens come into existence.** Both the initial
-//! issuance in `create_token` (T018) and further issuance in `mint` (T038,
-//! M3) go through it. Two checks would mean one of them falls behind some
+//! issuance in `create_token` and further issuance in `mint` go through it. Two checks would mean one of them falls behind some
 //! day — and falling behind here is called issuing beyond the reserve.
 //!
 //! **Circulation is taken from `mint.supply` at execution time, not from the
@@ -41,6 +40,12 @@ pub fn validate_max_age(max_age: i64) -> Result<()> {
 /// valid input — i.e. an issuance beyond the reserve, carried out through an
 /// account nobody edited. The counter in `TokenConfig` says which one is the
 /// latest; the amount itself stays where the journal verifier reads it too.
+///
+/// **And signed by the token's current attestor** (FR-024b). A quorum
+/// replaces an attestor because it stopped trusting them; if their last
+/// attestation kept the limit open until it expired, the replacement would
+/// take effect only weeks later. Issuance waits for the new attestor's first
+/// attestation instead — the history itself is untouched.
 pub fn require_latest(config: &TokenConfig, attestation: &ReserveAttestation) -> Result<()> {
     require_keys_eq!(
         attestation.mint,
@@ -50,6 +55,11 @@ pub fn require_latest(config: &TokenConfig, attestation: &ReserveAttestation) ->
     require!(
         attestation.index.checked_add(1) == Some(config.attestation_count),
         ForgeError::AttestationNotLatest
+    );
+    require_keys_eq!(
+        attestation.attestor,
+        config.attestor,
+        ForgeError::AttestationByFormerAttestor
     );
     Ok(())
 }
@@ -274,6 +284,21 @@ mod tests {
                 &attestation(2, Pubkey::new_from_array([9u8; 32]))
             )),
             code(ForgeError::AttestationNotLatest)
+        );
+    }
+
+    #[test]
+    fn refuses_the_latest_attestation_once_its_attestor_is_replaced() {
+        // FR-024b: the key a quorum just took the role from no longer keeps
+        // the issuance limit open, whatever is left of the period.
+        let mut config = config(3);
+        let latest = attestation(2, config.mint);
+        assert!(require_latest(&config, &latest).is_ok());
+
+        config.attestor = Pubkey::new_from_array([7u8; 32]);
+        assert_eq!(
+            err(require_latest(&config, &latest)),
+            code(ForgeError::AttestationByFormerAttestor)
         );
     }
 

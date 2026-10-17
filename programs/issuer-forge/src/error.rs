@@ -207,6 +207,12 @@ pub enum ForgeError {
     AttestationTermsChangedSinceProposal,
     #[msg("attestation is signed under a lifetime that is not the token's current one")]
     AttestationMaxAgeMismatch,
+    #[msg("the latest attestation is signed by an attestor this token no longer has")]
+    AttestationByFormerAttestor,
+    #[msg("issuance amount must be above zero")]
+    IssuanceAmountZero,
+    #[msg("issuance goes only to an account of a member who may authorise actions")]
+    IssuanceToANonMember,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -349,6 +355,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::AttestationMaxAgeMismatch),
             VALIDATION_ERROR_BASE + 63
+        );
+        // The first and the last of those added by T038.
+        assert_eq!(
+            u32::from(ForgeError::AttestationByFormerAttestor),
+            VALIDATION_ERROR_BASE + 64
+        );
+        assert_eq!(
+            u32::from(ForgeError::IssuanceToANonMember),
+            VALIDATION_ERROR_BASE + 66
         );
     }
 }

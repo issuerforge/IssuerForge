@@ -1,6 +1,7 @@
 // The issuer's quorum actions: raising a proposal, approving it, closing it,
 // and the policy change it executes (FR-009, FR-019b). The seizure executes
-// through `seize.ts`, the pause and its lifting through `pause.ts`.
+// through `seize.ts`, the pause and its lifting through `pause.ts`, an issuance
+// through `mint.ts`.
 //
 // **Two paths to one action, never both at once** (T025). `set_policy` takes
 // its quorum either from the signers of the same transaction or from a matured
@@ -62,6 +63,13 @@ export type ProposedActionInput =
       readonly attestationMaxAge: number
       readonly reason: ComplianceReasonInput
     }
+  /** Further issuance (FR-022) into a member's own token account; executed by `mint.ts`. */
+  | {
+      readonly kind: 'mint'
+      readonly tokenAccount: PublicKey
+      /** Exact, in the smallest unit. Whether the reserve covers it is decided at execution. */
+      readonly amount: bigint
+    }
 
 /** The Anchor shape of `ProposedAction`. The rules as canonical bytes, as the program hashes them. */
 function toProposedAction(action: ProposedActionInput) {
@@ -96,6 +104,13 @@ function toProposedAction(action: ProposedActionInput) {
           attestationMaxAge: new BN(checkMaxAge(action.attestationMaxAge)),
           reason: toReason(action.reason),
         },
+      }
+    case 'mint':
+      if (action.amount <= 0n || action.amount > U64_MAX) {
+        throw new RangeError(`amount must be 1…u64 max: ${action.amount}`)
+      }
+      return {
+        mint: { tokenAccount: action.tokenAccount, amount: new BN(action.amount.toString()) },
       }
   }
 }
@@ -281,7 +296,7 @@ export function decodeProposedAction(
 
   const args = (decoded.data as { args: DecodedProposeArgs }).args
   const nonce = BigInt(args.nonce.toString())
-  const { setPolicy, seize, pause, resume, setAttestor } = args.action
+  const { setPolicy, seize, pause, resume, setAttestor, mint } = args.action
 
   if (setPolicy !== undefined) {
     return {
@@ -325,6 +340,16 @@ export function decodeProposedAction(
       },
     }
   }
+  if (mint !== undefined) {
+    return {
+      nonce,
+      action: {
+        kind: 'mint',
+        tokenAccount: new PublicKey(mint.tokenAccount.toBase58()),
+        amount: BigInt(mint.amount.toString()),
+      },
+    }
+  }
   // A delegation change (`delegation.ts`) is the issuer's action, not a
   // token's, and is not one of the bodies this reader serves.
   return undefined
@@ -349,6 +374,10 @@ type DecodedProposeArgs = {
       readonly attestor: { toBase58(): string }
       readonly attestationMaxAge: { toNumber(): number }
       readonly reason: DecodedReason
+    }
+    readonly mint?: {
+      readonly tokenAccount: { toBase58(): string }
+      readonly amount: { toString(): string }
     }
   }
 }

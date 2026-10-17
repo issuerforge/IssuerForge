@@ -62,7 +62,7 @@ export default function ProposalScreen() {
       <h1 className="mt-4 border-b border-hairline pb-5 text-[18px] font-medium">
         {action.kind === 'set-delegation' ? (
           <>Operational key · </>
-        ) : (
+        ) : action.kind === 'mint' ? null : (
           <>
             Case <span className="num">{action.reason.caseRef}</span> ·{' '}
           </>
@@ -145,6 +145,15 @@ function Definition({
           },
         ]
       : []),
+    ...(action.kind === 'mint'
+      ? [
+          { label: 'To account', value: action.tokenAccount },
+          {
+            label: 'Amount',
+            value: `${formatUnits(action.amount, decimals)}${symbol ? ` ${symbol}` : ''}`,
+          },
+        ]
+      : []),
     ...(action.kind === 'set-attestor'
       ? [
           { label: 'Attestor now', value: action.previousAttestor },
@@ -160,7 +169,10 @@ function Definition({
           { label: 'Powers now', value: describeMask(action.previousMask) },
           { label: 'Powers after', value: describeMask(action.mask) },
         ]
-      : [{ label: 'Reason', value: reasonLine(action.reason) }]),
+      : // An issuance carries no reason (FR-017): it is no action against a holder.
+        action.kind === 'mint'
+        ? []
+        : [{ label: 'Reason', value: reasonLine(action.reason) }]),
     { label: 'Proposed by', value: proposal.approvals[0] ?? '—' },
     { label: 'Raised', value: `${utc(proposal.createdAt)} UTC` },
     proposal.executedAt === null

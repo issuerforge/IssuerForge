@@ -21,6 +21,7 @@ import {
   buildApproveAction,
   buildChangeCirculation,
   buildCloseActionProposal,
+  buildMint,
   buildProposeAction,
   buildSeize,
   buildSetAttestor,
@@ -310,7 +311,8 @@ export function createActionRoutes(deps: ActionRouteDeps) {
 
   /**
    * Execution: `set_policy` on the deferred path, `seize`, the pause and its
-   * lifting, or a change of the reserve terms (`set_attestor`).
+   * lifting, a change of the reserve terms (`set_attestor`), or an issuance
+   * (`mint`).
    *
    * Anyone of the session's authorising wallets may send it and pay the rent
    * — of the new policy version, or of the vault on a token's first seizure.
@@ -422,6 +424,29 @@ export function createActionRoutes(deps: ActionRouteDeps) {
       return c.json(await respond(plan, id, payer))
     }
 
+    if (action.kind === 'mint') {
+      // The reserve is not judged here: the program reads the latest
+      // attestation and the supply at execution, and a verdict from this
+      // read would be one confirmation behind it. Which attestation is the
+      // latest is read, so the instruction names the one the program wants.
+      const token = await requireToken(session, mint)
+      const plan = await buildMint(deps.chain.program, {
+        issuerId: new PublicKey(session.issuerId),
+        mint: new PublicKey(mint),
+        proposal: new PublicKey(id),
+        tokenAccount: new PublicKey(action.tokenAccount),
+        amount: action.amount,
+        attestationIndex: token.attestationCount - 1n,
+        approvers,
+        payer: new PublicKey(payer),
+      })
+      c.get('log').info(
+        { proposal: id, tokenAccount: action.tokenAccount, amount: fromU64(action.amount), payer },
+        'issuance assembled',
+      )
+      return c.json(await respond(plan, id, payer))
+    }
+
     if (action.kind === 'pause' || action.kind === 'resume') {
       // Whether the mint is paused now is not checked here: the program reads
       // the mint's own flag and refuses a pause of a paused token, and the
@@ -512,7 +537,7 @@ export function presentProposal(view: ProposalView, current: Standing): Proposal
     nonce: fromU64(view.nonce),
     payer: view.payer,
     action:
-      view.action.kind === 'seize'
+      view.action.kind === 'seize' || view.action.kind === 'mint'
         ? { ...view.action, amount: fromU64(view.action.amount) }
         : view.action,
     approvals: [...view.approvals],
@@ -547,6 +572,12 @@ function presentBody(body: ProposedActionInput) {
         attestor: body.attestor.toBase58(),
         attestationMaxAge: body.attestationMaxAge,
         reason: body.reason,
+      }
+    case 'mint':
+      return {
+        kind: body.kind,
+        tokenAccount: body.tokenAccount.toBase58(),
+        amount: fromU64(body.amount),
       }
   }
 }

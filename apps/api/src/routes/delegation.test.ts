@@ -103,6 +103,7 @@ function app(fakes: Fakes = {}) {
       policyVersion: 1,
       attestor: 'Vote111111111111111111111111111111111111111',
       attestationMaxAge: 604_800,
+      attestationCount: 1n,
     }),
     quorum: async () =>
       fakes.quorum ?? {

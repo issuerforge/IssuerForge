@@ -9,8 +9,9 @@
 //! **History is not touched.** Every `ReserveAttestation` keeps the attestor
 //! that signed it, and none of them is opened for writing here: what changes
 //! is who may sign the **next** one. The latest attestation stays the one the
-//! reserve check reads, now held to the new period — a shorter period can
-//! expire it on the spot, which is the point of shortening it.
+//! reserve check reads, now held to the new terms: a shorter period can
+//! expire it on the spot, which is the point of shortening it, and a new
+//! attestor stops it counting at once (`require_latest`).
 //!
 //! **The deferred path executes a transition** (`ActionKind::SetAttestor`),
 //! for the reason `set_delegation` gives: a proposal raised before another

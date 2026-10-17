@@ -53,6 +53,8 @@ pub enum ProposedAction {
         attestation_max_age: i64,
         reason: ComplianceReason,
     },
+    /// Issuing `amount` more into `token_account` (FR-022, FR-035).
+    Mint { token_account: Pubkey, amount: u64 },
 }
 
 impl ProposedAction {
@@ -96,6 +98,10 @@ impl ProposedAction {
                 *attestation_max_age,
                 *reason,
             ),
+            ProposedAction::Mint {
+                token_account,
+                amount,
+            } => ActionKind::mint(*token_account, *amount),
         }
     }
 
@@ -201,6 +207,13 @@ pub enum ActionKind {
         max_age: i64,
         reason: ComplianceReason,
     },
+    /// Further issuance (FR-022): into which account, how much.
+    ///
+    /// No reason (FR-017): issuance is the issuer's own business, not an
+    /// action against a holder. Not a transition either: the reserve is read
+    /// at execution, so an attestation that moved in between changes whether
+    /// it passes, not what the approvers signed. 41 bytes.
+    Mint { token_account: Pubkey, amount: u64 },
 }
 
 impl ActionKind {
@@ -313,6 +326,17 @@ impl ActionKind {
             attestor,
             max_age,
             reason,
+        })
+    }
+
+    /// The stored form of an issuance. Neither the reserve nor the account's
+    /// owner is checked here: both are read at execution, which is when they
+    /// decide anything.
+    pub fn mint(token_account: Pubkey, amount: u64) -> Result<Self> {
+        require!(amount > 0, ForgeError::IssuanceAmountZero);
+        Ok(ActionKind::Mint {
+            token_account,
+            amount,
         })
     }
 }
@@ -855,6 +879,54 @@ mod tests {
         assert_eq!(terms.len(), 1 + 32 + 8 + 32 + 8 + 2 + 32);
         assert_eq!(ActionKind::INIT_SPACE, terms.len());
         assert!(seizure.len() < ActionKind::INIT_SPACE);
+
+        // T038 appended issuance. Below the change of terms, so the account
+        // kept its size.
+        let mut issuance = Vec::new();
+        ActionKind::mint(wallet(7), 500)
+            .expect("valid")
+            .serialize(&mut issuance)
+            .expect("serialises");
+        assert_eq!(issuance[0], 6);
+        assert_eq!(issuance.len(), 1 + 32 + 8);
+        assert!(issuance.len() < ActionKind::INIT_SPACE);
+    }
+
+    #[test]
+    fn an_issuance_is_stored_as_proposed_under_a_token() {
+        let action = ProposedAction::Mint {
+            token_account: wallet(7),
+            amount: 500,
+        };
+        assert!(!action.is_issuer_scoped());
+        assert_eq!(
+            action
+                .stored(&an_issuer(), Some(&a_token()))
+                .expect("valid"),
+            ActionKind::Mint {
+                token_account: wallet(7),
+                amount: 500,
+            }
+        );
+    }
+
+    #[test]
+    fn an_issuance_of_nothing_never_becomes_a_proposal() {
+        assert_eq!(
+            err(ActionKind::mint(wallet(7), 0).map(|_| ())),
+            code(ForgeError::IssuanceAmountZero)
+        );
+    }
+
+    #[test]
+    fn the_account_and_the_amount_of_an_issuance_are_what_was_approved() {
+        let approved = ActionKind::mint(wallet(7), 500).expect("valid");
+        for different in [
+            ActionKind::mint(wallet(8), 500),
+            ActionKind::mint(wallet(7), 499),
+        ] {
+            assert_ne!(different.expect("valid"), approved);
+        }
     }
 
     const DAY: i64 = 24 * 60 * 60;

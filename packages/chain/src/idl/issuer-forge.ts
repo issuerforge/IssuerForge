@@ -1019,6 +1019,141 @@ export type IssuerForge = {
       ]
     },
     {
+      "name": "mint",
+      "docs": [
+        "Issues more of the token (FR-022) into the account of a member who",
+        "may authorise actions.",
+        "",
+        "Only by a matured proposal (FR-019, FR-035), and only within the",
+        "latest attestation by the current attestor: still current, and",
+        "covering circulation plus the amount — the gate of `create_token`."
+      ],
+      "discriminator": [
+        51,
+        57,
+        225,
+        47,
+        182,
+        146,
+        137,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "The mint authority the program signs as."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "The latest attestation of this token. No `seeds`: every attestation",
+            "is created by `init` at its PDA, and which one it is — this mint's,",
+            "the latest — is what `require_latest` checks."
+          ]
+        },
+        {
+          "name": "destination",
+          "docs": [
+            "The account the quorum approved. Which account it is, is part of the",
+            "proposal; whose it is, the handler checks."
+          ],
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.scope",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "mintArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "pauseCirculation",
       "docs": [
         "Pauses circulation of the token (FR-016): every transfer, issuance",
@@ -1515,7 +1650,8 @@ export type IssuerForge = {
         "`remaining_accounts` or on the deferred one through a proposal raised",
         "under the token, and with a reason (FR-017). The new attestor must",
         "already hold the attestor role. Earlier attestations keep the attestor",
-        "that signed them; only the next one is signed by the new one."
+        "that signed them; only the next one is signed by the new one, and",
+        "issuance waits for it."
       ],
       "discriminator": [
         95,
@@ -2875,6 +3011,21 @@ export type IssuerForge = {
       "code": 6076,
       "name": "attestationMaxAgeMismatch",
       "msg": "attestation is signed under a lifetime that is not the token's current one"
+    },
+    {
+      "code": 6077,
+      "name": "attestationByFormerAttestor",
+      "msg": "the latest attestation is signed by an attestor this token no longer has"
+    },
+    {
+      "code": 6078,
+      "name": "issuanceAmountZero",
+      "msg": "issuance amount must be above zero"
+    },
+    {
+      "code": 6079,
+      "name": "issuanceToANonMember",
+      "msg": "issuance goes only to an account of a member who may authorise actions"
     }
   ],
   "types": [
@@ -3023,6 +3174,19 @@ export type IssuerForge = {
                     "name": "complianceReason"
                   }
                 }
+              }
+            ]
+          },
+          {
+            "name": "mint",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
               }
             ]
           }
@@ -3775,6 +3939,22 @@ export type IssuerForge = {
       }
     },
     {
+      "name": "mintArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Repeated from the proposal, as in `seize`: the program compares the",
+              "two, and the indexer reads the issuance from this one instruction."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "policyConfig",
       "docs": [
         "A policy version. PDA: `[\"policy\", mint, version]`, the version a `u32`",
@@ -4047,6 +4227,19 @@ export type IssuerForge = {
                     "name": "complianceReason"
                   }
                 }
+              }
+            ]
+          },
+          {
+            "name": "mint",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
               }
             ]
           }
@@ -5573,6 +5766,141 @@ export const IDL: IssuerForge = {
       ]
     },
     {
+      "name": "mint",
+      "docs": [
+        "Issues more of the token (FR-022) into the account of a member who",
+        "may authorise actions.",
+        "",
+        "Only by a matured proposal (FR-019, FR-035), and only within the",
+        "latest attestation by the current attestor: still current, and",
+        "covering circulation plus the amount — the gate of `create_token`."
+      ],
+      "discriminator": [
+        51,
+        57,
+        225,
+        47,
+        182,
+        146,
+        137,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "issuerConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  115,
+                  115,
+                  117,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "issuer_config.issuer_id",
+                "account": "issuerConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenConfig",
+          "docs": [
+            "The mint authority the program signs as."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_config.mint",
+                "account": "tokenConfig"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "attestation",
+          "docs": [
+            "The latest attestation of this token. No `seeds`: every attestation",
+            "is created by `init` at its PDA, and which one it is — this mint's,",
+            "the latest — is what `require_latest` checks."
+          ]
+        },
+        {
+          "name": "destination",
+          "docs": [
+            "The account the quorum approved. Which account it is, is part of the",
+            "proposal; whose it is, the handler checks."
+          ],
+          "writable": true
+        },
+        {
+          "name": "proposal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  112,
+                  111,
+                  115,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "proposal.scope",
+                "account": "actionProposal"
+              },
+              {
+                "kind": "account",
+                "path": "proposal.nonce",
+                "account": "actionProposal"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "mintArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "pauseCirculation",
       "docs": [
         "Pauses circulation of the token (FR-016): every transfer, issuance",
@@ -6069,7 +6397,8 @@ export const IDL: IssuerForge = {
         "`remaining_accounts` or on the deferred one through a proposal raised",
         "under the token, and with a reason (FR-017). The new attestor must",
         "already hold the attestor role. Earlier attestations keep the attestor",
-        "that signed them; only the next one is signed by the new one."
+        "that signed them; only the next one is signed by the new one, and",
+        "issuance waits for it."
       ],
       "discriminator": [
         95,
@@ -7429,6 +7758,21 @@ export const IDL: IssuerForge = {
       "code": 6076,
       "name": "attestationMaxAgeMismatch",
       "msg": "attestation is signed under a lifetime that is not the token's current one"
+    },
+    {
+      "code": 6077,
+      "name": "attestationByFormerAttestor",
+      "msg": "the latest attestation is signed by an attestor this token no longer has"
+    },
+    {
+      "code": 6078,
+      "name": "issuanceAmountZero",
+      "msg": "issuance amount must be above zero"
+    },
+    {
+      "code": 6079,
+      "name": "issuanceToANonMember",
+      "msg": "issuance goes only to an account of a member who may authorise actions"
     }
   ],
   "types": [
@@ -7577,6 +7921,19 @@ export const IDL: IssuerForge = {
                     "name": "complianceReason"
                   }
                 }
+              }
+            ]
+          },
+          {
+            "name": "mint",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
               }
             ]
           }
@@ -8329,6 +8686,22 @@ export const IDL: IssuerForge = {
       }
     },
     {
+      "name": "mintArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Repeated from the proposal, as in `seize`: the program compares the",
+              "two, and the indexer reads the issuance from this one instruction."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "policyConfig",
       "docs": [
         "A policy version. PDA: `[\"policy\", mint, version]`, the version a `u32`",
@@ -8601,6 +8974,19 @@ export const IDL: IssuerForge = {
                     "name": "complianceReason"
                   }
                 }
+              }
+            ]
+          },
+          {
+            "name": "mint",
+            "fields": [
+              {
+                "name": "tokenAccount",
+                "type": "pubkey"
+              },
+              {
+                "name": "amount",
+                "type": "u64"
               }
             ]
           }

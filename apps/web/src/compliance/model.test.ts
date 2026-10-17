@@ -242,6 +242,12 @@ describe('headings and standing', () => {
     )
   })
 
+  it('names an issuance by its amount', () => {
+    expect(actionTitle({ kind: 'mint', tokenAccount: HOLDER, amount: '2500000' }, 6, 'vNGN')).toBe(
+      'Issuance of 2.500000 vNGN',
+    )
+  })
+
   it('writes a period in the largest whole unit', () => {
     expect(formatPeriod(86_400)).toBe('1 day')
     expect(formatPeriod(90 * 86_400)).toBe('90 days')

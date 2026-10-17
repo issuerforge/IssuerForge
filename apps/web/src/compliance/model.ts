@@ -217,6 +217,8 @@ export function actionTitle(
       return action.attestor === action.previousAttestor
         ? `Attestation lifetime: ${formatPeriod(action.previousMaxAge)} → ${formatPeriod(action.maxAge)}`
         : 'Replacement of the reserve attestor'
+    case 'mint':
+      return `Issuance of ${formatUnits(action.amount, decimals)}${symbol ? ` ${symbol}` : ''}`
   }
 }
 

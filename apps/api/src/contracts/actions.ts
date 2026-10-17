@@ -135,7 +135,19 @@ export const proposalActionSchema = z.discriminatedUnion('kind', [
     maxAge: z.number().int().positive(),
     reason: complianceReasonSchema,
   }),
+  z.object({ kind: z.literal('mint'), tokenAccount: addressSchema, amount: u64Schema }),
 ])
+
+/**
+ * An issuance as a proposal body — shown, not raised: the request schema
+ * above does not accept one. Listed so `body` below means one thing for
+ * every kind.
+ */
+export const issuanceBodySchema = z.object({
+  kind: z.literal('mint'),
+  tokenAccount: addressSchema,
+  amount: u64Schema,
+})
 
 export const proposalSchema = z.object({
   address: addressSchema,
@@ -184,7 +196,7 @@ export const proposalDetailResponseSchema = z.object({
    * the account, so it is the same object as `proposal.action`; it is listed
    * here only so the field means one thing for every kind.
    */
-  body: z.union([proposedActionBodySchema, delegationBodySchema]),
+  body: z.union([proposedActionBodySchema, delegationBodySchema, issuanceBodySchema]),
   authorising: z.array(quorumMemberSchema),
 })
 

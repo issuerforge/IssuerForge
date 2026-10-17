@@ -4,6 +4,7 @@ import {
   decodeProposedAction,
   fromBase64,
   issuerConfigPda,
+  reserveAttestationPda,
 } from '@forge/chain'
 import { encodeRules, rulesHash, toHex } from '@forge/policy/layout'
 import { OPEN_POLICY, type PolicyRules } from '@forge/policy/model'
@@ -14,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 import type { ActionReader, ProposalView, QuorumView, TokenView } from '../actions.ts'
 import type { ChainReader } from '../chain.ts'
 import type { ComplianceReader } from '../compliance.ts'
+import { proposalDetailResponseSchema } from '../contracts/actions.ts'
 import type { Directory, RosterEntry } from '../directory.ts'
 import type { HolderStore } from '../holders.ts'
 import type { IssuanceStore } from '../issuance.ts'
@@ -51,12 +53,13 @@ const STRICT: PolicyRules = { ...OPEN_POLICY, status: { ...OPEN_POLICY.status, m
 const ATTESTOR = 'Vote111111111111111111111111111111111111111'
 const SUCCESSOR = 'Config1111111111111111111111111111111111111'
 const WEEK = 7 * 86_400
-/** The token as the chain holds it: version 1, attested by `ATTESTOR` for a week. */
+/** The token as the chain holds it: version 1, attested by `ATTESTOR` for a week, three times. */
 const TOKEN: TokenView = {
   issuerConfig: OWN_CONFIG,
   policyVersion: 1,
   attestor: ATTESTOR,
   attestationMaxAge: WEEK,
+  attestationCount: 3n,
 }
 
 const unused = <T extends object>(name: string) =>
@@ -132,6 +135,9 @@ function app(fakes: Fakes = {}) {
         return { kind: view.action.kind, reason: view.action.reason }
       }
       if (view.action.kind === 'set-delegation') return undefined
+      if (view.action.kind === 'mint') {
+        return { ...view.action, tokenAccount: new PublicKey(view.action.tokenAccount) }
+      }
       if (view.action.kind === 'set-attestor') {
         return {
           kind: 'set-attestor',
@@ -250,6 +256,15 @@ const handover = (over: Partial<ProposalView> = {}) =>
       maxAge: 30 * 86_400,
       reason: REASON,
     },
+    ...over,
+  })
+
+/** A member's own account the issuance lands in; any address the tests do not otherwise use. */
+const TREASURY_ACCOUNT = 'Sysvar1nstructions1111111111111111111111111'
+
+const issuance = (over: Partial<ProposalView> = {}) =>
+  proposal({
+    action: { kind: 'mint', tokenAccount: TREASURY_ACCOUNT, amount: SEIZED },
     ...over,
   })
 
@@ -489,6 +504,21 @@ describe('reading proposals', () => {
   })
 })
 
+describe('reading an issuance proposal', () => {
+  it('is listed with its account and amount, the amount as a u64 string, and its body', async () => {
+    const response = await get({ proposal: issuance() }, `/api/actions/${PROPOSAL}`)
+    expect(response.status).toBe(200)
+    const json = (await response.json()) as {
+      proposal: { action: Record<string, unknown> }
+      body: Record<string, unknown>
+    }
+    const shown = { kind: 'mint', tokenAccount: TREASURY_ACCOUNT, amount: SEIZED.toString() }
+    expect(json.proposal.action).toEqual(shown)
+    expect(json.body).toEqual(shown)
+    expect(proposalDetailResponseSchema.safeParse(json).success).toBe(true)
+  })
+})
+
 describe('approving', () => {
   it('a second member approves with one signature, their own', async () => {
     const response = await post(
@@ -646,6 +676,30 @@ describe('executing', () => {
       raisedAgainst: { attestor: ATTESTOR, maxAge: WEEK },
       now: { attestor: ATTESTOR, maxAge: 86_400 },
     })
+  })
+
+  it('assembles mint against the latest attestation, the approvers named, only the payer signing', async () => {
+    const response = await post(
+      { proposal: issuance({ approvals: [OFFICER, ADMIN] }) },
+      `/api/actions/${PROPOSAL}/execute`,
+    )
+    expect(response.status).toBe(200)
+
+    const transaction = (await jsonOf(response)).transaction as unknown as TxJson
+    const { accounts } = instructionOf(transaction)
+    expect(transaction.step).toBe('mint')
+    expect(transaction.signers).toEqual([ADMIN])
+    expect(accounts[2]).toBe(MINT)
+    expect(accounts[3]).toBe(reserveAttestationPda(new PublicKey(MINT), 2n).toBase58())
+    expect(accounts[4]).toBe(TREASURY_ACCOUNT)
+    expect(accounts[5]).toBe(PROPOSAL)
+    expect(accounts.slice(7)).toEqual([OFFICER, ADMIN])
+  })
+
+  it('an issuance one approval short is not executed', async () => {
+    const response = await post({ proposal: issuance() }, `/api/actions/${PROPOSAL}/execute`)
+    expect(response.status).toBe(400)
+    expect((await errorOf(response)).details).toMatchObject({ state: 'open' })
   })
 
   it('a proposal for a version that is no longer next can only lapse', async () => {

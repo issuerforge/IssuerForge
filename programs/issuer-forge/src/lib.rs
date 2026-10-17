@@ -241,9 +241,20 @@ pub mod issuer_forge {
     /// `remaining_accounts` or on the deferred one through a proposal raised
     /// under the token, and with a reason (FR-017). The new attestor must
     /// already hold the attestor role. Earlier attestations keep the attestor
-    /// that signed them; only the next one is signed by the new one.
+    /// that signed them; only the next one is signed by the new one, and
+    /// issuance waits for it.
     pub fn set_attestor(ctx: Context<SetAttestor>, args: SetAttestorArgs) -> Result<()> {
         instructions::set_attestor::handler(ctx, args)
+    }
+
+    /// Issues more of the token (FR-022) into the account of a member who
+    /// may authorise actions.
+    ///
+    /// Only by a matured proposal (FR-019, FR-035), and only within the
+    /// latest attestation by the current attestor: still current, and
+    /// covering circulation plus the amount — the gate of `create_token`.
+    pub fn mint(ctx: Context<MintTokens>, args: MintArgs) -> Result<()> {
+        instructions::mint::handler(ctx, args)
     }
 
     /// Creates the `ExtraAccountMetaList` — the list of accounts the token
