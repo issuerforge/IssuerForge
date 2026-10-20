@@ -22,10 +22,27 @@
 //!
 //! **A pause stops it**, at the token program: issuance is not among the
 //! issuer's actions FR-016 exempts.
+//!
+//! **The platform's fee is cut from the approved amount (FR-038)**, at the
+//! rate `TokenConfig` declares: the treasury's associated account receives
+//! `fee_on(amount)`, the approved account the rest. The gate sees the whole
+//! `amount`, so a fee the reserve does not cover is never issued (FR-038b).
+//! The rate is read at execution and never written back, so whatever becomes
+//! of it later changes nothing already issued (FR-038c). The treasury's
+//! account is created on the first fee and thawed — `DefaultAccountState =
+//! Frozen` applies to it as to anyone, and anyone may create it first — but
+//! not over an officer's `FreezeRecord`, which `thaw_holder` respects too.
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{mint_to, Mint, MintTo, TokenAccount, TokenInterface};
+use anchor_spl::associated_token::{
+    self, get_associated_token_address_with_program_id, AssociatedToken,
+};
+use anchor_spl::token_2022::spl_token_2022::extension::StateWithExtensions;
+use anchor_spl::token_2022::spl_token_2022::state::{Account as SplTokenAccount, AccountState};
+use anchor_spl::token_interface::{
+    mint_to, thaw_account, Mint, MintTo, ThawAccount, TokenAccount, TokenInterface,
+};
 
-use crate::constants::{ISSUER_SEED, PROPOSAL_SEED, TOKEN_SEED};
+use crate::constants::{FREEZE_SEED, ISSUER_SEED, PROPOSAL_SEED, TOKEN_SEED};
 use crate::error::ForgeError;
 use crate::quorum;
 use crate::reserve::{require_latest, ReserveCheck};
@@ -75,6 +92,29 @@ pub struct MintTokens<'info> {
     )]
     pub destination: Box<InterfaceAccount<'info, TokenAccount>>,
 
+    /// CHECK: the wallet `TokenConfig` declares; the ATA program needs it to
+    /// create its account, nothing is read from it.
+    #[account(address = token_config.treasury @ ForgeError::TreasuryAccountMismatch)]
+    pub treasury: UncheckedAccount<'info>,
+
+    /// CHECK: pinned to the treasury's associated account; only the ATA
+    /// program can create an account at that address, and it creates it as a
+    /// token account of this mint owned by the treasury.
+    #[account(
+        mut,
+        address = get_associated_token_address_with_program_id(
+            &token_config.treasury,
+            &token_config.mint,
+            &token_program.key(),
+        ) @ ForgeError::TreasuryAccountMismatch,
+    )]
+    pub treasury_account: UncheckedAccount<'info>,
+
+    /// CHECK: only whether it exists is read — an officer's freeze of the
+    /// treasury's account, which issuance must not thaw.
+    #[account(seeds = [FREEZE_SEED, treasury_account.key().as_ref()], bump)]
+    pub treasury_freeze: UncheckedAccount<'info>,
+
     #[account(
         mut,
         seeds = [PROPOSAL_SEED, proposal.scope.as_ref(), &proposal.nonce.to_le_bytes()],
@@ -83,10 +123,23 @@ pub struct MintTokens<'info> {
     )]
     pub proposal: Box<Account<'info, ActionProposal>>,
 
+    /// Pays for the treasury's account on the first fee. Grants nothing —
+    /// the quorum is in `proposal`.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
     pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
     // `remaining_accounts` are the proposal's approvers, in its order —
-    // read-only and unsigned, as in `seize`. There is no signer of our own:
-    // executing a matured proposal grants nothing, whoever pays the fee.
+    // read-only and unsigned, as in `seize`.
+}
+
+fn is_frozen(account: &AccountInfo) -> Result<bool> {
+    let data = account.try_borrow_data()?;
+    let state = StateWithExtensions::<SplTokenAccount>::unpack(&data)
+        .map_err(|_| error!(ForgeError::TreasuryAccountMismatch))?;
+    Ok(state.base.state == AccountState::Frozen)
 }
 
 pub(crate) fn handler(ctx: Context<MintTokens>, args: MintArgs) -> Result<()> {
@@ -124,19 +177,68 @@ pub(crate) fn handler(ctx: Context<MintTokens>, args: MintArgs) -> Result<()> {
     }
     .require_within_reserve()?;
 
+    let token_program = accounts.token_program.to_account_info();
+    let mint = accounts.mint.to_account_info();
+    let authority = accounts.token_config.to_account_info();
     let mint_key = accounts.token_config.mint;
     let signer: &[&[u8]] = &[TOKEN_SEED, mint_key.as_ref(), &[accounts.token_config.bump]];
+
+    let fee = accounts.token_config.fee_on(args.amount);
+    if fee > 0 {
+        let treasury = accounts.treasury_account.to_account_info();
+        if treasury.data_is_empty() {
+            associated_token::create(CpiContext::new(
+                accounts.associated_token_program.to_account_info(),
+                associated_token::Create {
+                    payer: accounts.payer.to_account_info(),
+                    associated_token: treasury.clone(),
+                    authority: accounts.treasury.to_account_info(),
+                    mint: mint.clone(),
+                    system_program: accounts.system_program.to_account_info(),
+                    token_program: token_program.clone(),
+                },
+            ))?;
+        }
+        if is_frozen(&treasury)? {
+            require!(
+                accounts.treasury_freeze.data_is_empty(),
+                ForgeError::TreasuryFrozenByOfficer
+            );
+            thaw_account(CpiContext::new_with_signer(
+                token_program.clone(),
+                ThawAccount {
+                    account: treasury.clone(),
+                    mint: mint.clone(),
+                    authority: authority.clone(),
+                },
+                &[signer],
+            ))?;
+        }
+        mint_to(
+            CpiContext::new_with_signer(
+                token_program.clone(),
+                MintTo {
+                    mint: mint.clone(),
+                    to: treasury,
+                    authority: authority.clone(),
+                },
+                &[signer],
+            ),
+            fee,
+        )?;
+    }
+
     mint_to(
         CpiContext::new_with_signer(
-            accounts.token_program.to_account_info(),
+            token_program,
             MintTo {
-                mint: accounts.mint.to_account_info(),
+                mint,
                 to: accounts.destination.to_account_info(),
-                authority: accounts.token_config.to_account_info(),
+                authority,
             },
             &[signer],
         ),
-        args.amount,
+        args.amount - fee,
     )?;
 
     // The last action, as in `seize`.

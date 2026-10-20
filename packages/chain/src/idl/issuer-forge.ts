@@ -1108,6 +1108,45 @@ export type IssuerForge = {
           "writable": true
         },
         {
+          "name": "treasury",
+          "docs": [
+            "create its account, nothing is read from it."
+          ]
+        },
+        {
+          "name": "treasuryAccount",
+          "docs": [
+            "program can create an account at that address, and it creates it as a",
+            "token account of this mint owned by the treasury."
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasuryFreeze",
+          "docs": [
+            "treasury's account, which issuance must not thaw."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "treasuryAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "proposal",
           "writable": true,
           "pda": {
@@ -1139,7 +1178,24 @@ export type IssuerForge = {
           }
         },
         {
+          "name": "payer",
+          "docs": [
+            "Pays for the treasury's account on the first fee. Grants nothing —",
+            "the quorum is in `proposal`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
           "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -3026,6 +3082,16 @@ export type IssuerForge = {
       "code": 6079,
       "name": "issuanceToANonMember",
       "msg": "issuance goes only to an account of a member who may authorise actions"
+    },
+    {
+      "code": 6080,
+      "name": "treasuryAccountMismatch",
+      "msg": "the fee goes only to the associated account of the token's treasury"
+    },
+    {
+      "code": 6081,
+      "name": "treasuryFrozenByOfficer",
+      "msg": "the treasury's account is frozen by an officer; issuance waits for the freeze to be lifted"
     }
   ],
   "types": [
@@ -5855,6 +5921,45 @@ export const IDL: IssuerForge = {
           "writable": true
         },
         {
+          "name": "treasury",
+          "docs": [
+            "create its account, nothing is read from it."
+          ]
+        },
+        {
+          "name": "treasuryAccount",
+          "docs": [
+            "program can create an account at that address, and it creates it as a",
+            "token account of this mint owned by the treasury."
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasuryFreeze",
+          "docs": [
+            "treasury's account, which issuance must not thaw."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  114,
+                  101,
+                  101,
+                  122,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "treasuryAccount"
+              }
+            ]
+          }
+        },
+        {
           "name": "proposal",
           "writable": true,
           "pda": {
@@ -5886,7 +5991,24 @@ export const IDL: IssuerForge = {
           }
         },
         {
+          "name": "payer",
+          "docs": [
+            "Pays for the treasury's account on the first fee. Grants nothing —",
+            "the quorum is in `proposal`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
           "name": "tokenProgram"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -7773,6 +7895,16 @@ export const IDL: IssuerForge = {
       "code": 6079,
       "name": "issuanceToANonMember",
       "msg": "issuance goes only to an account of a member who may authorise actions"
+    },
+    {
+      "code": 6080,
+      "name": "treasuryAccountMismatch",
+      "msg": "the fee goes only to the associated account of the token's treasury"
+    },
+    {
+      "code": 6081,
+      "name": "treasuryFrozenByOfficer",
+      "msg": "the treasury's account is frozen by an officer; issuance waits for the freeze to be lifted"
     }
   ],
   "types": [

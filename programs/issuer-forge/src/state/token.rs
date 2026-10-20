@@ -71,6 +71,16 @@ pub struct TokenConfig {
     pub reserve_currency: [u8; CURRENCY_BYTES],
 }
 
+impl TokenConfig {
+    /// The platform's share of `amount` at the declared rate, rounded up as
+    /// Token-2022's `TransferFee` rounds. Never above `amount`: `create_token`
+    /// caps the rate at 10 000 bps.
+    pub fn fee_on(&self, amount: u64) -> u64 {
+        let fee = (u128::from(amount) * u128::from(self.fee_bps)).div_ceil(10_000);
+        u64::try_from(fee).unwrap_or(amount)
+    }
+}
+
 /// The offset of `attestation_credential` from the start of the account,
 /// including the Anchor discriminator.
 ///
@@ -154,5 +164,37 @@ mod tests {
     #[test]
     fn declared_space_covers_the_serialised_account() {
         assert_eq!(serialised().len(), 8 + TokenConfig::INIT_SPACE);
+    }
+
+    fn at_rate(fee_bps: u16) -> TokenConfig {
+        TokenConfig {
+            fee_bps,
+            ..sample()
+        }
+    }
+
+    #[test]
+    fn the_fee_is_the_declared_share_of_the_amount() {
+        assert_eq!(at_rate(12).fee_on(10_000), 12);
+        assert_eq!(at_rate(12).fee_on(1_000_000_000), 1_200_000);
+    }
+
+    #[test]
+    fn a_fraction_of_a_unit_is_rounded_up() {
+        // As Token-2022's `TransferFee` rounds: a nonzero rate never yields a
+        // zero fee, so splitting an issuance does not get it past the fee.
+        assert_eq!(at_rate(12).fee_on(1), 1);
+        assert_eq!(at_rate(12).fee_on(10_001), 13);
+    }
+
+    #[test]
+    fn a_zero_rate_takes_nothing() {
+        assert_eq!(at_rate(0).fee_on(u64::MAX), 0);
+    }
+
+    #[test]
+    fn the_whole_rate_takes_the_whole_amount_without_overflow() {
+        assert_eq!(at_rate(10_000).fee_on(u64::MAX), u64::MAX);
+        assert!(at_rate(9_999).fee_on(u64::MAX) < u64::MAX);
     }
 }

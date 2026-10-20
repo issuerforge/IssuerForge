@@ -213,6 +213,10 @@ pub enum ForgeError {
     IssuanceAmountZero,
     #[msg("issuance goes only to an account of a member who may authorise actions")]
     IssuanceToANonMember,
+    #[msg("the fee goes only to the associated account of the token's treasury")]
+    TreasuryAccountMismatch,
+    #[msg("the treasury's account is frozen by an officer; issuance waits for the freeze to be lifted")]
+    TreasuryFrozenByOfficer,
 }
 
 /// The first code of the checks section. The refusal section takes exactly `ERROR_CODE_OFFSET…+12`.
@@ -364,6 +368,15 @@ mod tests {
         assert_eq!(
             u32::from(ForgeError::IssuanceToANonMember),
             VALIDATION_ERROR_BASE + 66
+        );
+        // The two added by T039.
+        assert_eq!(
+            u32::from(ForgeError::TreasuryAccountMismatch),
+            VALIDATION_ERROR_BASE + 67
+        );
+        assert_eq!(
+            u32::from(ForgeError::TreasuryFrozenByOfficer),
+            VALIDATION_ERROR_BASE + 68
         );
     }
 }

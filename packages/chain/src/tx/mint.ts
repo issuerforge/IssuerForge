@@ -1,8 +1,13 @@
-// Executing an issuance a quorum has approved (FR-022, FR-035).
+// Executing an issuance a quorum has approved (FR-022, FR-035, FR-038).
 //
-// **No signer of its own**, as `pause.ts`: the quorum is in the proposal,
-// and whoever pays the fee is granted nothing by paying. The approvers follow
-// the accounts, in the proposal's order (FR-019c), unsigned.
+// **Only the payer signs**, as in `seize.ts`: the quorum is in the proposal,
+// and the payer is granted nothing — it pays the transaction fee and, on the
+// first platform fee, the treasury's associated account. The approvers
+// follow the accounts, in the proposal's order (FR-019c), unsigned.
+//
+// **The treasury comes as an argument**, read by the caller from
+// `TokenConfig.treasury` like the attestation index below; the program
+// refuses any other.
 //
 // **The attestation index comes as an argument and is not read here**, for
 // the reason `issue.ts` gives about the token number: the builder stays pure,
@@ -12,9 +17,13 @@
 // caller did not show.
 import { BN } from '@coral-xyz/anchor'
 import { U64_MAX } from '@forge/shared/primitives'
-import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_2022_PROGRAM_ID,
+} from '@solana/spl-token'
 import type { PublicKey } from '@solana/web3.js'
-import { issuerConfigPda, reserveAttestationPda, tokenConfigPda } from '../pda.ts'
+import { freezeRecordPda, issuerConfigPda, reserveAttestationPda, tokenConfigPda } from '../pda.ts'
 import type { ForgeProgram } from '../program.ts'
 import { type TxPlan, toPlan } from './plan.ts'
 
@@ -30,6 +39,8 @@ export type MintArgs = {
   readonly attestationIndex: bigint
   /** `ActionProposal.approvals`, in order. */
   readonly approvers: readonly PublicKey[]
+  /** `TokenConfig.treasury`: the platform's wallet the fee goes to. */
+  readonly treasury: PublicKey
   /** Pays the fee. Grants nothing. */
   readonly payer: PublicKey
 }
@@ -45,6 +56,13 @@ export async function buildMint(program: ForgeProgram, args: MintArgs): Promise<
     throw new RangeError('an issuance lists the approvers of its proposal')
   }
 
+  // Off the curve allowed: a treasury may well be a multisig's PDA.
+  const treasuryAccount = getAssociatedTokenAddressSync(
+    args.treasury,
+    args.mint,
+    true,
+    TOKEN_2022_PROGRAM_ID,
+  )
   const instruction = await program.methods
     .mint({ amount: new BN(args.amount.toString()) })
     .accountsPartial({
@@ -53,8 +71,13 @@ export async function buildMint(program: ForgeProgram, args: MintArgs): Promise<
       mint: args.mint,
       attestation: reserveAttestationPda(args.mint, args.attestationIndex),
       destination: args.tokenAccount,
+      treasury: args.treasury,
+      treasuryAccount,
+      treasuryFreeze: freezeRecordPda(treasuryAccount),
       proposal: args.proposal,
+      payer: args.payer,
       tokenProgram: TOKEN_2022_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
     })
     .remainingAccounts(
       args.approvers.map((pubkey) => ({ pubkey, isSigner: false, isWritable: false })),

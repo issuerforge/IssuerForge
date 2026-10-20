@@ -1,11 +1,16 @@
 import { BorshInstructionCoder } from '@coral-xyz/anchor'
 import { U64_MAX } from '@forge/shared/primitives'
-import { TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
-import { Connection, PublicKey, type TransactionInstruction } from '@solana/web3.js'
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_2022_PROGRAM_ID,
+} from '@solana/spl-token'
+import { Connection, PublicKey, SystemProgram, type TransactionInstruction } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import { IDL } from '../idl/issuer-forge.ts'
 import {
   actionProposalPda,
+  freezeRecordPda,
   issuerConfigPda,
   PROGRAM_ID,
   reserveAttestationPda,
@@ -24,6 +29,8 @@ const TOKEN_ACCOUNT = new PublicKey('SysvarRecentB1ockHashes11111111111111111111
 const ADMIN_A = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const ADMIN_B = new PublicKey('SysvarS1otHashes111111111111111111111111111')
 const PAYER = new PublicKey('SysvarRent111111111111111111111111111111111')
+const TREASURY = new PublicKey('SysvarStakeHistory1111111111111111111111111')
+const TREASURY_ACCOUNT = getAssociatedTokenAddressSync(TREASURY, MINT, true, TOKEN_2022_PROGRAM_ID)
 const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
 const NONCE = 42n
 const PROPOSAL = actionProposalPda(MINT, NONCE)
@@ -44,6 +51,7 @@ const mintArgs = (over: Partial<MintArgs> = {}): MintArgs => ({
   amount: 1_000_000_000n,
   attestationIndex: 3n,
   approvers: [ADMIN_A, ADMIN_B],
+  treasury: TREASURY,
   payer: PAYER,
   ...over,
 })
@@ -51,7 +59,7 @@ const mintArgs = (over: Partial<MintArgs> = {}): MintArgs => ({
 const base58 = (keys: readonly PublicKey[]) => keys.map((key) => key.toBase58())
 
 describe('an issuance', () => {
-  it('addresses the accounts the program declares, the latest attestation, the approvers after them', async () => {
+  it('addresses the accounts the program declares, the latest attestation, the treasury, the approvers after them', async () => {
     const plan = await buildMint(program, mintArgs())
     const instruction = only(plan)
 
@@ -64,8 +72,14 @@ describe('an issuance', () => {
         MINT,
         reserveAttestationPda(MINT, 3n),
         TOKEN_ACCOUNT,
+        TREASURY,
+        TREASURY_ACCOUNT,
+        freezeRecordPda(TREASURY_ACCOUNT),
         PROPOSAL,
+        PAYER,
         TOKEN_2022_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+        SystemProgram.programId,
         ADMIN_A,
         ADMIN_B,
       ]),

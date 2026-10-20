@@ -10,6 +10,7 @@ import { encodeRules, rulesHash, toHex } from '@forge/policy/layout'
 import { OPEN_POLICY, type PolicyRules } from '@forge/policy/model'
 import { ROLE } from '@forge/shared/api'
 import { createLogger } from '@forge/shared/log'
+import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import type { ActionReader, ProposalView, QuorumView, TokenView } from '../actions.ts'
@@ -53,6 +54,7 @@ const STRICT: PolicyRules = { ...OPEN_POLICY, status: { ...OPEN_POLICY.status, m
 const ATTESTOR = 'Vote111111111111111111111111111111111111111'
 const SUCCESSOR = 'Config1111111111111111111111111111111111111'
 const WEEK = 7 * 86_400
+const PLATFORM_TREASURY = 'Stake11111111111111111111111111111111111111'
 /** The token as the chain holds it: version 1, attested by `ATTESTOR` for a week, three times. */
 const TOKEN: TokenView = {
   issuerConfig: OWN_CONFIG,
@@ -60,6 +62,7 @@ const TOKEN: TokenView = {
   attestor: ATTESTOR,
   attestationMaxAge: WEEK,
   attestationCount: 3n,
+  treasury: PLATFORM_TREASURY,
 }
 
 const unused = <T extends object>(name: string) =>
@@ -679,7 +682,7 @@ describe('executing', () => {
     })
   })
 
-  it('assembles mint against the latest attestation, the approvers named, only the payer signing', async () => {
+  it('assembles mint against the latest attestation, the token’s treasury, the approvers named, only the payer signing', async () => {
     const response = await post(
       { proposal: issuance({ approvals: [OFFICER, ADMIN] }) },
       `/api/actions/${PROPOSAL}/execute`,
@@ -693,8 +696,17 @@ describe('executing', () => {
     expect(accounts[2]).toBe(MINT)
     expect(accounts[3]).toBe(reserveAttestationPda(new PublicKey(MINT), 2n).toBase58())
     expect(accounts[4]).toBe(TREASURY_ACCOUNT)
-    expect(accounts[5]).toBe(PROPOSAL)
-    expect(accounts.slice(7)).toEqual([OFFICER, ADMIN])
+    expect(accounts[5]).toBe(PLATFORM_TREASURY)
+    expect(accounts[6]).toBe(
+      getAssociatedTokenAddressSync(
+        new PublicKey(PLATFORM_TREASURY),
+        new PublicKey(MINT),
+        true,
+        TOKEN_2022_PROGRAM_ID,
+      ).toBase58(),
+    )
+    expect(accounts[8]).toBe(PROPOSAL)
+    expect(accounts.slice(13)).toEqual([OFFICER, ADMIN])
   })
 
   it('an issuance one approval short is not executed', async () => {

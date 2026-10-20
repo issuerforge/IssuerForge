@@ -1,12 +1,14 @@
-//! Further issuance at runtime (T038, FR-022, FR-023, FR-024b, FR-035).
+//! Further issuance at runtime (T038, T039, FR-022, FR-023, FR-024b, FR-035,
+//! FR-038).
 //!
 //! **What this covers and the unit tests cannot.** `reserve.rs` tests the
 //! gate as arithmetic and `state/proposal.rs` what an issuance proposal
 //! carries. Neither can say that the supply the gate reads is the mint's
 //! own, that the token program mints only on the PDA's signature, or that a
-//! pause refuses issuance before the gate is reached. This file runs them
-//! against the real Token-2022, with the attestations written by the real
-//! `attest_reserve` and the attestor replaced by the real `set_attestor`.
+//! pause refuses issuance before the gate is reached, or that the fee lands
+//! in an account the ATA program created. This file runs them against the
+//! real Token-2022 and ATA programs, with the attestations written by the
+//! real `attest_reserve` and the attestor replaced by the real `set_attestor`.
 //!
 //! **`cargo test` does not rebuild the bytecode** — see `tests/proposal.rs`;
 //! the same guard applies here.
@@ -17,6 +19,7 @@ use anchor_lang::prelude::Pubkey as AnchorPubkey;
 use anchor_lang::solana_program::program_option::COption;
 use anchor_lang::solana_program::program_pack::Pack;
 use anchor_lang::{AccountDeserialize, AccountSerialize, InstructionData, ToAccountMetas};
+use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_2022::spl_token_2022;
 use anchor_spl::token_2022::spl_token_2022::error::TokenError;
 use anchor_spl::token_2022::spl_token_2022::extension::{
@@ -26,16 +29,20 @@ use anchor_spl::token_2022::spl_token_2022::extension::{
 use anchor_spl::token_2022::spl_token_2022::state::{
     Account as TokenAccountState, AccountState, Mint as MintState,
 };
-use issuer_forge::constants::{ISSUER_SEED, MAX_MEMBERS, PROPOSAL_SEED, RESERVE_SEED, TOKEN_SEED};
+use issuer_forge::constants::{
+    FREEZE_SEED, ISSUER_SEED, MAX_MEMBERS, PROPOSAL_SEED, RESERVE_SEED, TOKEN_SEED,
+};
 use issuer_forge::error::ForgeError;
-use issuer_forge::instructions::{AttestReserveArgs, MintArgs, ProposeActionArgs, SetAttestorArgs};
+use issuer_forge::instructions::{
+    AttestReserveArgs, FreezeHolderArgs, MintArgs, ProposeActionArgs, SetAttestorArgs,
+};
 use issuer_forge::state::{
     case_ref_bytes, currency_bytes, delegation, role, ActionProposal, ComplianceReason,
     IssuerConfig, Member, ProposedAction, ReserveAttestation, TokenConfig,
 };
 use mollusk_svm::result::{InstructionResult, ProgramResult};
 use mollusk_svm::Mollusk;
-use mollusk_svm_programs_token::token2022;
+use mollusk_svm_programs_token::{associated_token, token2022};
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_program_error::ProgramError;
@@ -50,6 +57,8 @@ const OBSERVER: u8 = 14;
 const ATTESTOR: u8 = 15;
 const PAYER: u8 = 16;
 const NEW_ATTESTOR: u8 = 17;
+/// The platform's wallet, outside the membership.
+const TREASURY: u8 = 94;
 const OPERATOR: u8 = 90;
 
 /// A holder outside the membership, thawed and in good standing.
@@ -65,6 +74,8 @@ const SUPPLY: u64 = 1_000_000_000;
 const RESERVE: u64 = 2 * SUPPLY;
 const HEADROOM: u64 = RESERVE - SUPPLY;
 const SOL: u64 = 1_000_000_000;
+/// 0.12%, as `state/token.rs` declares it.
+const FEE_BPS: u16 = 12;
 
 /// The proposal numbers the fixture prepares accounts for.
 const NONCES: [u64; 3] = [1, 2, 3];
@@ -187,6 +198,14 @@ fn attestation_of(mint: AnchorPubkey, index: u64) -> (AnchorPubkey, u8) {
     )
 }
 
+fn treasury_account_of(mint: AnchorPubkey) -> AnchorPubkey {
+    get_associated_token_address_with_program_id(&wallet(TREASURY), &mint, &spl_token_2022::ID)
+}
+
+fn freeze_record_of(token_account: AnchorPubkey) -> AnchorPubkey {
+    AnchorPubkey::find_program_address(&[FREEZE_SEED, token_account.as_ref()], &issuer_forge::ID).0
+}
+
 fn proposal_of(mint: AnchorPubkey, nonce: u64) -> AnchorPubkey {
     AnchorPubkey::find_program_address(
         &[PROPOSAL_SEED, mint.as_ref(), &nonce.to_le_bytes()],
@@ -201,13 +220,18 @@ struct Fixture {
     mint: AnchorPubkey,
     issuer_config: AnchorPubkey,
     token_config: AnchorPubkey,
+    treasury_account: AnchorPubkey,
 }
 
 impl Fixture {
+    fn new() -> Self {
+        Self::with_fee(0)
+    }
+
     /// A token as `create_token` leaves it: attestation #0 for `RESERVE`,
     /// signed a day ago by its attestor, `SUPPLY` already issued to the
-    /// founder.
-    fn new() -> Self {
+    /// founder, the treasury's account not yet created.
+    fn with_fee(fee_bps: u16) -> Self {
         locate_artifact();
 
         let program_id = issuer_forge::ID;
@@ -256,9 +280,9 @@ impl Fixture {
             attestation_credential: wallet(91),
             attestation_schema: wallet(92),
             attestor: wallet(ATTESTOR),
-            treasury: wallet(94),
+            treasury: wallet(TREASURY),
             policy_version: 1,
-            fee_bps: 0,
+            fee_bps,
             attestation_max_age: MAX_AGE,
             paused_at: 0,
             bump: token_bump,
@@ -279,7 +303,10 @@ impl Fixture {
 
         let mut mollusk = Mollusk::new(&sol(&program_id), "issuer_forge");
         token2022::add_program(&mut mollusk);
+        associated_token::add_program(&mut mollusk);
         mollusk.sysvars.clock.unix_timestamp = NOW;
+
+        let treasury_account = treasury_account_of(mint);
 
         let mut accounts = vec![
             (sol(&issuer_config), stored(&issuer, SOL)),
@@ -304,6 +331,9 @@ impl Fixture {
                 token_account(seed, mint, amount),
             ));
         }
+        accounts.push((sol(&wallet(TREASURY)), uninitialised()));
+        accounts.push((sol(&treasury_account), uninitialised()));
+        accounts.push((sol(&freeze_record_of(treasury_account)), uninitialised()));
         for index in LATER_ATTESTATIONS {
             accounts.push((sol(&attestation_of(mint, index).0), uninitialised()));
         }
@@ -323,6 +353,7 @@ impl Fixture {
         }
         accounts.push(mollusk_svm::program::keyed_account_for_system_program());
         accounts.push(token2022::keyed_account());
+        accounts.push(associated_token::keyed_account());
 
         Self {
             mollusk,
@@ -330,6 +361,7 @@ impl Fixture {
             mint,
             issuer_config,
             token_config,
+            treasury_account,
         }
     }
 
@@ -425,13 +457,22 @@ impl Fixture {
             .1
     }
 
+    fn token_state_at(&self, key: &AnchorPubkey) -> TokenAccountState {
+        StateWithExtensions::<TokenAccountState>::unpack(&self.account(key).data)
+            .expect("a token account")
+            .base
+    }
+
     fn balance(&self, owner: u8) -> u64 {
-        StateWithExtensions::<TokenAccountState>::unpack(
-            &self.account(&token_account_of(owner)).data,
-        )
-        .expect("a token account")
-        .base
-        .amount
+        self.token_state_at(&token_account_of(owner)).amount
+    }
+
+    fn treasury_exists(&self) -> bool {
+        !self.account(&self.treasury_account).data.is_empty()
+    }
+
+    fn treasury_state(&self) -> TokenAccountState {
+        self.token_state_at(&self.treasury_account)
     }
 
     fn supply(&self) -> u64 {
@@ -534,6 +575,25 @@ impl Fixture {
         attestation: AnchorPubkey,
         approvers: &[AnchorPubkey],
     ) -> Instruction {
+        self.issue_paying(
+            nonce,
+            destination,
+            amount,
+            attestation,
+            approvers,
+            self.treasury_account,
+        )
+    }
+
+    fn issue_paying(
+        &self,
+        nonce: u64,
+        destination: AnchorPubkey,
+        amount: u64,
+        attestation: AnchorPubkey,
+        approvers: &[AnchorPubkey],
+        treasury_account: AnchorPubkey,
+    ) -> Instruction {
         build(
             issuer_forge::accounts::MintTokens {
                 issuer_config: self.issuer_config,
@@ -541,8 +601,14 @@ impl Fixture {
                 mint: self.mint,
                 attestation,
                 destination,
+                treasury: wallet(TREASURY),
+                treasury_account,
+                treasury_freeze: freeze_record_of(self.treasury_account),
                 proposal: proposal_of(self.mint, nonce),
+                payer: wallet(PAYER),
                 token_program: spl_token_2022::ID,
+                associated_token_program: anchor_spl::associated_token::ID,
+                system_program: anchor_lang::system_program::ID,
             },
             issuer_forge::instruction::Mint {
                 args: MintArgs { amount },
@@ -551,6 +617,27 @@ impl Fixture {
                 .iter()
                 .map(|approver| AccountMeta::new_readonly(sol(approver), false))
                 .collect(),
+        )
+    }
+
+    /// `freeze_holder` on the treasury's account, by the officer.
+    fn freeze_treasury(&self) -> Instruction {
+        build(
+            issuer_forge::accounts::FreezeHolder {
+                issuer_config: self.issuer_config,
+                token_config: self.token_config,
+                mint: self.mint,
+                token_account: self.treasury_account,
+                freeze_record: freeze_record_of(self.treasury_account),
+                payer: wallet(PAYER),
+                officer: wallet(OFFICER),
+                token_program: spl_token_2022::ID,
+                system_program: anchor_lang::system_program::ID,
+            },
+            issuer_forge::instruction::FreezeHolder {
+                args: FreezeHolderArgs { reason: a_reason() },
+            },
+            Vec::new(),
         )
     }
 
@@ -652,9 +739,15 @@ fn a_quorum_issues_up_to_exactly_the_attested_reserve() {
     let mut f = Fixture::new();
     f.matured(1, ADMIN_B, HEADROOM);
 
-    // Nobody signs the execution: the quorum is in the proposal.
+    // Only the payer signs the execution: the quorum is in the proposal.
     let issuance = f.issue(1, ADMIN_B, HEADROOM);
-    assert!(issuance.accounts.iter().all(|meta| !meta.is_signer));
+    let signers: Vec<Pubkey> = issuance
+        .accounts
+        .iter()
+        .filter(|meta| meta.is_signer)
+        .map(|meta| meta.pubkey)
+        .collect();
+    assert_eq!(signers, vec![sol(&wallet(PAYER))]);
     succeeded(&f.run(NOW + DAY, issuance));
 
     assert_eq!(f.balance(ADMIN_B), HEADROOM);
@@ -865,5 +958,147 @@ fn a_pause_stops_issuance_at_the_token_program() {
         refusal(&f.run(NOW, f.issue(1, ADMIN_B, 1_000))),
         TokenError::MintPaused as u32
     );
+    assert_eq!(f.supply(), SUPPLY);
+}
+
+// ─── FR-038: the platform's fee, out of the issued amount ───────────────────
+
+/// What `fee_on` gives for `FEE_BPS`, rounded up; `state/token.rs` tests the
+/// arithmetic, this only spares the tests below a second formula.
+fn fee(amount: u64) -> u64 {
+    (amount * u64::from(FEE_BPS)).div_ceil(10_000)
+}
+
+#[test]
+fn the_fee_goes_to_the_treasury_and_the_rest_to_the_approved_account() {
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_B, 1_000_000);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_B, 1_000_000)));
+
+    assert_eq!(fee(1_000_000), 1_200);
+    assert_eq!(f.balance(ADMIN_B), 1_000_000 - 1_200);
+    let treasury = f.treasury_state();
+    assert_eq!(treasury.amount, 1_200);
+    assert_eq!(treasury.owner, wallet(TREASURY));
+    assert_eq!(treasury.mint, f.mint);
+    // Created under `DefaultAccountState = Frozen` and thawed for the fee.
+    assert_eq!(treasury.state, AccountState::Initialized);
+    assert_eq!(f.supply(), SUPPLY + 1_000_000);
+}
+
+#[test]
+fn the_reserve_covers_the_fee_as_well() {
+    // FR-038b: the gate counts the whole amount. The issuer's share of one
+    // unit beyond the reserve would fit; the issuance does not.
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_B, HEADROOM + 1);
+    assert!(HEADROOM + 1 - fee(HEADROOM + 1) <= HEADROOM);
+    assert_eq!(
+        refusal(&f.run(NOW, f.issue(1, ADMIN_B, HEADROOM + 1))),
+        code(ForgeError::ReserveInsufficient)
+    );
+    assert!(!f.treasury_exists());
+
+    f.matured(2, ADMIN_B, HEADROOM);
+    succeeded(&f.run(NOW, f.issue(2, ADMIN_B, HEADROOM)));
+    assert_eq!(f.supply(), RESERVE);
+    assert_eq!(f.balance(ADMIN_B) + f.treasury_state().amount, HEADROOM);
+}
+
+#[test]
+fn a_fraction_of_a_unit_of_fee_is_a_whole_unit() {
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_B, 1);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_B, 1)));
+    assert_eq!(f.treasury_state().amount, 1);
+    assert_eq!(f.balance(ADMIN_B), 0);
+}
+
+#[test]
+fn a_zero_rate_leaves_the_treasury_untouched() {
+    let mut f = Fixture::new();
+    f.matured(1, ADMIN_B, 1_000);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_B, 1_000)));
+    assert_eq!(f.balance(ADMIN_B), 1_000);
+    assert!(!f.treasury_exists());
+}
+
+#[test]
+fn fees_accumulate_in_the_one_treasury_account() {
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_A, 1_000_000);
+    f.matured(2, ADMIN_B, 2_000_000);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_A, 1_000_000)));
+    succeeded(&f.run(NOW, f.issue(2, ADMIN_B, 2_000_000)));
+    assert_eq!(f.treasury_state().amount, fee(1_000_000) + fee(2_000_000));
+}
+
+#[test]
+fn a_treasury_account_someone_else_created_is_thawed_and_paid() {
+    // Anyone may create an associated account for anyone. Left frozen by
+    // `DefaultAccountState`, it must not stop the issuer's issuance.
+    let mut f = Fixture::with_fee(FEE_BPS);
+    // The ATA program's `Create`: an empty instruction data.
+    let create = Instruction {
+        program_id: sol(&anchor_spl::associated_token::ID),
+        accounts: vec![
+            AccountMeta::new(sol(&wallet(PAYER)), true),
+            AccountMeta::new(sol(&f.treasury_account), false),
+            AccountMeta::new_readonly(sol(&wallet(TREASURY)), false),
+            AccountMeta::new_readonly(sol(&f.mint), false),
+            AccountMeta::new_readonly(sol(&anchor_lang::system_program::ID), false),
+            AccountMeta::new_readonly(sol(&spl_token_2022::ID), false),
+        ],
+        data: Vec::new(),
+    };
+    succeeded(&f.run(NOW, create));
+    assert_eq!(f.treasury_state().state, AccountState::Frozen);
+
+    f.matured(1, ADMIN_B, 1_000_000);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_B, 1_000_000)));
+    assert_eq!(f.treasury_state().amount, fee(1_000_000));
+    assert_eq!(f.treasury_state().state, AccountState::Initialized);
+}
+
+#[test]
+fn a_treasury_an_officer_froze_is_not_thawed_by_an_issuance() {
+    // A `FreezeRecord` says the account is frozen by an officer, and
+    // `thaw_holder` refuses to step over it; issuance does not either.
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_B, 1_000_000);
+    succeeded(&f.run(NOW, f.issue(1, ADMIN_B, 1_000_000)));
+    succeeded(&f.run(NOW, f.freeze_treasury()));
+
+    f.matured(2, ADMIN_B, 1_000_000);
+    assert_eq!(
+        refusal(&f.run(NOW, f.issue(2, ADMIN_B, 1_000_000))),
+        code(ForgeError::TreasuryFrozenByOfficer)
+    );
+    assert_eq!(f.treasury_state().state, AccountState::Frozen);
+    assert_eq!(f.supply(), SUPPLY + 1_000_000);
+}
+
+#[test]
+fn the_fee_goes_only_to_the_treasury_the_token_declares() {
+    let mut f = Fixture::with_fee(FEE_BPS);
+    f.matured(1, ADMIN_B, 1_000_000);
+    let attestation = f.latest_attestation();
+    let approvers = f.approvers(1);
+    for elsewhere in [token_account_of(ADMIN_A), token_account_of(HOLDER)] {
+        assert_eq!(
+            refusal(&f.run(
+                NOW,
+                f.issue_paying(
+                    1,
+                    token_account_of(ADMIN_B),
+                    1_000_000,
+                    attestation,
+                    &approvers,
+                    elsewhere,
+                ),
+            )),
+            code(ForgeError::TreasuryAccountMismatch)
+        );
+    }
     assert_eq!(f.supply(), SUPPLY);
 }

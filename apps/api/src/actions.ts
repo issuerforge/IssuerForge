@@ -41,6 +41,8 @@ export interface TokenView {
   readonly attestationMaxAge: number
   /** How many attestations exist; the latest — the one an issuance is checked against — is `count - 1`. */
   readonly attestationCount: bigint
+  /** The platform's wallet an issuance pays its fee to. */
+  readonly treasury: string
 }
 
 /** The membership as the program will read it at execution — not the database mirror. */
@@ -315,6 +317,7 @@ export function createActionReader(connection: Connection, program: ForgeProgram
         attestor: config.attestor.toBase58(),
         attestationMaxAge: config.attestationMaxAge.toNumber(),
         attestationCount: BigInt(config.attestationCount.toString()),
+        treasury: config.treasury.toBase58(),
       }
     },
 

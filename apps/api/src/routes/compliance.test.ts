@@ -118,6 +118,7 @@ function app(fakes: Fakes = {}) {
             attestor: 'Vote111111111111111111111111111111111111111',
             attestationMaxAge: 604_800,
             attestationCount: 1n,
+            treasury: 'Stake11111111111111111111111111111111111111',
           }
     },
     quorum: async () =>

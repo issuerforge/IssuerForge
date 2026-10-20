@@ -438,6 +438,7 @@ export function createActionRoutes(deps: ActionRouteDeps) {
         amount: action.amount,
         attestationIndex: token.attestationCount - 1n,
         approvers,
+        treasury: new PublicKey(token.treasury),
         payer: new PublicKey(payer),
       })
       c.get('log').info(
