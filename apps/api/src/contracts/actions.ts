@@ -149,6 +149,17 @@ export const issuanceBodySchema = z.object({
   amount: u64Schema,
 })
 
+/**
+ * A change of the reserve terms as a proposal body: the destination, as the
+ * account stores it. The terms it was raised against are in `proposal.action`.
+ */
+export const attestorBodySchema = z.object({
+  kind: z.literal('set-attestor'),
+  attestor: addressSchema,
+  attestationMaxAge: z.number().int().positive(),
+  reason: complianceReasonSchema,
+})
+
 export const proposalSchema = z.object({
   address: addressSchema,
   /** `null` for an action on the issuer itself — a delegation change has no token. */
@@ -196,7 +207,12 @@ export const proposalDetailResponseSchema = z.object({
    * the account, so it is the same object as `proposal.action`; it is listed
    * here only so the field means one thing for every kind.
    */
-  body: z.union([proposedActionBodySchema, delegationBodySchema, issuanceBodySchema]),
+  body: z.union([
+    proposedActionBodySchema,
+    delegationBodySchema,
+    attestorBodySchema,
+    issuanceBodySchema,
+  ]),
   authorising: z.array(quorumMemberSchema),
 })
 

@@ -489,6 +489,7 @@ describe('reading proposals', () => {
       attestationMaxAge: 30 * 86_400,
       reason: REASON,
     })
+    expect(proposalDetailResponseSchema.safeParse(json).success).toBe(true)
   })
 
   it('a body the node no longer has is an internal failure, not an empty policy', async () => {
