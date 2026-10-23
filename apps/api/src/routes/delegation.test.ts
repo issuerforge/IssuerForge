@@ -147,6 +147,7 @@ function app(fakes: Fakes = {}) {
     actions,
     compliance: unused<ComplianceReader>('the compliance reader'),
     delegations: { history: async () => [HISTORY] },
+    reserve: { terms: async () => undefined },
     issuance: unused<IssuanceStore>('issuance'),
     holders: unused<HolderStore>('the holder store'),
     journal: unused<JournalStore>('the journal'),

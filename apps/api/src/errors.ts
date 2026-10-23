@@ -45,6 +45,9 @@ export const unauthorized = (message: string, details?: Record<string, unknown>)
 export const notFound = (message: string, details?: Record<string, unknown>) =>
   new ApiProblem('NOT_FOUND', message, details)
 
+export const rateLimited = (message: string, details?: Record<string, unknown>) =>
+  new ApiProblem('RATE_LIMITED', message, details)
+
 export const internal = (message: string, details?: Record<string, unknown>) =>
   new ApiProblem('INTERNAL', message, details)
 

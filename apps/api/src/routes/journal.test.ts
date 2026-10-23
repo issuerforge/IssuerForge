@@ -168,6 +168,7 @@ function app(fakes: Fakes = {}) {
     actions,
     compliance: noCompliance,
     delegations: { history: async () => [] },
+    reserve: { terms: async () => undefined },
     chain: {
       program: undefined as unknown as ChainReader['program'],
       tokenCount: async () => 1,

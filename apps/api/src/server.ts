@@ -22,11 +22,14 @@ import type { HolderStore } from './holders.ts'
 import type { IssuanceStore } from './issuance.ts'
 import type { JournalStore } from './journal.ts'
 import type { OperationalSigner } from './operational.ts'
+import type { ReserveReader } from './reserve.ts'
 import { createActionRoutes } from './routes/actions.ts'
+import { createAttestationRoutes } from './routes/attestations.ts'
 import { createComplianceRoutes } from './routes/compliance.ts'
 import { createDelegationRoutes } from './routes/delegation.ts'
 import { createHolderRoutes } from './routes/holders.ts'
 import { createJournalRoutes } from './routes/journal.ts'
+import { createPublicRoutes } from './routes/public.ts'
 import { createTokenRoutes } from './routes/tokens.ts'
 import { requireSession, type SessionDeps } from './session.ts'
 
@@ -40,6 +43,8 @@ export interface ServerDeps extends SessionDeps {
   compliance: ComplianceReader
   /** The history of the issuer's delegation, from the indexer (`delegation.ts`). */
   delegations: DelegationStore
+  /** A token's reserve terms and latest attestation, read from the chain (`reserve.ts`). */
+  reserve: ReserveReader
   issuance: IssuanceStore
   holders: HolderStore
   journal: JournalStore
@@ -57,6 +62,9 @@ export interface ServerDeps extends SessionDeps {
   nonce?: () => bigint
   /** The feed's poll interval. Swapped in tests so a poll is not a second of waiting. */
   feedPollMs?: number
+  /** The public read's cache and limit. Swapped in tests so neither takes a minute to show. */
+  publicCacheMs?: number
+  publicPerMinute?: number
 }
 
 /** The largest request body that makes sense. The largest legitimate one is an issuance, ~2 KB. */
@@ -113,6 +121,21 @@ export function createServer(deps: ServerDeps) {
   /** The liveness probe for the host. No authentication and no database access. */
   app.get('/health', (c) => c.json({ status: 'ok' as const }))
 
+  const now = deps.now ?? (() => new Date())
+
+  // The one group of routes under /api with no login (FR-025): registered
+  // before `requireSession`, so they answer before it is reached.
+  app.route(
+    '/api',
+    createPublicRoutes({
+      reserve: deps.reserve,
+      compliance: deps.compliance,
+      now,
+      ...(deps.publicCacheMs === undefined ? {} : { cacheMs: deps.publicCacheMs }),
+      ...(deps.publicPerMinute === undefined ? {} : { perMinute: deps.publicPerMinute }),
+    }),
+  )
+
   app.use('/api/*', requireSession(deps))
 
   /**
@@ -126,13 +149,13 @@ export function createServer(deps: ServerDeps) {
   // registration order, so a handler added below still goes through the login
   // already declared. The state "a route under /api without a session" does
   // not exist.
-  const now = deps.now ?? (() => new Date())
   app.route('/api', createTokenRoutes({ ...deps, now }))
   app.route('/api', createHolderRoutes({ ...deps, now }))
   app.route('/api', createJournalRoutes({ ...deps, now }))
   app.route('/api', createActionRoutes({ ...deps, now }))
   app.route('/api', createComplianceRoutes(deps))
   app.route('/api', createDelegationRoutes({ ...deps, now }))
+  app.route('/api', createAttestationRoutes({ ...deps, now }))
 
   return app
 }

@@ -89,7 +89,7 @@ export type CreateTokenArgs = {
  * zero-padded. The program checks the length, but assembling a wrong array
  * here would be a refusal on devnet instead of a failure in a test.
  */
-function currencyBytes(currency: string): number[] {
+export function currencyBytes(currency: string): number[] {
   const bytes = new TextEncoder().encode(currency)
   if (bytes.length === 0 || bytes.length > 8) {
     throw new RangeError(`currency must be 1 to 8 bytes: ${currency}`)

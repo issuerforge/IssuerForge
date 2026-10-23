@@ -44,6 +44,7 @@ export const TX_STEPS = [
   'set-delegation',
   'set-attestor',
   'mint',
+  'attest-reserve',
 ] as const
 
 export type TxStep = (typeof TX_STEPS)[number]

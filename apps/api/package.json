@@ -6,8 +6,10 @@
   "exports": {
     "./contracts": "./src/contracts/tokens.ts",
     "./contracts/actions": "./src/contracts/actions.ts",
+    "./contracts/attestations": "./src/contracts/attestations.ts",
     "./contracts/compliance": "./src/contracts/compliance.ts",
     "./contracts/delegation": "./src/contracts/delegation.ts",
+    "./contracts/public": "./src/contracts/public.ts",
     "./server": "./src/server.ts",
     "./config": "./src/config.ts"
   },

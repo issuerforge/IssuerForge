@@ -122,6 +122,7 @@ function app(
     actions,
     compliance: noCompliance,
     delegations: { history: async () => [] },
+    reserve: { terms: async () => undefined },
     issuance,
     holders,
     journal,

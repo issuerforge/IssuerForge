@@ -17,6 +17,7 @@ import { createIssuanceStore } from './issuance.ts'
 import { createJournalStore } from './journal.ts'
 import { createOperationalSigner } from './operational.ts'
 import { createPrivyClient } from './privy.ts'
+import { createReserveReader } from './reserve.ts'
 import { createServer } from './server.ts'
 
 async function main() {
@@ -47,6 +48,7 @@ async function main() {
     chain,
     actions: createActionReader(connection, chain.program),
     compliance: createComplianceReader(connection, chain.program),
+    reserve: createReserveReader(chain.program),
     operational: createOperationalSigner(connection, config.operationalSecretKey),
   })
 
