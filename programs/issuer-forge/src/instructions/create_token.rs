@@ -7,17 +7,27 @@
 //! policy does not yet: the instruction either passed in full or left
 //! nothing behind.
 //!
+//! **The initial issuance pays the platform's fee like any other (FR-038).**
+//! The fee is cut from `initial_supply` into the treasury's associated
+//! account by the same `fee.rs` that `mint` uses, so the gate still sees the
+//! whole `initial_supply` (FR-038b). Without it the whole reserve could be
+//! issued at once with no fee, and only further issuance would pay.
+//!
 //! **The metadata is written by a second transaction, and that is not an
 //! oversight.** The budget calculation (`SCRATCHPAD.md`, block T018) gave
 //! ~1180 bytes of 1232 before the name and symbol strings: 384 bytes of the
-//! policy itself, 14 accounts, two signatures. The name and the URI do not
+//! policy itself, 14 accounts, two signatures; the fee's two accounts took
+//! that to ~1214 (`packages/chain/src/tx/tx.test.ts` holds the measured
+//! number). The name and the URI do not
 //! fit — so `create_token` sets a `MetadataPointer` to the mint itself (zero
 //! bytes of arguments), and `set_token_metadata` writes the content. The
 //! window between the two transactions is safe: all accounts are frozen by
 //! default, and a name neither allows nor forbids anything.
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{self, CreateAccount, Transfer};
-use anchor_spl::associated_token::{self, AssociatedToken};
+use anchor_spl::associated_token::{
+    self, get_associated_token_address_with_program_id, AssociatedToken,
+};
 use anchor_spl::token_2022::spl_token_2022;
 use anchor_spl::token_2022_extensions::spl_token_metadata_interface::state::TokenMetadata;
 use anchor_spl::token_2022_extensions::{
@@ -37,6 +47,7 @@ use crate::constants::{
     ISSUER_SEED, MINT_SEED, POLICY_SEED, RESERVE_SEED, TOKEN_SEED, VELOCITY_SEED,
 };
 use crate::error::ForgeError;
+use crate::fee::Treasury;
 use crate::reserve::{require_latest, validate_max_age, ReserveCheck};
 use crate::state::{
     role, validate_currency, HolderStatus, HolderStatusInput, IssuerConfig, PolicyConfig,
@@ -90,8 +101,10 @@ pub struct CreateTokenArgs {
     /// `address_config` of the hook's account list.
     pub attestation_credential: Pubkey,
     pub attestation_schema: Pubkey,
-    /// The platform treasury (FR-038).
-    pub treasury: Pubkey,
+    /// The fee rate on issuance (FR-038). The treasury it goes to is an
+    /// account, not an argument: the fee on the initial issuance needs the
+    /// wallet as an account anyway, and naming it twice would cost 32 bytes
+    /// the transaction does not have.
     pub fee_bps: u16,
     /// The reserve attestation validity period, seconds (FR-023b).
     pub attestation_max_age: i64,
@@ -101,7 +114,7 @@ pub struct CreateTokenArgs {
     pub rules: Vec<u8>,
     /// The initial issuance. Goes through the same reserve check as `mint`
     /// (T038): the program has no other way for tokens to come into
-    /// existence.
+    /// existence. The founder receives it less the fee.
     pub initial_supply: u64,
     /// The first reserve attestation: the amount and the moment it refers to.
     /// The currency is taken from `reserve_currency` — there are never two
@@ -140,8 +153,8 @@ pub struct CreateTokenArgs {
 pub struct CreateToken<'info> {
     /// The founder, who is also the rent payer.
     ///
-    /// Merged on purpose: a separate payer is a sixteenth account and a
-    /// third signature, and there is nowhere to put them. A founder's wallet
+    /// Merged on purpose: a separate payer is one more account and a third
+    /// signature, and there is nowhere to put them. A founder's wallet
     /// without SOL is topped up by the platform before the issuance; in
     /// `set_token_metadata` below the payer is separate again, because there
     /// is room there.
@@ -229,6 +242,24 @@ pub struct CreateToken<'info> {
         bump,
     )]
     pub velocity_counter: Account<'info, VelocityCounter>,
+
+    /// CHECK: the platform's wallet (FR-038); becomes `TokenConfig.treasury`.
+    /// The ATA program needs it to create the treasury's account, nothing is
+    /// read from it.
+    pub treasury: UncheckedAccount<'info>,
+
+    /// CHECK: pinned to the treasury's associated account of this mint, as in
+    /// `mint`. It cannot exist before the instruction unless the treasury is
+    /// the founder — then it is the founder's account, created above.
+    #[account(
+        mut,
+        address = get_associated_token_address_with_program_id(
+            &treasury.key(),
+            &mint.key(),
+            &token_program.key(),
+        ) @ ForgeError::TreasuryAccountMismatch,
+    )]
+    pub treasury_account: UncheckedAccount<'info>,
 
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
@@ -374,7 +405,7 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
     config.attestation_credential = args.attestation_credential;
     config.attestation_schema = args.attestation_schema;
     config.attestor = ctx.accounts.attestor.key();
-    config.treasury = args.treasury;
+    config.treasury = ctx.accounts.treasury.key();
     config.policy_version = FIRST_POLICY_VERSION;
     config.fee_bps = args.fee_bps;
     config.attestation_max_age = args.attestation_max_age;
@@ -473,6 +504,20 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
         &[config_signer],
     ))?;
 
+    let fee = ctx.accounts.token_config.fee_on(args.initial_supply);
+    Treasury {
+        wallet: &ctx.accounts.treasury.to_account_info(),
+        account: &ctx.accounts.treasury_account.to_account_info(),
+        freeze: None,
+        mint: &ctx.accounts.mint.to_account_info(),
+        authority: &ctx.accounts.token_config.to_account_info(),
+        payer: &ctx.accounts.founder.to_account_info(),
+        token_program: &token_program,
+        associated_token_program: &ctx.accounts.associated_token_program.to_account_info(),
+        system_program: &ctx.accounts.system_program.to_account_info(),
+    }
+    .credit(fee, config_signer)?;
+
     mint_to(
         CpiContext::new_with_signer(
             token_program,
@@ -483,7 +528,7 @@ pub(crate) fn create_handler(ctx: Context<CreateToken>, args: CreateTokenArgs) -
             },
             &[config_signer],
         ),
-        args.initial_supply,
+        args.initial_supply - fee,
     )?;
 
     // The last action: the number is taken only when the token behind it is

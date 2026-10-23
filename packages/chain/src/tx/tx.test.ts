@@ -1,6 +1,10 @@
 import { encodeRules } from '@forge/policy/layout'
 import { OPEN_POLICY } from '@forge/policy/model'
-import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  getAssociatedTokenAddressSync,
+  TOKEN_2022_PROGRAM_ID,
+} from '@solana/spl-token'
 import { Connection, PublicKey, type TransactionInstruction } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import { extraAccountMetaListPda, freezeRecordPda, mintPda, tokenConfigPda } from '../pda.ts'
@@ -98,13 +102,23 @@ describe('token issuance', () => {
 
     const keys = only(plan).keys.map((key) => key.pubkey.toBase58())
     // Thirteen accounts is the number the transaction budget was computed for
-    // (SCRATCHPAD.md, block T018). A fourteenth will not fit silently.
-    expect(keys).toHaveLength(13)
+    // (SCRATCHPAD.md, block T018); the fee on the initial issuance (FR-038)
+    // added the treasury and its account. A sixteenth will not fit silently.
+    expect(keys).toHaveLength(15)
     expect(keys.slice(0, 7)).toEqual(
       [FOUNDER, ATTESTOR, issuerConfig, mint, tokenConfig, policyConfig, attestation].map((key) =>
         key.toBase58(),
       ),
     )
+    // After the founder's three accounts, so every position the indexer
+    // reads stays where it was.
+    expect(keys.slice(10, 12)).toEqual([
+      TREASURY.toBase58(),
+      PublicKey.findProgramAddressSync(
+        [TREASURY.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+      )[0].toBase58(),
+    ])
     // Token-2022 is passed explicitly: a mint with extensions does not exist in
     // the old token program, and a token without extensions would look like it
     // works.
@@ -134,8 +148,9 @@ describe('token issuance', () => {
     expect(size).toBeLessThanOrEqual(MAX_TRANSACTION_BYTES)
     // The headroom is named as a number on purpose: if it disappears, that
     // must be visible in the test's diff, not in a failed transaction on
-    // devnet.
-    expect(MAX_TRANSACTION_BYTES - size).toBeGreaterThan(20)
+    // devnet. The fee's two accounts took it from 52 to 18 bytes — not even
+    // a compute budget instruction fits any more.
+    expect(MAX_TRANSACTION_BYTES - size).toBe(18)
   })
 
   it('the transaction is versioned, with an empty address-table list', async () => {

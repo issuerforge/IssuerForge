@@ -13,6 +13,7 @@ use spl_transfer_hook_interface::instruction::ExecuteInstruction;
 pub mod authority;
 pub mod constants;
 pub mod error;
+pub mod fee;
 pub mod hook;
 pub mod instructions;
 pub mod quorum;

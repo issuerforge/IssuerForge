@@ -335,8 +335,8 @@ export type IssuerForge = {
           "docs": [
             "The founder, who is also the rent payer.",
             "",
-            "Merged on purpose: a separate payer is a sixteenth account and a",
-            "third signature, and there is nowhere to put them. A founder's wallet",
+            "Merged on purpose: a separate payer is one more account and a third",
+            "signature, and there is nowhere to put them. A founder's wallet",
             "without SOL is topped up by the platform before the issuance; in",
             "`set_token_metadata` below the payer is separate again, because there",
             "is room there."
@@ -577,6 +577,21 @@ export type IssuerForge = {
               }
             ]
           }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The ATA program needs it to create the treasury's account, nothing is",
+            "read from it."
+          ]
+        },
+        {
+          "name": "treasuryAccount",
+          "docs": [
+            "`mint`. It cannot exist before the instruction unless the treasury is",
+            "the founder — then it is the founder's account, created above."
+          ],
+          "writable": true
         },
         {
           "name": "tokenProgram"
@@ -3524,14 +3539,13 @@ export type IssuerForge = {
             "type": "pubkey"
           },
           {
-            "name": "treasury",
-            "docs": [
-              "The platform treasury (FR-038)."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "feeBps",
+            "docs": [
+              "The fee rate on issuance (FR-038). The treasury it goes to is an",
+              "account, not an argument: the fee on the initial issuance needs the",
+              "wallet as an account anyway, and naming it twice would cost 32 bytes",
+              "the transaction does not have."
+            ],
             "type": "u16"
           },
           {
@@ -3565,7 +3579,7 @@ export type IssuerForge = {
             "docs": [
               "The initial issuance. Goes through the same reserve check as `mint`",
               "(T038): the program has no other way for tokens to come into",
-              "existence."
+              "existence. The founder receives it less the fee."
             ],
             "type": "u64"
           },
@@ -5148,8 +5162,8 @@ export const IDL: IssuerForge = {
           "docs": [
             "The founder, who is also the rent payer.",
             "",
-            "Merged on purpose: a separate payer is a sixteenth account and a",
-            "third signature, and there is nowhere to put them. A founder's wallet",
+            "Merged on purpose: a separate payer is one more account and a third",
+            "signature, and there is nowhere to put them. A founder's wallet",
             "without SOL is topped up by the platform before the issuance; in",
             "`set_token_metadata` below the payer is separate again, because there",
             "is room there."
@@ -5390,6 +5404,21 @@ export const IDL: IssuerForge = {
               }
             ]
           }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "The ATA program needs it to create the treasury's account, nothing is",
+            "read from it."
+          ]
+        },
+        {
+          "name": "treasuryAccount",
+          "docs": [
+            "`mint`. It cannot exist before the instruction unless the treasury is",
+            "the founder — then it is the founder's account, created above."
+          ],
+          "writable": true
         },
         {
           "name": "tokenProgram"
@@ -8337,14 +8366,13 @@ export const IDL: IssuerForge = {
             "type": "pubkey"
           },
           {
-            "name": "treasury",
-            "docs": [
-              "The platform treasury (FR-038)."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "feeBps",
+            "docs": [
+              "The fee rate on issuance (FR-038). The treasury it goes to is an",
+              "account, not an argument: the fee on the initial issuance needs the",
+              "wallet as an account anyway, and naming it twice would cost 32 bytes",
+              "the transaction does not have."
+            ],
             "type": "u16"
           },
           {
@@ -8378,7 +8406,7 @@ export const IDL: IssuerForge = {
             "docs": [
               "The initial issuance. Goes through the same reserve check as `mint`",
               "(T038): the program has no other way for tokens to come into",
-              "existence."
+              "existence. The founder receives it less the fee."
             ],
             "type": "u64"
           },

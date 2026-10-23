@@ -28,22 +28,15 @@
 //! `fee_on(amount)`, the approved account the rest. The gate sees the whole
 //! `amount`, so a fee the reserve does not cover is never issued (FR-038b).
 //! The rate is read at execution and never written back, so whatever becomes
-//! of it later changes nothing already issued (FR-038c). The treasury's
-//! account is created on the first fee and thawed — `DefaultAccountState =
-//! Frozen` applies to it as to anyone, and anyone may create it first — but
-//! not over an officer's `FreezeRecord`, which `thaw_holder` respects too.
+//! of it later changes nothing already issued (FR-038c). How the fee reaches
+//! the treasury, `create_token` shares — see `fee.rs`.
 use anchor_lang::prelude::*;
-use anchor_spl::associated_token::{
-    self, get_associated_token_address_with_program_id, AssociatedToken,
-};
-use anchor_spl::token_2022::spl_token_2022::extension::StateWithExtensions;
-use anchor_spl::token_2022::spl_token_2022::state::{Account as SplTokenAccount, AccountState};
-use anchor_spl::token_interface::{
-    mint_to, thaw_account, Mint, MintTo, ThawAccount, TokenAccount, TokenInterface,
-};
+use anchor_spl::associated_token::{get_associated_token_address_with_program_id, AssociatedToken};
+use anchor_spl::token_interface::{mint_to, Mint, MintTo, TokenAccount, TokenInterface};
 
 use crate::constants::{FREEZE_SEED, ISSUER_SEED, PROPOSAL_SEED, TOKEN_SEED};
 use crate::error::ForgeError;
+use crate::fee::Treasury;
 use crate::quorum;
 use crate::reserve::{require_latest, ReserveCheck};
 use crate::state::{
@@ -135,13 +128,6 @@ pub struct MintTokens<'info> {
     // read-only and unsigned, as in `seize`.
 }
 
-fn is_frozen(account: &AccountInfo) -> Result<bool> {
-    let data = account.try_borrow_data()?;
-    let state = StateWithExtensions::<SplTokenAccount>::unpack(&data)
-        .map_err(|_| error!(ForgeError::TreasuryAccountMismatch))?;
-    Ok(state.base.state == AccountState::Frozen)
-}
-
 pub(crate) fn handler(ctx: Context<MintTokens>, args: MintArgs) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let accounts = &ctx.accounts;
@@ -184,49 +170,18 @@ pub(crate) fn handler(ctx: Context<MintTokens>, args: MintArgs) -> Result<()> {
     let signer: &[&[u8]] = &[TOKEN_SEED, mint_key.as_ref(), &[accounts.token_config.bump]];
 
     let fee = accounts.token_config.fee_on(args.amount);
-    if fee > 0 {
-        let treasury = accounts.treasury_account.to_account_info();
-        if treasury.data_is_empty() {
-            associated_token::create(CpiContext::new(
-                accounts.associated_token_program.to_account_info(),
-                associated_token::Create {
-                    payer: accounts.payer.to_account_info(),
-                    associated_token: treasury.clone(),
-                    authority: accounts.treasury.to_account_info(),
-                    mint: mint.clone(),
-                    system_program: accounts.system_program.to_account_info(),
-                    token_program: token_program.clone(),
-                },
-            ))?;
-        }
-        if is_frozen(&treasury)? {
-            require!(
-                accounts.treasury_freeze.data_is_empty(),
-                ForgeError::TreasuryFrozenByOfficer
-            );
-            thaw_account(CpiContext::new_with_signer(
-                token_program.clone(),
-                ThawAccount {
-                    account: treasury.clone(),
-                    mint: mint.clone(),
-                    authority: authority.clone(),
-                },
-                &[signer],
-            ))?;
-        }
-        mint_to(
-            CpiContext::new_with_signer(
-                token_program.clone(),
-                MintTo {
-                    mint: mint.clone(),
-                    to: treasury,
-                    authority: authority.clone(),
-                },
-                &[signer],
-            ),
-            fee,
-        )?;
+    Treasury {
+        wallet: &accounts.treasury.to_account_info(),
+        account: &accounts.treasury_account.to_account_info(),
+        freeze: Some(&accounts.treasury_freeze.to_account_info()),
+        mint: &mint,
+        authority: &authority,
+        payer: &accounts.payer.to_account_info(),
+        token_program: &token_program,
+        associated_token_program: &accounts.associated_token_program.to_account_info(),
+        system_program: &accounts.system_program.to_account_info(),
     }
+    .credit(fee, signer)?;
 
     mint_to(
         CpiContext::new_with_signer(

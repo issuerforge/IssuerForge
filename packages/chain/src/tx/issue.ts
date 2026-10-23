@@ -1,7 +1,7 @@
 // Token issuance — three transactions, not one (FR-001, debt T018).
 //
-// **Why three.** `create_token` weighs ~1180 of 1232 bytes: 384 bytes of
-// policy, 13 accounts, two signatures. Neither the metadata strings nor the
+// **Why three.** `create_token` weighs ~1214 of 1232 bytes: 384 bytes of
+// policy, 15 accounts, two signatures. Neither the metadata strings nor the
 // hook's account list fit in there, so both go separately. Both windows are
 // safe, but for different reasons, and the difference is worth knowing:
 // without metadata the token is merely nameless, while without the account
@@ -160,7 +160,6 @@ export async function buildCreateToken(
       decimals: args.decimals,
       attestationCredential: args.attestationCredential,
       attestationSchema: args.attestationSchema,
-      treasury: args.treasury,
       feeBps: args.feeBps,
       attestationMaxAge: bn(args.attestationMaxAge),
       reserveCurrency: currencyBytes(args.reserveCurrency),
@@ -189,6 +188,15 @@ export async function buildCreateToken(
       ),
       holderStatus: holderStatusPda(mint, args.founder),
       velocityCounter: velocityCounterPda(mint, args.founder),
+      // The fee on the initial issuance lands here (FR-038). The treasury is
+      // a platform address and may be off the curve, as in `buildMint`.
+      treasury: args.treasury,
+      treasuryAccount: getAssociatedTokenAddressSync(
+        mint,
+        args.treasury,
+        true,
+        TOKEN_2022_PROGRAM_ID,
+      ),
       // The token program is passed explicitly even though the program accepts
       // the interface: a mint with extensions exists only in Token-2022, and a
       // mistake here would yield a token with no extension at all that would

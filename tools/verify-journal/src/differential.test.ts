@@ -123,6 +123,9 @@ const accounts = {
     founderAta,
     key(),
     key(),
+    // The treasury and its associated account (FR-038), before the programs.
+    key(),
+    key(),
     TOKEN_2022,
     key(),
     SYSTEM,
@@ -179,7 +182,6 @@ const CASES: Record<string, TxShape> = {
           decimals: 2,
           attestationCredential: new PublicKey(key()),
           attestationSchema: new PublicKey(key()),
-          treasury: new PublicKey(key()),
           feeBps: 25,
           attestationMaxAge: new BN(86_400),
           reserveCurrency: ascii('NGN', 8),

@@ -320,8 +320,9 @@ describe('POST /api/tokens — assembly', () => {
     ])
     expect(transactions.map((t) => t.dependsOnPrevious)).toEqual([false, true, true])
     expect(transactions[0]?.signers).toEqual([ADMIN, ATTESTOR])
-    // The T018 budget is measured, not estimated: 1180 of 1232.
-    expect(transactions[0]?.bytes).toBe(1180)
+    // The T018 budget is measured, not estimated: 1214 of 1232 since the fee
+    // on the initial issuance brought the treasury's two accounts.
+    expect(transactions[0]?.bytes).toBe(1214)
     for (const transaction of transactions) {
       expect(transaction.bytes).toBeLessThanOrEqual(1232)
       expect(Buffer.from(transaction.base64, 'base64').length).toBe(transaction.bytes)
