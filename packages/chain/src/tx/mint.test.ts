@@ -1,10 +1,6 @@
 import { BorshInstructionCoder } from '@coral-xyz/anchor'
 import { U64_MAX } from '@forge/shared/primitives'
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  getAssociatedTokenAddressSync,
-  TOKEN_2022_PROGRAM_ID,
-} from '@solana/spl-token'
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import { Connection, PublicKey, SystemProgram, type TransactionInstruction } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import { IDL } from '../idl/issuer-forge.ts'
@@ -30,7 +26,15 @@ const ADMIN_A = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const ADMIN_B = new PublicKey('SysvarS1otHashes111111111111111111111111111')
 const PAYER = new PublicKey('SysvarRent111111111111111111111111111111111')
 const TREASURY = new PublicKey('SysvarStakeHistory1111111111111111111111111')
-const TREASURY_ACCOUNT = getAssociatedTokenAddressSync(TREASURY, MINT, true, TOKEN_2022_PROGRAM_ID)
+/**
+ * Derived from the ATA program's seeds (wallet, token program, mint), not
+ * through the helper the builder calls: a test that calls it the same way
+ * repeats any mix-up of its arguments — T039 shipped exactly that.
+ */
+const TREASURY_ACCOUNT = PublicKey.findProgramAddressSync(
+  [TREASURY.toBuffer(), TOKEN_2022_PROGRAM_ID.toBuffer(), MINT.toBuffer()],
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+)[0]
 const BLOCKHASH = 'EETubP5AKHgjPAhzPAFcb8BAY1hMH639CWCFTqi3hq2h'
 const NONCE = 42n
 const PROPOSAL = actionProposalPda(MINT, NONCE)

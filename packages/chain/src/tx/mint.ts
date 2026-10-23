@@ -58,8 +58,8 @@ export async function buildMint(program: ForgeProgram, args: MintArgs): Promise<
 
   // Off the curve allowed: a treasury may well be a multisig's PDA.
   const treasuryAccount = getAssociatedTokenAddressSync(
-    args.treasury,
     args.mint,
+    args.treasury,
     true,
     TOKEN_2022_PROGRAM_ID,
   )

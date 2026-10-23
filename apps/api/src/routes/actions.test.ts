@@ -10,7 +10,7 @@ import { encodeRules, rulesHash, toHex } from '@forge/policy/layout'
 import { OPEN_POLICY, type PolicyRules } from '@forge/policy/model'
 import { ROLE } from '@forge/shared/api'
 import { createLogger } from '@forge/shared/log'
-import { getAssociatedTokenAddressSync, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 import type { ActionReader, ProposalView, QuorumView, TokenView } from '../actions.ts'
@@ -697,13 +697,17 @@ describe('executing', () => {
     expect(accounts[3]).toBe(reserveAttestationPda(new PublicKey(MINT), 2n).toBase58())
     expect(accounts[4]).toBe(TREASURY_ACCOUNT)
     expect(accounts[5]).toBe(PLATFORM_TREASURY)
+    // From the ATA program's seeds, not through the builder's own helper —
+    // see `packages/chain/src/tx/mint.test.ts`.
     expect(accounts[6]).toBe(
-      getAssociatedTokenAddressSync(
-        new PublicKey(PLATFORM_TREASURY),
-        new PublicKey(MINT),
-        true,
-        TOKEN_2022_PROGRAM_ID,
-      ).toBase58(),
+      PublicKey.findProgramAddressSync(
+        [
+          new PublicKey(PLATFORM_TREASURY).toBuffer(),
+          TOKEN_2022_PROGRAM_ID.toBuffer(),
+          new PublicKey(MINT).toBuffer(),
+        ],
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+      )[0].toBase58(),
     )
     expect(accounts[8]).toBe(PROPOSAL)
     expect(accounts.slice(13)).toEqual([OFFICER, ADMIN])
